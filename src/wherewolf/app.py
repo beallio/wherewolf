@@ -60,9 +60,26 @@ with st.sidebar:
     export_format = st.selectbox("Export Format", ["CSV", "Excel", "Parquet"])
 
     st.divider()
+    st.subheader("Query History")
+    history = history_manager.get_all()
+    if history:
+        history_labels = [f"{h['timestamp'][:16]} - {h['query'][:30]}..." for h in history]
+        selected_history = st.selectbox("Select from History", ["Select..."] + history_labels)
+        if selected_history != "Select...":
+            idx = history_labels.index(selected_history)
+            st.session_state.selected_query = history[idx]["query"]
+            st.session_state.path_input = history[idx]["path"]
+            st.rerun()
+    else:
+        st.write("No history yet.")
+
+    if st.button("Clear History"):
+        history_manager.clear()
+        st.rerun()
+
+    st.divider()
     st.subheader("Editor Settings")
-    ace_theme = st.selectbox(
-        "Editor Theme",
+    themes = sorted(
         [
             "tomorrow_night_eighties",
             "monokai",
@@ -86,27 +103,13 @@ with st.sidebar:
             "textmate",
             "tomorrow",
             "xcode",
-        ],
-        index=0,
+        ]
     )
-
-    st.divider()
-    st.subheader("Query History")
-    history = history_manager.get_all()
-    if history:
-        history_labels = [f"{h['timestamp'][:16]} - {h['query'][:30]}..." for h in history]
-        selected_history = st.selectbox("Select from History", ["Select..."] + history_labels)
-        if selected_history != "Select...":
-            idx = history_labels.index(selected_history)
-            st.session_state.selected_query = history[idx]["query"]
-            st.session_state.path_input = history[idx]["path"]
-            st.rerun()
-    else:
-        st.write("No history yet.")
-
-    if st.button("Clear History"):
-        history_manager.clear()
-        st.rerun()
+    ace_theme = st.selectbox(
+        "Editor Theme",
+        themes,
+        index=themes.index("dracula"),
+    )
 
 # --- Main Area ---
 st.header("SQL Editor")
