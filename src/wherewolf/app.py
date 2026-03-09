@@ -60,6 +60,37 @@ with st.sidebar:
     export_format = st.selectbox("Export Format", ["CSV", "Excel", "Parquet"])
 
     st.divider()
+    st.subheader("Editor Settings")
+    ace_theme = st.selectbox(
+        "Editor Theme",
+        [
+            "tomorrow_night_eighties",
+            "monokai",
+            "twilight",
+            "ambiance",
+            "chaos",
+            "clouds_midnight",
+            "dracula",
+            "gob",
+            "solarized_dark",
+            "terminal",
+            "vibrant_ink",
+            "chrome",
+            "clouds",
+            "crimson_editor",
+            "dawn",
+            "dreamweaver",
+            "eclipse",
+            "github",
+            "solarized_light",
+            "textmate",
+            "tomorrow",
+            "xcode",
+        ],
+        index=0,
+    )
+
+    st.divider()
     st.subheader("Query History")
     history = history_manager.get_all()
     if history:
@@ -84,7 +115,7 @@ st.header("SQL Editor")
 query_text = st_ace(
     value=st.session_state.selected_query,
     language="sql",
-    theme="tomorrow_night_eighties",
+    theme=ace_theme,
     height=300,
     key="sql_editor",
     auto_update=True,
