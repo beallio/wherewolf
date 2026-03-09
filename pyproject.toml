@@ -11,6 +11,7 @@ dependencies = [
     "pyspark>=4.1.1",
     "sqlglot>=29.0.1",
     "streamlit>=1.55.0",
+    "streamlit-ace>=0.1.1",
 ]
 
 [build-system]
