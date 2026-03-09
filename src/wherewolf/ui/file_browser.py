@@ -1,50 +1,49 @@
-import tkinter as tk
-from tkinter import filedialog
+import os
+import streamlit as st
+from pathlib import Path
 from typing import Optional
 
 
 class FileBrowser:
-    """Utility for native file browsing."""
+    """A resilient, Streamlit-native file explorer."""
 
     @staticmethod
-    def select_file() -> Optional[str]:
-        """Opens a native file dialog to select a file.
+    def render_explorer() -> Optional[str]:
+        """Renders a simple file explorer in the Streamlit UI.
 
         Returns:
-            The selected file path or None.
+            The selected file path if one was clicked, else None.
         """
-        try:
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            file_path = filedialog.askopenfilename(
-                title="Select Dataset",
-                filetypes=[
-                    ("Data files", "*.parquet *.csv *.json"),
-                    ("Parquet files", "*.parquet"),
-                    ("CSV files", "*.csv"),
-                    ("JSON files", "*.json"),
-                    ("All files", "*.*"),
-                ],
-            )
-            root.destroy()
-            return file_path if file_path else None
-        except Exception:
-            return None
+        if "explorer_path" not in st.session_state:
+            st.session_state.explorer_path = str(Path.cwd())
 
-    @staticmethod
-    def select_directory() -> Optional[str]:
-        """Opens a native file dialog to select a directory.
+        current_path = Path(st.session_state.explorer_path)
 
-        Returns:
-            The selected directory path or None.
-        """
+        st.write(f"📂 `{current_path}`")
+
+        col_up, col_home = st.columns(2)
+        if col_up.button("⬆️ Up"):
+            st.session_state.explorer_path = str(current_path.parent)
+            st.rerun()
+        if col_home.button("🏠 Home"):
+            st.session_state.explorer_path = str(Path.home())
+            st.rerun()
+
         try:
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            dir_path = filedialog.askdirectory(title="Select Dataset Directory")
-            root.destroy()
-            return dir_path if dir_path else None
-        except Exception:
-            return None
+            items = sorted(os.listdir(current_path))
+            # Filter for directories and data files
+            valid_exts = {".csv", ".parquet", ".json"}
+
+            for item in items:
+                full_path = current_path / item
+                if full_path.is_dir():
+                    if st.button(f"📁 {item}", key=f"dir_{item}", use_container_width=True):
+                        st.session_state.explorer_path = str(full_path)
+                        st.rerun()
+                elif full_path.suffix.lower() in valid_exts:
+                    if st.button(f"📄 {item}", key=f"file_{item}", use_container_width=True):
+                        return str(full_path)
+        except Exception as e:
+            st.error(f"Error reading directory: {e}")
+
+        return None

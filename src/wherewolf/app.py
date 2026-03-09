@@ -26,19 +26,17 @@ translator = Translator()
 with st.sidebar:
     st.title("🐺 Wherewolf")
 
-    # Browse Logic MUST come before the widget that uses the same state key
-    # or we must use st.rerun() to ensure the next pass sees the updated state.
-    if st.button("📁 Browse for Dataset"):
-        selected_path = FileBrowser.select_file()
-        if selected_path:
-            st.session_state.path_input = selected_path
-            st.rerun()
-
     st.text_input(
         "Dataset Path (local)",
         placeholder="/path/to/data.parquet",
         key="path_input",
     )
+
+    with st.expander("📁 Browse Local Files"):
+        selected_path = FileBrowser.render_explorer()
+        if selected_path:
+            st.session_state.path_input = selected_path
+            st.rerun()
 
     engine_name = st.selectbox("Execution Engine", ["DuckDB", "Spark"])
     preview_limit = st.slider("Preview Size", 10, 1000, 100)
@@ -106,7 +104,7 @@ if st.session_state.query_result:
 
     if result.success:
         m1, m2 = st.columns(2)
-        m1.metric("Rows Returned", result.row_count)
+        m1.metric("Rows Returned", f"{result.row_count:,}")
         m2.metric("Execution Time", f"{result.execution_time:.4f}s")
 
         st.subheader("Preview")
