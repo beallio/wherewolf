@@ -15,7 +15,7 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 Ensure you have [uv](https://github.com/astral-sh/uv) installed.
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/beallio/wherewolf.git
 cd wherewolf
 uv sync
 ```
