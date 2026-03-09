@@ -3,11 +3,14 @@ from wherewolf.execution import DuckDBEngine, SparkEngine, QueryResult
 from wherewolf.translation import Translator
 from wherewolf.storage import HistoryManager
 from wherewolf.export import Exporter
+from wherewolf.ui import FileBrowser
 
 # --- Configuration ---
 st.set_page_config(page_title="Wherewolf SQL Workbench", layout="wide")
 
 # --- Initialize Session State ---
+if "dataset_path" not in st.session_state:
+    st.session_state.dataset_path = ""
 if "query_result" not in st.session_state:
     st.session_state.query_result = None
 if "is_running" not in st.session_state:
@@ -23,7 +26,24 @@ translator = Translator()
 with st.sidebar:
     st.title("🐺 Wherewolf")
 
-    dataset_path = st.text_input("Dataset Path (local)", placeholder="/path/to/data.parquet")
+    col_path, col_browse = st.columns([0.7, 0.3])
+    with col_path:
+        dataset_path = st.text_input(
+            "Dataset Path (local)",
+            value=st.session_state.dataset_path,
+            placeholder="/path/to/data.parquet",
+            key="path_input",
+        )
+        st.session_state.dataset_path = dataset_path
+    with col_browse:
+        st.write("")  # alignment
+        st.write("")
+        if st.button("📁 Browse"):
+            selected_path = FileBrowser.select_file()
+            if selected_path:
+                st.session_state.dataset_path = selected_path
+                st.rerun()
+
     engine_name = st.selectbox("Execution Engine", ["DuckDB", "Spark"])
     preview_limit = st.slider("Preview Size", 10, 1000, 100)
     export_format = st.selectbox("Export Format", ["CSV", "Excel", "Parquet"])
@@ -38,7 +58,9 @@ with st.sidebar:
         if selected_history != "Select...":
             idx = history_labels.index(selected_history)
             st.session_state.selected_query = history[idx]["query"]
-            # Trigger rerun to update the editor (might need more care)
+            st.session_state.dataset_path = history[idx]["path"]
+            # Trigger rerun to update the editor
+            st.rerun()
     else:
         st.write("No history yet.")
 
@@ -62,7 +84,7 @@ with col2:
     cancel_button = st.button("🛑 Cancel", disabled=not st.session_state.is_running)
 
 # --- Execution Logic ---
-if run_button and dataset_path:
+if run_button and st.session_state.dataset_path:
     st.session_state.is_running = True
     st.session_state.query_result = None
 
@@ -73,11 +95,13 @@ if run_button and dataset_path:
         engine = SparkEngine()
 
     with st.spinner(f"Running query on {engine_name}..."):
-        result = engine.execute(query_text, dataset_path, limit=preview_limit)
+        result = engine.execute(query_text, st.session_state.dataset_path, limit=preview_limit)
         st.session_state.query_result = result
 
         if result.success:
-            history_manager.add_entry(engine_name.lower(), query_text, dataset_path)
+            history_manager.add_entry(
+                engine_name.lower(), query_text, st.session_state.dataset_path
+            )
 
     st.session_state.is_running = False
     st.rerun()
@@ -101,7 +125,7 @@ if st.session_state.query_result:
         # Note: For production, we might want to re-execute without limit for export,
         # but the requirements say st.download_button for bytes.
         # For now, we export the preview.
-        # Actually, if we want full export, we'd need another engine.execute(query_text, path, limit=-1)
+        # Actually, if we want full export, we'd need another engine.execute(query_text, st.session_state.dataset_path, limit=-1)
 
         export_label = f"Download as {export_format}"
         if export_format == "CSV":
