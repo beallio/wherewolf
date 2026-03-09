@@ -92,7 +92,7 @@ if st.session_state.query_result:
         m2.metric("Execution Time", f"{result.execution_time:.4f}s")
 
         st.subheader("Preview")
-        st.dataframe(result.df, use_container_width=True)
+        st.dataframe(result.df, width="stretch")
 
         # --- Export Section ---
         st.divider()
