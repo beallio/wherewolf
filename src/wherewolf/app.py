@@ -43,17 +43,20 @@ translator = Translator()
 with st.sidebar:
     st.title("🐺 Wherewolf")
 
-    st.text_input(
-        "Dataset Path (local)",
-        placeholder="/path/to/data.parquet",
-        key="path_input",
-    )
-
+    # 1. BROWSE LOGIC MUST COME FIRST
+    # This allows updating st.session_state.path_input BEFORE st.text_input is created
     with st.expander("📁 Browse Local Files"):
         selected_path = FileBrowser.render_explorer()
         if selected_path:
             st.session_state.path_input = selected_path
             st.rerun()
+
+    # 2. TEXT INPUT SECOND
+    st.text_input(
+        "Dataset Path (local)",
+        placeholder="/path/to/data.parquet",
+        key="path_input",
+    )
 
     engine_name = st.selectbox("Execution Engine", ["DuckDB", "Spark"])
     preview_limit = st.slider("Preview Size", 10, 1000, 100)
@@ -63,12 +66,15 @@ with st.sidebar:
     st.subheader("Query History")
     history = history_manager.get_all()
     if history:
+        # History selection also updates state, so it should ideally be handled carefully
+        # but since we rerun() after selection, the next pass will be clean.
         history_labels = [f"{h['timestamp'][:16]} - {h['query'][:30]}..." for h in history]
         selected_history = st.selectbox("Select from History", ["Select..."] + history_labels)
         if selected_history != "Select...":
             idx = history_labels.index(selected_history)
             st.session_state.selected_query = history[idx]["query"]
             st.session_state.path_input = history[idx]["path"]
+            # Trigger rerun to update the editor and input
             st.rerun()
     else:
         st.write("No history yet.")
@@ -135,6 +141,7 @@ if run_button and st.session_state.path_input:
     st.session_state.is_running = True
     st.session_state.query_result = None
 
+    # Engine Selection
     if engine_name == "DuckDB":
         engine = DuckDBEngine()
     else:
