@@ -20,11 +20,14 @@ class DuckDBEngine:
         Returns:
             A QueryResult object.
         """
+        import os
+
+        abs_path = os.path.abspath(path)
         start_time = time.time()
         try:
             # 1. Register the dataset view
             # DuckDB automatically detects CSV, Parquet, JSON based on extension or content
-            self.con.execute(f"CREATE OR REPLACE VIEW dataset AS SELECT * FROM '{path}'")
+            self.con.execute(f"CREATE OR REPLACE VIEW dataset AS SELECT * FROM '{abs_path}'")
 
             # 2. Execute the user query
             # We wrap the user query to handle limits for the preview

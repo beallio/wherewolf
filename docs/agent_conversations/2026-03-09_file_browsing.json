@@ -1,0 +1,21 @@
+{
+  "date": "2026-03-09",
+  "task_objective": "Add native file browser for dataset path selection in the Wherewolf workbench.",
+  "files_modified": [
+    "docs/plans/file_browsing.md",
+    "src/wherewolf/app.py",
+    "src/wherewolf/ui/__init__.py",
+    "src/wherewolf/ui/file_browser.py",
+    "tests/test_file_browser.py",
+    "tests/test_ui___init__.py"
+  ],
+  "tests_added": [
+    "tests/test_file_browser.py"
+  ],
+  "design_decisions": [
+    "Used tkinter.filedialog to provide a native OS file picker for local usage.",
+    "Integrated file browsing with Streamlit session state to ensure UI responsiveness and persistence.",
+    "Updated history selection to also restore the dataset path."
+  ],
+  "results": "Native file browsing is now functional in the sidebar. Users can click 'Browse' to select files instead of typing paths manually."
+}
