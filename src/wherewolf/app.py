@@ -84,7 +84,7 @@ st.header("SQL Editor")
 query_text = st_ace(
     value=st.session_state.selected_query,
     language="sql",
-    theme="monokai",
+    theme="tomorrow_night_eighties",
     height=300,
     key="sql_editor",
     auto_update=True,
