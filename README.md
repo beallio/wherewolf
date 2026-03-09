@@ -1,16 +1,58 @@
-# wherewolf
+# Wherewolf 🐺
 
-Python project scaffold with enforced AI-agent protocol.
+A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
 
-## Setup
+## Features
+-   **Multi-Engine Support:** Execute SQL via DuckDB (local) or Spark (local[*]).
+-   **SQL Translation:** Real-time translation between DuckDB and SparkSQL dialects using SQLGlot.
+-   **Safe Preview:** Scrollable results limited to 1000 rows.
+-   **Query History:** Persists past queries in `~/.wherewolf/history.json`.
+-   **Export:** Download query results as CSV, Excel, or Parquet.
+-   **Execution Metrics:** Tracks row count and execution time.
 
-source .envrc
+## Installation
+
+Ensure you have [uv](https://github.com/astral-sh/uv) installed.
+
+```bash
+git clone <repo-url>
+cd wherewolf
 uv sync
+```
 
-## Run Tests
+## Usage
 
-./run.sh pytest
+Run the workbench:
 
-## Agent Protocol
+```bash
+uv run streamlit run src/wherewolf/app.py
+```
 
-See docs/agent_protocol.md
+1.  Enter the local path to your dataset in the sidebar.
+2.  Write your SQL query (use `dataset` as the table name).
+3.  Click **Run** to execute.
+4.  View results and execution metrics.
+5.  Export or view the translated SQL if needed.
+
+## Development
+
+Run tests:
+```bash
+uv run pytest
+```
+
+Lint/Format:
+```bash
+ruff check . --fix
+ruff format .
+```
+
+## Dependencies
+-   `streamlit`
+-   `duckdb`
+-   `pyspark`
+-   `ibis-framework`
+-   `sqlglot`
+-   `pandas`
+-   `pyarrow`
+-   `openpyxl`

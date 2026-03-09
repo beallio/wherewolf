@@ -2,6 +2,23 @@
 name = "wherewolf"
 version = "0.1.0"
 requires-python = ">=3.11"
+dependencies = [
+    "duckdb>=1.5.0",
+    "ibis-framework>=12.0.0",
+    "openpyxl>=3.1.5",
+    "pandas>=2.3.3",
+    "pyarrow>=23.0.1",
+    "pyspark>=4.1.1",
+    "sqlglot>=29.0.1",
+    "streamlit>=1.55.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wherewolf"]
 
 [tool.uv]
 cache-dir = "/tmp/wherewolf/.uv_cache"
