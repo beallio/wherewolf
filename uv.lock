@@ -57,6 +57,15 @@ wheels = [
 ]
 
 [[package]]
+name = "bracex"
+version = "2.6"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/63/9a/fec38644694abfaaeca2798b58e276a8e61de49e2e37494ace423395febc/bracex-2.6.tar.gz", hash = "sha256:98f1347cd77e22ee8d967a30ad4e310b233f7754dbf31ff3fceb76145ba47dc7", size = 26642, upload-time = "2025-06-22T19:12:31.254Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/9d/2a/9186535ce58db529927f6cf5990a849aa9e052eea3e2cfefe20b9e1802da/bracex-2.6-py3-none-any.whl", hash = "sha256:0b0049264e7340b3ec782b5cb99beb325f36c3782a32e36e876452fd49a09952", size = 11508, upload-time = "2025-06-22T19:12:29.781Z" },
+]
+
+[[package]]
 name = "cachetools"
 version = "7.0.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1079,6 +1088,19 @@ wheels = [
 ]
 
 [[package]]
+name = "st-file-browser"
+version = "0.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+    { name = "wcmatch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c0/99/21f7ffa5336ee11e34ced6c3db844ab8d3d3f48804b220c230e2ede26291/st-file-browser-0.1.1.tar.gz", hash = "sha256:8ebbff97e95347a4fdffef4e45eda1492d9583ac7303d7b5a63259a2233916cc", size = 1341912, upload-time = "2023-09-13T15:54:16.53Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0e/b1/61aebb087078ad746f007d82347f27859b61e2f0daef66d77202d0fa182d/st_file_browser-0.1.1-py3-none-any.whl", hash = "sha256:f44b2c889123e210fdbda4103acc28770617ae1522ce7563b67550544b85d395", size = 1349634, upload-time = "2023-09-13T15:54:14.178Z" },
+]
+
+[[package]]
 name = "streamlit"
 version = "1.55.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1265,6 +1287,18 @@ wheels = [
 ]
 
 [[package]]
+name = "wcmatch"
+version = "10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "bracex" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/79/3e/c0bdc27cf06f4e47680bd5803a07cb3dfd17de84cde92dd217dcb9e05253/wcmatch-10.1.tar.gz", hash = "sha256:f11f94208c8c8484a16f4f48638a85d771d9513f4ab3f37595978801cb9465af", size = 117421, upload-time = "2025-06-22T19:14:02.49Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/eb/d8/0d1d2e9d3fabcf5d6840362adcf05f8cf3cd06a73358140c3a97189238ae/wcmatch-10.1-py3-none-any.whl", hash = "sha256:5848ace7dbb0476e5e55ab63c6bbd529745089343427caa5537f230cc01beb8a", size = 39854, upload-time = "2025-06-22T19:14:00.978Z" },
+]
+
+[[package]]
 name = "wherewolf"
 version = "0.1.0"
 source = { editable = "." }
@@ -1276,6 +1310,7 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pyspark" },
     { name = "sqlglot" },
+    { name = "st-file-browser" },
     { name = "streamlit" },
     { name = "streamlit-ace" },
 ]
@@ -1295,6 +1330,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=23.0.1" },
     { name = "pyspark", specifier = ">=4.1.1" },
     { name = "sqlglot", specifier = ">=29.0.1" },
+    { name = "st-file-browser", specifier = ">=0.1.1" },
     { name = "streamlit", specifier = ">=1.55.0" },
     { name = "streamlit-ace", specifier = ">=0.1.1" },
 ]
