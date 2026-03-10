@@ -16,9 +16,14 @@ st.set_page_config(
 # Hide Streamlit options (hamburger menu and footer)
 hide_st_style = """
             <style>
+            /* Hide the Streamlit main menu (hamburger) */
             #MainMenu {visibility: hidden;}
+            /* Hide the "Made with Streamlit" footer */
             footer {visibility: hidden;}
-            header {visibility: hidden;}
+            /* 
+               We do NOT hide 'header' entirely because it contains 
+               the sidebar toggle button when collapsed.
+            */
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
