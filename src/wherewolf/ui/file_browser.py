@@ -17,7 +17,7 @@ class FileBrowser:
         Returns:
             The selected file path if one was clicked, else None.
         """
-        # Custom CSS for compact file explorer buttons
+        # Custom CSS for compact, left-aligned file explorer buttons
         st.markdown(
             """
             <style>
@@ -29,6 +29,9 @@ class FileBrowser:
                 font-size: 12px !important;
                 padding: 2px 10px !important;
                 height: 28px !important;
+                justify-content: flex-start !important;
+                text-align: left !important;
+                width: 100% !important;
             }
             </style>
             """,
