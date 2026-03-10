@@ -49,7 +49,9 @@ class FileBrowser:
                 # Use a dynamic key to force the component to re-render when the path changes
                 key=f"st_file_browser_{current_path}",
                 show_choose_file=True,
-                glob_patterns=("**/*",) if show_hidden else ("**/[!.]*",),
+                # Using flat glob '*' instead of '**/*' to prevent the library from
+                # walking the entire tree and crashing on broken symlinks in subfolders.
+                glob_patterns=("*",) if show_hidden else ("[!.]*",),
             )
         except Exception as e:
             st.error(
