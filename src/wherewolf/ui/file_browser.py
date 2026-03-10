@@ -37,7 +37,8 @@ class FileBrowser:
 
         event = st_file_browser(
             str(current_path),
-            key="st_file_browser_v2",
+            # Use a dynamic key to force the component to re-render when the path changes
+            key=f"st_file_browser_{current_path}",
             show_choose_file=True,
             glob_patterns=("**/*",) if show_hidden else ("**/[!.]*",),
         )
