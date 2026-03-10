@@ -54,7 +54,8 @@ with st.sidebar:
     st.title("🐺 Wherewolf")
 
     # 1. BROWSE LOGIC
-    with st.expander("📁 Browse Local Files"):
+    # The browser is now the primary path selection tool.
+    with st.expander("📁 Browse Local Files", expanded=True):
         show_hidden = st.checkbox("Show Hidden Files", value=False)
         selected_path = FileBrowser.render_explorer(show_hidden=show_hidden)
         if selected_path:
@@ -62,15 +63,14 @@ with st.sidebar:
             st.session_state.pending_path = selected_path
             st.rerun()
 
-    # 2. PATH DISPLAY
-    st.text_area(
-        "Dataset Path (local)",
-        placeholder="/path/to/data.parquet",
-        key="path_input",
-        height=70,
-    )
+    # Display the active path clearly in the sidebar
+    if st.session_state.path_input:
+        st.info(f"📄 Active: `{st.session_state.path_input}`")
+    else:
+        st.warning("⚠️ No dataset loaded.")
 
     engine_name = st.selectbox("Execution Engine", ["DuckDB", "Spark"])
+
     preview_limit = st.slider("Preview Size", 10, 1000, 100)
     export_format = st.selectbox("Export Format", ["CSV", "Excel", "Parquet"])
 
