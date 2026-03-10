@@ -207,9 +207,15 @@ if st.session_state.query_result:
             mime = "application/octet-stream"
             ext = ".parquet"
 
-        st.download_button(
-            label=export_label, data=data, file_name=f"wherewolf_export{ext}", mime=mime
-        )
+        # Derive original filename for the export
+        import os
+
+        orig_filename = os.path.basename(st.session_state.path_input)
+        # Strip extension from original if present
+        base_name = os.path.splitext(orig_filename)[0] or "wherewolf"
+        download_name = f"{base_name}_export{ext}"
+
+        st.download_button(label=export_label, data=data, file_name=download_name, mime=mime)
 
     else:
         st.error("Query Failed")
