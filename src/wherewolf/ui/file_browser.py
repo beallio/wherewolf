@@ -20,17 +20,23 @@ class FileBrowser:
         if "explorer_path" not in st.session_state:
             st.session_state.explorer_path = str(Path.cwd())
 
-        current_path = st.session_state.explorer_path
+        current_path = Path(st.session_state.explorer_path)
+
+        # Re-add navigation buttons for upward movement
+        st.write(f"📂 `{current_path}`")
+        col_up, col_home = st.columns(2)
+        if col_up.button("⬆️ Up", key="st_fb_up", use_container_width=True):
+            st.session_state.explorer_path = str(current_path.parent)
+            st.rerun()
+        if col_home.button("🏠 Home", key="st_fb_home", use_container_width=True):
+            st.session_state.explorer_path = str(Path.home())
+            st.rerun()
 
         # Supported data file extensions
         valid_exts = [".csv", ".parquet", ".json"]
 
-        # Build glob patterns based on supported extensions
-        # If we wanted to filter specifically: glob_patterns=[f"**/*{ext}" for ext in valid_exts]
-        # But for now we'll allow browsing everything and just handle selection
-
         event = st_file_browser(
-            current_path,
+            str(current_path),
             key="st_file_browser_v2",
             show_choose_file=True,
             glob_patterns=("**/*",) if show_hidden else ("**/[!.]*",),
@@ -39,10 +45,9 @@ class FileBrowser:
         if event:
             if event["type"] == "SELECT_FILE":
                 selected_item = event["target"]
-                # item['path'] is usually relative to the root 'current_path'
-                full_path = Path(current_path) / selected_item["path"]
+                # item['path'] is relative to the root provided
+                full_path = current_path / selected_item["path"]
 
-                # Check if it's one of our supported formats before returning
                 if full_path.suffix.lower() in valid_exts:
                     return str(full_path)
                 else:
