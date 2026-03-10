@@ -10,31 +10,23 @@ class FileBrowser:
     @staticmethod
     def _update_dir(key: str):
         """Callback to update the current directory based on selection."""
+        # Use session_state directly to avoid stale variable issues
         choice = st.session_state[key]
         curr_dir_key = f"{key}_curr_dir"
-        files_key = f"{key}_files"
 
         curr_dir = st.session_state[curr_dir_key]
 
-        # Determine the new directory path
+        # Resolve the new path
         if choice == "..":
-            new_path = os.path.normpath(os.path.join(curr_dir, ".."))
+            new_path = os.path.dirname(curr_dir)
         else:
-            new_path = os.path.normpath(os.path.join(curr_dir, choice))
+            new_path = os.path.join(curr_dir, choice)
+
+        new_path = os.path.normpath(new_path)
 
         # Only update if the selection is actually a directory
         if os.path.isdir(new_path):
             st.session_state[curr_dir_key] = new_path
-            # Reset the selectbox to a neutral index if possible or just let it stay
-            # The next pass will rebuild the files list
-            try:
-                # Re-fetch items for the new directory
-                raw_items = sorted(os.listdir(new_path))
-                # We'll filter hidden files in render_explorer to stay in sync with toggle
-                files = [".."] + raw_items
-                st.session_state[files_key] = files
-            except Exception as e:
-                st.error(f"Error reading directory: {e}")
 
     @staticmethod
     def render_explorer(show_hidden: bool = False) -> Optional[str]:
@@ -65,26 +57,29 @@ class FileBrowser:
 
             # Remove '..' if we are at root
             if current_path == os.path.abspath(os.sep):
-                files = raw_items
+                files = ["Select file/folder..."] + raw_items
             else:
-                files = [".."] + raw_items
+                files = ["Select file/folder...", ".."] + raw_items
 
             st.session_state[files_key] = files
         except Exception as e:
             st.error(f"Error reading directory {current_path}: {e}")
-            st.session_state[files_key] = [".."]
+            st.session_state[files_key] = ["Select file/folder...", ".."]
 
         # --- UI Navigation ---
         st.write(f"📂 `{current_path}`")
 
-        # We find the current index of the selection to avoid issues on rerun
         selected_file = st.selectbox(
             label="Select file or directory",
             options=st.session_state[files_key],
             key=key,
             on_change=lambda: FileBrowser._update_dir(key),
             help="Select a directory to enter it, or a file to load it.",
+            index=0,  # Always reset to placeholder after a change triggers rerun
         )
+
+        if selected_file == "Select file/folder...":
+            return None
 
         full_path = os.path.normpath(os.path.join(current_path, selected_file))
 
