@@ -231,17 +231,21 @@ if st.session_state.query_result:
         with col_t1:
             st.subheader("SQL Translation")
         with col_t2:
-            # Determine available target options
-            base_target = "Spark" if engine_name == "DuckDB" else "DuckDB"
-            target_options = [base_target, "Azure SQL"]
+            # All available dialects
+            all_dialects_map = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
+            executed_input_key = st.session_state.executed_input_dialect_key
+
+            # Determine target options: everything except the input dialect
+            target_options = [
+                ui_name for ui_name, key in all_dialects_map.items() if key != executed_input_key
+            ]
 
             selected_target_ui = st.selectbox(
                 "Target Dialect", options=target_options, label_visibility="collapsed"
             )
 
             # Map UI selection to SQLGlot dialect identifiers
-            dialect_mapping = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
-            target_dialect = dialect_mapping[selected_target_ui]
+            target_dialect = all_dialects_map[selected_target_ui]
 
         try:
             translated_sql = translator.translate(

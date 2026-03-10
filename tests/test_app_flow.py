@@ -39,3 +39,29 @@ def test_app_clear_history():
     # Search ALL sidebar markdown elements for the empty history message
     all_sidebar_text = " ".join([m.value for m in at.sidebar.markdown])
     assert "No history yet." in all_sidebar_text
+
+
+def test_translation_target_options():
+    """Verify that translation targets exclude the input dialect."""
+    at = AppTest.from_file("src/wherewolf/app.py")
+    at.run()
+
+    # Simulate a successful execution with DuckDB as input
+    at.session_state.path_input = "/tmp/fake.csv"
+    at.session_state.input_dialect_ui = "DuckDB"
+    # We need a query result to show the translation section
+    from wherewolf.execution import QueryResult
+    import pandas as pd
+
+    at.session_state.query_result = QueryResult(df=pd.DataFrame({"a": [1]}), success=True)
+    at.session_state.executed_input_dialect_key = "duckdb"
+    at.run()
+
+    # Find the Target Dialect selectbox
+    # It's the one in the translation section (after the sidebar ones)
+    target_selectbox = next(s for s in at.selectbox if s.label == "Target Dialect")
+
+    # Should contain Spark and Azure SQL, but NOT DuckDB
+    assert "DuckDB" not in target_selectbox.options
+    assert "Spark" in target_selectbox.options
+    assert "Azure SQL" in target_selectbox.options
