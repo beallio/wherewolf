@@ -9,7 +9,7 @@ class FileBrowser:
 
     @staticmethod
     def render_explorer(show_hidden: bool = False) -> Optional[str]:
-        """Renders the st-file-browser component.
+        """Renders the st-file-browser component with error handling.
 
         Args:
             show_hidden: Whether to show hidden files.
@@ -21,6 +21,14 @@ class FileBrowser:
             st.session_state.explorer_path = str(Path.cwd())
 
         current_path = Path(st.session_state.explorer_path)
+
+        # Pre-emptive check: If path doesn't exist, reset to CWD
+        if not current_path.exists() or not current_path.is_dir():
+            st.error(f"❌ Path invalid or inaccessible: `{current_path}`")
+            if st.button("🔄 Reset to Current Directory"):
+                st.session_state.explorer_path = str(Path.cwd())
+                st.rerun()
+            return None
 
         # Re-add navigation buttons for upward movement
         st.write(f"📂 `{current_path}`")
@@ -35,13 +43,24 @@ class FileBrowser:
         # Supported data file extensions
         valid_exts = [".csv", ".parquet", ".json"]
 
-        event = st_file_browser(
-            str(current_path),
-            # Use a dynamic key to force the component to re-render when the path changes
-            key=f"st_file_browser_{current_path}",
-            show_choose_file=True,
-            glob_patterns=("**/*",) if show_hidden else ("**/[!.]*",),
-        )
+        try:
+            event = st_file_browser(
+                str(current_path),
+                # Use a dynamic key to force the component to re-render when the path changes
+                key=f"st_file_browser_{current_path}",
+                show_choose_file=True,
+                glob_patterns=("**/*",) if show_hidden else ("**/[!.]*",),
+            )
+        except Exception as e:
+            st.error(
+                f"⚠️ Error browsing `{current_path.name}`: Broken links or permission issues detected."
+            )
+            with st.expander("Technical Details"):
+                st.code(str(e))
+            if st.button("📂 Go Back"):
+                st.session_state.explorer_path = str(current_path.parent)
+                st.rerun()
+            return None
 
         if event:
             if event["type"] == "SELECT_FILE":
