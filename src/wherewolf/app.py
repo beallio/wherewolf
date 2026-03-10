@@ -41,6 +41,12 @@ if "history" not in st.session_state:
     st.session_state.history = []
 if "selected_query" not in st.session_state:
     st.session_state.selected_query = "SELECT * FROM dataset LIMIT 10"
+if "executed_input_dialect_key" not in st.session_state:
+    st.session_state.executed_input_dialect_key = "duckdb"
+if "last_engine_name" not in st.session_state:
+    st.session_state.last_engine_name = "DuckDB"
+if "input_dialect_ui" not in st.session_state:
+    st.session_state.input_dialect_ui = "DuckDB"
 
 # --- Early State Update Pattern ---
 # This avoids StreamlitAPIException by updating state BEFORE widgets are instantiated.
@@ -77,6 +83,12 @@ with st.sidebar:
         st.warning("⚠️ No dataset loaded.")
 
     engine_name = st.selectbox("Execution Engine", ["DuckDB", "Spark"])
+
+    # Auto-align input dialect if engine changes
+    if st.session_state.last_engine_name != engine_name:
+        st.session_state.input_dialect_ui = engine_name
+        st.session_state.last_engine_name = engine_name
+
     preview_limit = st.slider("Preview Size", 10, 1000, 100)
     export_format = st.selectbox("Export Format", ["CSV", "Excel", "Parquet"])
 
@@ -134,7 +146,13 @@ with st.sidebar:
     )
 
 # --- Main Area ---
-st.header("SQL Editor")
+col_h1, col_h2 = st.columns([0.7, 0.3])
+with col_h1:
+    st.header("SQL Editor")
+with col_h2:
+    input_dialect_ui = st.selectbox(
+        "Input Dialect", options=["DuckDB", "Spark", "Azure SQL"], key="input_dialect_ui"
+    )
 
 # Use st_ace for syntax highlighting
 query_text = st_ace(
@@ -162,13 +180,42 @@ if run_button and st.session_state.path_input:
     else:
         engine = SparkEngine()
 
-    with st.spinner(f"Running query on {engine_name}..."):
-        result = engine.execute(query_text, st.session_state.path_input, limit=preview_limit)
-        st.session_state.query_result = result
-        st.session_state.selected_query = query_text
+    # Map dialects
+    dialect_mapping = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
+    input_dialect_key = dialect_mapping[input_dialect_ui]
+    engine_dialect_key = dialect_mapping[engine_name]
 
-        if result.success:
-            history_manager.add_entry(engine_name.lower(), query_text, st.session_state.path_input)
+    # Save the executed input dialect so the Translation section knows where to translate from
+    st.session_state.executed_input_dialect_key = input_dialect_key
+
+    query_to_run = query_text
+    translation_error = None
+
+    # Translate query if the input dialect is different from the execution engine
+    if input_dialect_key != engine_dialect_key:
+        try:
+            query_to_run = translator.translate(
+                query_text, from_dialect=input_dialect_key, to_dialect=engine_dialect_key
+            )
+        except Exception as e:
+            translation_error = str(e)
+
+    if translation_error:
+        st.session_state.query_result = QueryResult(
+            success=False,
+            error_message=f"Failed to translate input query from {input_dialect_ui} to {engine_name}:\n{translation_error}",
+        )
+        st.session_state.selected_query = query_text
+    else:
+        with st.spinner(f"Running query on {engine_name}..."):
+            result = engine.execute(query_to_run, st.session_state.path_input, limit=preview_limit)
+            st.session_state.query_result = result
+            st.session_state.selected_query = query_text
+
+            if result.success:
+                history_manager.add_entry(
+                    engine_name.lower(), query_text, st.session_state.path_input
+                )
 
     st.session_state.is_running = False
     st.rerun()
@@ -198,7 +245,9 @@ if st.session_state.query_result:
 
         try:
             translated_sql = translator.translate(
-                query_text, from_dialect=engine_name.lower(), to_dialect=target_dialect
+                query_text,
+                from_dialect=st.session_state.executed_input_dialect_key,
+                to_dialect=target_dialect,
             )
             with st.expander(f"✨ Translated SQL ({selected_target_ui})", expanded=True):
                 st.code(translated_sql, language="sql")
