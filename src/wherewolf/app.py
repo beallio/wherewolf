@@ -233,11 +233,13 @@ if st.session_state.query_result:
         with col_t2:
             # All available dialects
             all_dialects_map = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
-            executed_input_key = st.session_state.executed_input_dialect_key
 
-            # Determine target options: everything except the input dialect
+            # Map CURRENT UI selection to key for live translation logic
+            current_input_key = all_dialects_map[input_dialect_ui]
+
+            # Determine target options: everything except the CURRENT input dialect
             target_options = [
-                ui_name for ui_name, key in all_dialects_map.items() if key != executed_input_key
+                ui_name for ui_name, key in all_dialects_map.items() if key != current_input_key
             ]
 
             selected_target_ui = st.selectbox(
@@ -248,9 +250,10 @@ if st.session_state.query_result:
             target_dialect = all_dialects_map[selected_target_ui]
 
         try:
+            # Translate from the CURRENTLY SELECTED input dialect, not just the last executed one
             translated_sql = translator.translate(
                 query_text,
-                from_dialect=st.session_state.executed_input_dialect_key,
+                from_dialect=current_input_key,
                 to_dialect=target_dialect,
             )
             with st.expander(f"✨ Translated SQL ({selected_target_ui})", expanded=True):
