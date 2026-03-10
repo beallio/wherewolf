@@ -20,6 +20,10 @@ hide_st_style = """
             #MainMenu {visibility: hidden;}
             /* Hide the "Made with Streamlit" footer */
             footer {visibility: hidden;}
+            /* Hide the Deploy button */
+            .stAppDeployButton {display: none;}
+            /* Hide the toolbar (top right) */
+            [data-testid="stToolbar"] {visibility: hidden !important;}
             /* 
                We do NOT hide 'header' entirely because it contains 
                the sidebar toggle button when collapsed.
