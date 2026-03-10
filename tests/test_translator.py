@@ -21,6 +21,16 @@ def test_translate_spark_to_duckdb():
     assert "LIMIT 10" in duckdb_sql.upper()
 
 
+def test_translate_to_tsql():
+    translator = Translator()
+    duckdb_sql = "SELECT * FROM dataset LIMIT 10"
+    # T-SQL uses TOP for limits
+    tsql_sql = translator.translate(duckdb_sql, from_dialect="duckdb", to_dialect="tsql")
+
+    assert "SELECT" in tsql_sql.upper()
+    assert "TOP 10" in tsql_sql.upper()
+
+
 def test_invalid_dialect():
     translator = Translator()
     with pytest.raises(ValueError):

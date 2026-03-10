@@ -70,3 +70,12 @@ def test_duckdb_execution_of_translated_sql(translator, csv_path):
     assert result.success is True
     assert result.row_count > 0
     assert "grade" in result.df.columns
+
+
+def test_translation_to_tsql_integration(translator):
+    """Verify translation of complex queries to Azure SQL (T-SQL)."""
+    duck_sql = "SELECT LEFT(full_name, 5) as short_name FROM dataset"
+    tsql_sql = translator.translate(duck_sql, from_dialect="duckdb", to_dialect="tsql")
+
+    assert "LEFT" in tsql_sql.upper()
+    assert "SHORT_NAME" in tsql_sql.upper()

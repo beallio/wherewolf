@@ -77,7 +77,6 @@ with st.sidebar:
         st.warning("⚠️ No dataset loaded.")
 
     engine_name = st.selectbox("Execution Engine", ["DuckDB", "Spark"])
-
     preview_limit = st.slider("Preview Size", 10, 1000, 100)
     export_format = st.selectbox("Export Format", ["CSV", "Excel", "Parquet"])
 
@@ -179,12 +178,29 @@ if st.session_state.query_result:
     result: QueryResult = st.session_state.query_result
 
     if result.success:
-        target_dialect = "spark" if engine_name == "DuckDB" else "duckdb"
+        # --- Translation Section ---
+        st.divider()
+        col_t1, col_t2 = st.columns([0.7, 0.3])
+        with col_t1:
+            st.subheader("SQL Translation")
+        with col_t2:
+            # Determine available target options
+            base_target = "Spark" if engine_name == "DuckDB" else "DuckDB"
+            target_options = [base_target, "Azure SQL"]
+
+            selected_target_ui = st.selectbox(
+                "Target Dialect", options=target_options, label_visibility="collapsed"
+            )
+
+            # Map UI selection to SQLGlot dialect identifiers
+            dialect_mapping = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
+            target_dialect = dialect_mapping[selected_target_ui]
+
         try:
             translated_sql = translator.translate(
                 query_text, from_dialect=engine_name.lower(), to_dialect=target_dialect
             )
-            with st.expander(f"✨ Translated SQL ({target_dialect.capitalize()})", expanded=True):
+            with st.expander(f"✨ Translated SQL ({selected_target_ui})", expanded=True):
                 st.code(translated_sql, language="sql")
         except Exception as e:
             st.warning(f"Translation failed: {str(e)}")

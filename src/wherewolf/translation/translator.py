@@ -4,7 +4,7 @@ import sqlglot
 class Translator:
     """Handles SQL dialect translation between DuckDB and SparkSQL."""
 
-    VALID_DIALECTS = {"duckdb", "spark"}
+    VALID_DIALECTS = {"duckdb", "spark", "tsql"}
 
     def translate(self, query: str, from_dialect: str, to_dialect: str) -> str:
         """Translates a SQL query from one dialect to another.
