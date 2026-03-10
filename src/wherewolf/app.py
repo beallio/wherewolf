@@ -35,6 +35,16 @@ if "history" not in st.session_state:
 if "selected_query" not in st.session_state:
     st.session_state.selected_query = "SELECT * FROM dataset LIMIT 10"
 
+# --- Early State Update Pattern ---
+# This avoids StreamlitAPIException by updating state BEFORE widgets are instantiated.
+if "pending_path" in st.session_state:
+    st.session_state.path_input = st.session_state.pending_path
+    del st.session_state.pending_path
+
+if "pending_query" in st.session_state:
+    st.session_state.selected_query = st.session_state.pending_query
+    del st.session_state.pending_query
+
 # --- Instances ---
 history_manager = HistoryManager()
 translator = Translator()
@@ -48,10 +58,11 @@ with st.sidebar:
         show_hidden = st.checkbox("Show Hidden Files", value=False)
         selected_path = FileBrowser.render_explorer(show_hidden=show_hidden)
         if selected_path:
-            st.session_state.path_input = selected_path
+            # Set PENDING path and rerun
+            st.session_state.pending_path = selected_path
             st.rerun()
 
-    # 2. PATH DISPLAY (Using text_area to show full path without truncation)
+    # 2. PATH DISPLAY
     st.text_area(
         "Dataset Path (local)",
         placeholder="/path/to/data.parquet",
@@ -71,8 +82,9 @@ with st.sidebar:
         selected_history = st.selectbox("Select from History", ["Select..."] + history_labels)
         if selected_history != "Select...":
             idx = history_labels.index(selected_history)
-            st.session_state.selected_query = history[idx]["query"]
-            st.session_state.path_input = history[idx]["path"]
+            # Use PENDING state to avoid instantiation errors
+            st.session_state.pending_query = history[idx]["query"]
+            st.session_state.pending_path = history[idx]["path"]
             st.rerun()
     else:
         st.write("No history yet.")
