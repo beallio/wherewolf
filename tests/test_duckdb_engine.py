@@ -1,10 +1,14 @@
+import pandas as pd
 import pytest
 from wherewolf.execution import DuckDBEngine, SparkEngine
 
 
 @pytest.fixture
-def csv_path():
-    return "/tmp/wherewolf/test.csv"
+def csv_path(tmp_path):
+    path = tmp_path / "test.csv"
+    df = pd.DataFrame({"name": ["alice", "bob", "charlie"], "value": [100, 200, 300]})
+    df.to_csv(path, index=False)
+    return str(path)
 
 
 def test_duckdb_engine_success(csv_path):

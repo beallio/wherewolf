@@ -47,6 +47,32 @@ ruff check . --fix
 ruff format .
 ```
 
+For information on how to release new versions, see [RELEASING.md](docs/RELEASING.md).
+
+## Dependencies
+-   `streamlit`
+-   `duckdb`
+-   `pyspark`
+-   `ibis-framework`
+-   `sqlglot`
+-   `pandas`
+-   `pyarrow`
+-   `openpyxl`
+SQL if needed.
+
+## Development
+
+Run tests:
+```bash
+uv run pytest
+```
+
+Lint/Format:
+```bash
+ruff check . --fix
+ruff format .
+```
+
 ## Dependencies
 -   `streamlit`
 -   `duckdb`
