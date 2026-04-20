@@ -25,7 +25,7 @@ jobs:
           ./run.sh uv run ruff check .
           ./run.sh uv run ruff format --check .
       - name: Type check with ty
-        run: ./run.sh uv run ty check .
+        run: ./run.sh uv run ty check . --python /tmp/wherewolf/.venv/bin/python
 
   test:
     runs-on: ubuntu-latest

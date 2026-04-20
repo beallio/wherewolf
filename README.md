@@ -14,6 +14,8 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 - **Export:** Download query results as CSV, Excel, or Parquet.
 - **Execution Metrics:** Tracks row count and execution time.
 
+![Wherewolf Screenshot](src/wherewolf/assets/img/screenshot.png)
+
 ## Installation
 
 Ensure you have [uv](https://github.com/astral-sh/uv) installed.
