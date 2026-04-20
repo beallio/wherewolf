@@ -18,10 +18,14 @@ jobs:
           cache-dependency-glob: "uv.lock"
       - name: Set up Python
         run: uv python install 3.12
+      - name: Install dependencies
+        run: ./run.sh uv sync --all-extras --dev
       - name: Lint with ruff
         run: |
           ./run.sh uv run ruff check .
           ./run.sh uv run ruff format --check .
+      - name: Type check with ty
+        run: ./run.sh uv run ty check .
 
   test:
     runs-on: ubuntu-latest
