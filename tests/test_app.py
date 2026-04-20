@@ -8,6 +8,6 @@ def test_app_initialization():
     at.run()
 
     # Assert basic UI elements exist
-    assert at.sidebar.title[0].value == "🐺 Wherewolf"
+    assert at.sidebar.title[0].value == "Wherewolf"
     assert at.header[0].value == "SQL Editor"
     assert not at.exception

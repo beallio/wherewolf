@@ -1,4 +1,6 @@
-# Wherewolf 🐺
+# Wherewolf
+
+![Wherewolf Banner](src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=1)
 
 [![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=1)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=1)](https://pypi.org/project/wherewolf/)

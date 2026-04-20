@@ -64,7 +64,8 @@ translator = Translator()
 
 # --- Sidebar ---
 with st.sidebar:
-    st.title("🐺 Wherewolf")
+    st.image("src/wherewolf/assets/img/wherewolf_banner.png", width="stretch")
+    st.title("Wherewolf")
 
     # 1. BROWSE LOGIC
     # The browser is now the primary path selection tool.

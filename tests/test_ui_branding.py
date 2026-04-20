@@ -7,7 +7,7 @@ def test_sidebar_is_visible_by_default():
     at.run()
 
     # Check sidebar state - in AppTest, we can check if it has elements
-    assert at.sidebar.title[0].value == "🐺 Wherewolf"
+    assert at.sidebar.title[0].value == "Wherewolf"
 
 
 def test_branding_css_present():
