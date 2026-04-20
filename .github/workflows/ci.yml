@@ -20,8 +20,8 @@ jobs:
         run: uv python install 3.12
       - name: Lint with ruff
         run: |
-          uv run ruff check .
-          uv run ruff format --check .
+          ./run.sh uv run ruff check .
+          ./run.sh uv run ruff format --check .
 
   test:
     runs-on: ubuntu-latest
@@ -38,6 +38,6 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: ./run.sh uv sync --all-extras --dev
       - name: Run tests
-        run: uv run pytest
+        run: ./run.sh uv run pytest
