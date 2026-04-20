@@ -1,8 +1,8 @@
 # Wherewolf 🐺
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg)](https://pypi.org/project/wherewolf/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=1)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=1)](https://pypi.org/project/wherewolf/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?cacheBuster=1)](https://opensource.org/licenses/MIT)
 
 A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
 
