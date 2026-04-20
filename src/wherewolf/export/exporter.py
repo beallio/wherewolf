@@ -14,7 +14,7 @@ class Exporter:
     def to_excel(df: pd.DataFrame) -> bytes:
         """Converts DataFrame to Excel bytes."""
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:  # type: ignore
             df.to_excel(writer, index=False)
         return output.getvalue()
 

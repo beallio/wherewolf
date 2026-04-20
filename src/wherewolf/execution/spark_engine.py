@@ -75,4 +75,6 @@ class SparkEngine:
         """Interrupts current Spark job."""
         if self.spark:
             # Spark context interrupt
-            self.spark.sparkContext.cancelAllJobs()
+            sc = getattr(self.spark, "sparkContext", None)
+            if sc:
+                sc.cancelAllJobs()

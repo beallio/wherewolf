@@ -36,7 +36,8 @@ class DuckDBEngine:
 
             # 3. Get total row count (might be expensive for large datasets,
             # but usually okay for local DuckDB)
-            row_count = rel.count("*").fetchone()[0]
+            res = rel.count("*").fetchone()
+            row_count = int(res[0]) if res else 0
 
             # 4. Fetch the preview DataFrame
             df = rel.limit(limit).df()

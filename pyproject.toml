@@ -39,4 +39,5 @@ data_file = "/tmp/wherewolf/.coverage"
 dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
+    "ty>=0.0.31",
 ]
