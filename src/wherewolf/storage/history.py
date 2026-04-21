@@ -28,6 +28,9 @@ class HistoryManager:
             query: The SQL query string.
             path: The dataset path used.
         """
+        import os
+        import tempfile
+
         history = self.get_all()
         entry = {
             "timestamp": datetime.now().isoformat(),
@@ -40,8 +43,16 @@ class HistoryManager:
         # Limit history to 100 entries
         history = history[:100]
 
-        with open(self.storage_path, "w") as f:
-            json.dump(history, f, indent=2)
+        # Atomic write using a temporary file
+        temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path.parent, text=True)
+        try:
+            with os.fdopen(temp_fd, "w") as f:
+                json.dump(history, f, indent=2)
+            os.replace(temp_path, self.storage_path)
+        except Exception:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
 
     def get_all(self) -> List[Dict]:
         """Returns all history entries.
@@ -55,9 +66,21 @@ class HistoryManager:
             with open(self.storage_path, "r") as f:
                 return json.load(f)
         except (json.JSONDecodeError, IOError):
+            # If corrupted, we might want to be more careful, but for now returning empty
+            # is what the previous implementation did.
             return []
 
     def clear(self):
         """Clears the query history."""
-        with open(self.storage_path, "w") as f:
-            json.dump([], f)
+        import os
+        import tempfile
+
+        temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path.parent, text=True)
+        try:
+            with os.fdopen(temp_fd, "w") as f:
+                json.dump([], f)
+            os.replace(temp_path, self.storage_path)
+        except Exception:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
