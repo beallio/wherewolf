@@ -24,6 +24,9 @@ hide_st_style = """
             footer {visibility: hidden;}
             /* Hide the Deploy button specifically */
             .stAppDeployButton {display: none;}
+
+            /* Hide the toolbar (running indicator, etc) */
+            [data-testid="stAppToolbar"] {display: none;}
             
             /* Darken the sidebar */
             [data-testid="stSidebar"] {
