@@ -1,0 +1,22 @@
+{
+  "date": "2026-04-21",
+  "task_objective": "Implement Schema & Metadata HUD",
+  "files_modified": [
+    "src/wherewolf/execution/duckdb_engine.py",
+    "src/wherewolf/execution/spark_engine.py",
+    "src/wherewolf/app.py",
+    "tests/test_duckdb_engine.py",
+    "tests/test_spark_engine.py"
+  ],
+  "tests_added": [
+    "tests/test_duckdb_engine.py:test_duckdb_get_schema",
+    "tests/test_spark_engine.py:test_spark_get_schema"
+  ],
+  "design_decisions": [
+    "Extracted _register_view in engines for reusability.",
+    "Added get_schema method to engines returning a normalized pd.DataFrame.",
+    "Integrated schema HUD into Streamlit sidebar with automatic refreshing.",
+    "Used dict-based DataFrame initialization to satisfy strict 'ty' type checks."
+  ],
+  "results": "Successfully implemented and verified Schema HUD for both DuckDB and Spark engines. All tests and type checks pass."
+}

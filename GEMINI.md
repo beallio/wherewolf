@@ -475,3 +475,6 @@ If execution fails:
 5. Re-run validation suite
 
 Blind retries are forbidden.
+
+## Gemini Added Memories
+- When creating a new release tag for this project, I MUST always increment the cacheBuster parameter in all URLs within the README.md (e.g., badges, banners, screenshots) to ensure GitHub Camo refreshes the images immediately.

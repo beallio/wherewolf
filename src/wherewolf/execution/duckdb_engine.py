@@ -1,5 +1,6 @@
 import duckdb
 import time
+import pandas as pd
 from .models import QueryResult
 
 
@@ -8,6 +9,43 @@ class DuckDBEngine:
 
     def __init__(self):
         self.con = duckdb.connect(database=":memory:")
+
+    def _register_view(self, path: str):
+        """Registers the dataset as a view named 'dataset'."""
+        from pathlib import Path
+
+        abs_path = Path(path).expanduser().resolve()
+        suffix = abs_path.suffix.lower()
+        if suffix == ".csv":
+            rel_source = self.con.from_csv_auto(str(abs_path))
+        elif suffix == ".parquet":
+            rel_source = self.con.from_parquet(str(abs_path))
+        elif suffix == ".json":
+            rel_source = self.con.sql("SELECT * FROM read_json_auto(?)", params=[str(abs_path)])
+        elif suffix in [".xlsx", ".xls"]:
+            self.con.execute("INSTALL excel; LOAD excel;")
+            rel_source = self.con.sql("SELECT * FROM read_xlsx(?)", params=[str(abs_path)])
+        else:
+            rel_source = self.con.from_csv_auto(str(abs_path))
+
+        rel_source.create_view("dataset", replace=True)
+
+    def get_schema(self, path: str) -> pd.DataFrame:
+        """Returns the schema of the dataset.
+
+        Returns:
+            A DataFrame with 'Column' and 'Type' columns.
+        """
+        try:
+            self._register_view(path)
+            # DESCRIBE dataset returns: column_name, column_type, null, key, default, extra
+            df = self.con.sql("DESCRIBE dataset").df()
+            # Normalize to Column/Type
+            return df[["column_name", "column_type"]].rename(
+                columns={"column_name": "Column", "column_type": "Type"}
+            )
+        except Exception:
+            return pd.DataFrame({"Column": [], "Type": []})
 
     def execute(self, query: str, path: str, limit: int = 1000) -> QueryResult:
         """Executes a SQL query against a local file using DuckDB.
@@ -20,31 +58,10 @@ class DuckDBEngine:
         Returns:
             A QueryResult object.
         """
-        from pathlib import Path
-
-        abs_path = Path(path).expanduser().resolve()
         start_time = time.time()
         try:
             # 1. Register the dataset view
-            # DuckDB automatically detects CSV, Parquet, JSON based on extension or content
-            # Using Relation API to safely handle paths with special characters
-            suffix = abs_path.suffix.lower()
-            if suffix == ".csv":
-                rel_source = self.con.from_csv_auto(str(abs_path))
-            elif suffix == ".parquet":
-                rel_source = self.con.from_parquet(str(abs_path))
-            elif suffix == ".json":
-                # Use SQL with read_json_auto to avoid ty check warning about missing attribute
-                rel_source = self.con.sql("SELECT * FROM read_json_auto(?)", params=[str(abs_path)])
-            elif suffix in [".xlsx", ".xls"]:
-                # Official DuckDB excel extension
-                self.con.execute("INSTALL excel; LOAD excel;")
-                rel_source = self.con.sql("SELECT * FROM read_xlsx(?)", params=[str(abs_path)])
-            else:
-                # Fallback to auto-detection
-                rel_source = self.con.from_csv_auto(str(abs_path))
-
-            rel_source.create_view("dataset", replace=True)
+            self._register_view(path)
 
             # 2. Execute the user query
             # We wrap the user query to handle limits for the preview

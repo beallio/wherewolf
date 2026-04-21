@@ -34,6 +34,17 @@ def test_duckdb_engine_failure(csv_path):
     assert result.error_message != ""
 
 
+def test_duckdb_get_schema(csv_path):
+    engine = DuckDBEngine()
+    schema_df = engine.get_schema(csv_path)
+
+    assert isinstance(schema_df, pd.DataFrame)
+    # DuckDB's DESCRIBE returns many columns, but our HUD should normalize to ["Column", "Type"]
+    assert list(schema_df.columns) == ["Column", "Type"]
+    assert "name" in schema_df["Column"].values
+    assert "value" in schema_df["Column"].values
+
+
 @pytest.mark.skip(reason="Spark requires complex setup for CI, focus on DuckDB first")
 def test_spark_engine_success(csv_path):
     engine = SparkEngine()

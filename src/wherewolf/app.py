@@ -64,6 +64,12 @@ if "active_engine" not in st.session_state:
     st.session_state.active_engine = None
 if "query_future" not in st.session_state:
     st.session_state.query_future = None
+if "schema" not in st.session_state:
+    st.session_state.schema = None
+if "last_schema_path" not in st.session_state:
+    st.session_state.last_schema_path = ""
+if "last_schema_engine" not in st.session_state:
+    st.session_state.last_schema_engine = ""
 
 # --- Early State Update Pattern ---
 # This avoids StreamlitAPIException by updating state BEFORE widgets are instantiated.
@@ -116,6 +122,36 @@ with st.sidebar:
         st.warning("⚠️ No dataset loaded.")
 
     engine_name = st.selectbox("Execution Engine", ["DuckDB", "Spark"])
+
+    # --- Schema HUD Logic ---
+    if st.session_state.path_input:
+        # Refresh schema if path or engine changed
+        if (
+            st.session_state.path_input != st.session_state.last_schema_path
+            or engine_name != st.session_state.last_schema_engine
+        ):
+            try:
+                if engine_name == "DuckDB":
+                    temp_engine = DuckDBEngine()
+                else:
+                    temp_engine = SparkEngine()
+                st.session_state.schema = temp_engine.get_schema(st.session_state.path_input)
+                st.session_state.last_schema_path = st.session_state.path_input
+                st.session_state.last_schema_engine = engine_name
+            except Exception as e:
+                st.session_state.schema = None
+                st.sidebar.error(f"Failed to fetch schema: {e}")
+
+        if st.session_state.schema is not None and not st.session_state.schema.empty:
+            with st.expander("📊 Schema Preview", expanded=True):
+                st.dataframe(
+                    st.session_state.schema,
+                    hide_index=True,
+                    use_container_width=True,
+                    height=200,
+                )
+        elif st.session_state.schema is not None:
+            st.caption("No columns detected.")
 
     # Auto-align input dialect if engine changes
     if st.session_state.last_engine_name != engine_name:
