@@ -30,9 +30,9 @@ hide_st_style = """
                 background-color: #000000;
             }
 
-            /* Remove top padding for main content */
+            /* Add back some top padding for main content */
             .main .block-container, .block-container {
-                padding-top: 0rem !important;
+                padding-top: 1.5rem !important;
                 margin-top: 0rem !important;
             }
 
@@ -231,8 +231,6 @@ with st.sidebar:
 
 # --- Main Area ---
 col_h1, col_h2 = st.columns([0.7, 0.3])
-with col_h1:
-    st.header("SQL Editor")
 with col_h2:
     input_dialect_ui = st.selectbox(
         "Input Dialect", options=["DuckDB", "Spark", "Azure SQL"], key="input_dialect_ui"

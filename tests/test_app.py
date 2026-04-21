@@ -9,5 +9,4 @@ def test_app_initialization():
 
     # Assert basic UI elements exist
     assert any("Wherewolf" in m.value for m in at.sidebar.markdown)
-    assert at.header[0].value == "SQL Editor"
     assert not at.exception
