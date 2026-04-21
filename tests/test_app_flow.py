@@ -17,7 +17,7 @@ def test_app_query_execution_flow(tmp_path):
     at.run()
 
     # 3. Trigger 'Run' button
-    run_btn = next(b for b in at.button if b.label == "🚀 Run")
+    run_btn = next(b for b in at.button if b.label == "Run")
     run_btn.click().run()
 
     # 3.5 Run again to process the completed future

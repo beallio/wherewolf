@@ -42,7 +42,13 @@ hide_st_style = """
             }
             [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
                 padding-top: 0rem !important;
-                margin-top: -2rem !important; /* Offset the default margin */
+            }
+            /* Specific fix for sidebar header whitespace */
+            [data-testid="stSidebarHeader"], .st-emotion-cache-10p9htt {
+                height: 3rem !important;
+                min-height: 3rem !important;
+                margin-bottom: 0rem !important;
+                padding-top: 0rem !important;
             }
             </style>
             """
@@ -269,12 +275,12 @@ query_text = st_ace(
 col1, col2 = st.columns([0.1, 0.9])
 with col1:
     run_button = st.button(
-        "🚀 Run",
+        "Run",
         type="primary",
         disabled=st.session_state.is_running or not st.session_state.path_input,
     )
 with col2:
-    cancel_button = st.button("🛑 Cancel", disabled=not st.session_state.is_running)
+    cancel_button = st.button("Cancel", disabled=not st.session_state.is_running)
 
 if run_button and st.session_state.path_input:
     if engine_name == "DuckDB":
@@ -365,7 +371,7 @@ if st.session_state.query_result:
                 from_dialect=executed_input_key,
                 to_dialect=target_dialect,
             )
-            with st.expander(f"✨ Translated SQL ({selected_target_ui})", expanded=True):
+            with st.expander(f"Translated SQL ({selected_target_ui})", expanded=True):
                 st.code(translated_sql, language="sql")
         except Exception as e:
             st.warning(f"Translation failed: {str(e)}")

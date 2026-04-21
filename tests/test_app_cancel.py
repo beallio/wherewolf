@@ -17,7 +17,7 @@ def test_app_cancel_logic_mocked():
         at.run()
 
         # Find Cancel button
-        cancel_btn = next(b for b in at.button if b.label == "🛑 Cancel")
+        cancel_btn = next(b for b in at.button if b.label == "Cancel")
         assert not cancel_btn.disabled
 
         cancel_btn.click().run()

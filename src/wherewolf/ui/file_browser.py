@@ -93,7 +93,7 @@ class FileBrowser:
 
             if is_valid:
                 st.success(f"📄 Ready to load: `{selected_file}`")
-                if st.button("🚀 Load This File", width="stretch", type="primary"):
+                if st.button("Load This File", width="stretch", type="primary"):
                     return full_path
             else:
                 st.warning(f"⚠️ `{selected_file}` is not a supported data format.")
