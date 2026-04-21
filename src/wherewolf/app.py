@@ -25,12 +25,6 @@ hide_st_style = """
             /* Hide the Deploy button specifically */
             .stAppDeployButton {display: none;}
 
-            /* Hide the toolbar and header entirely */
-            [data-testid="stAppToolbar"], header, [data-testid="stHeader"] {
-                display: none !important;
-                height: 0px !important;
-            }
-            
             /* Darken the sidebar */
             [data-testid="stSidebar"] {
                 background-color: #000000;
@@ -42,13 +36,13 @@ hide_st_style = """
                 margin-top: 0rem !important;
             }
 
-            /* Remove top padding for sidebar */
-            [data-testid="stSidebarUserContent"], 
-            [data-testid="stSidebarContent"], 
-            [data-testid="stSidebarNav"],
+            /* Aggressively remove top padding for sidebar */
+            [data-testid="stSidebar"] section {
+                padding-top: 0rem !important;
+            }
             [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
                 padding-top: 0rem !important;
-                margin-top: 0rem !important;
+                margin-top: -2rem !important; /* Offset the default margin */
             }
             </style>
             """
