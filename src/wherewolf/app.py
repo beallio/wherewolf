@@ -25,22 +25,27 @@ hide_st_style = """
             /* Hide the Deploy button specifically */
             .stAppDeployButton {display: none;}
 
-            /* Hide the toolbar (running indicator, etc) */
-            [data-testid="stAppToolbar"] {display: none;}
+            /* Hide the toolbar and header entirely */
+            [data-testid="stAppToolbar"], header, [data-testid="stHeader"] {
+                display: none !important;
+                height: 0px !important;
+            }
             
             /* Darken the sidebar */
             [data-testid="stSidebar"] {
                 background-color: #000000;
             }
 
-            /* Reduce top padding for main content */
-            .block-container {
-                padding-top: 1rem !important;
+            /* Remove top padding for main content */
+            .main .block-container, .block-container {
+                padding-top: 0rem !important;
+                margin-top: 0rem !important;
             }
 
-            /* Reduce top padding for sidebar */
+            /* Remove top padding for sidebar */
             [data-testid="stSidebarUserContent"] {
-                padding-top: 1rem !important;
+                padding-top: 0rem !important;
+                margin-top: 0rem !important;
             }
             </style>
             """
