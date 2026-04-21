@@ -37,9 +37,9 @@ class DuckDBEngine:
                 # Use SQL with read_json_auto to avoid ty check warning about missing attribute
                 rel_source = self.con.sql("SELECT * FROM read_json_auto(?)", params=[str(abs_path)])
             elif suffix in [".xlsx", ".xls"]:
-                # Install and load spatial extension which handles Excel
-                self.con.execute("INSTALL spatial; LOAD spatial;")
-                rel_source = self.con.sql("SELECT * FROM st_read(?)", params=[str(abs_path)])
+                # Official DuckDB excel extension
+                self.con.execute("INSTALL excel; LOAD excel;")
+                rel_source = self.con.sql("SELECT * FROM read_xlsx(?)", params=[str(abs_path)])
             else:
                 # Fallback to auto-detection
                 rel_source = self.con.from_csv_auto(str(abs_path))
