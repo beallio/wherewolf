@@ -88,7 +88,7 @@ class FileBrowser:
             st.caption("📁 *Directory selected. Change selection to enter.*")
         else:
             # Display file info
-            valid_exts = {".csv", ".parquet", ".json"}
+            valid_exts = {".csv", ".parquet", ".json", ".xlsx", ".xls"}
             is_valid = Path(full_path).suffix.lower() in valid_exts
 
             if is_valid:

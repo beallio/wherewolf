@@ -44,6 +44,12 @@ class SparkEngine:
                 df_spark = spark.read.parquet(abs_path)
             elif abs_path.endswith(".json"):
                 df_spark = spark.read.json(abs_path)
+            elif abs_path.endswith(".xlsx") or abs_path.endswith(".xls"):
+                # Use pandas as a bridge for Excel in local Spark
+                import pandas as pd
+
+                df_pd = pd.read_excel(abs_path)
+                df_spark = spark.createDataFrame(df_pd)
             else:
                 # Default to automatic detection if supported,
                 # but Spark is less automatic than DuckDB
