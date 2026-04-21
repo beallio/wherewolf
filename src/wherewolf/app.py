@@ -29,6 +29,16 @@ hide_st_style = """
             [data-testid="stSidebar"] {
                 background-color: #000000;
             }
+
+            /* Reduce top padding for main content */
+            .block-container {
+                padding-top: 1rem !important;
+            }
+
+            /* Reduce top padding for sidebar */
+            [data-testid="stSidebarUserContent"] {
+                padding-top: 1rem !important;
+            }
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
