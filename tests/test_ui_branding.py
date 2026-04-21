@@ -6,8 +6,8 @@ def test_sidebar_is_visible_by_default():
     at = AppTest.from_file("src/wherewolf/app.py")
     at.run()
 
-    # Check sidebar state - in AppTest, we can check if it has elements
-    assert at.sidebar.title[0].value == "Wherewolf"
+    # Check sidebar state - look for our custom HTML branding
+    assert any("Wherewolf" in m.value for m in at.sidebar.markdown)
 
 
 def test_branding_css_present():

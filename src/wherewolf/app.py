@@ -22,10 +22,11 @@ hide_st_style = """
             footer {visibility: hidden;}
             /* Hide the Deploy button specifically */
             .stAppDeployButton {display: none;}
-            /* 
-               We do NOT hide 'stToolbar' or 'header' entirely 
-               because they contain the sidebar toggle button.
-            */
+            
+            /* Darken the sidebar */
+            [data-testid="stSidebar"] {
+                background-color: #000000;
+            }
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
@@ -64,8 +65,21 @@ translator = Translator()
 
 # --- Sidebar ---
 with st.sidebar:
-    st.image("src/wherewolf/assets/img/wherewolf_banner.png", width="stretch")
-    st.title("Wherewolf")
+    # Use base64 to embed logo for custom HTML
+    import base64
+
+    with open("src/wherewolf/assets/img/wherewolf_logo.png", "rb") as f:
+        logo_b64 = base64.b64encode(f.read()).decode()
+
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+            <img src="data:image/png;base64,{logo_b64}" width="60">
+            <h1 style="margin: 0; white-space: nowrap; font-size: 2.2rem;">Wherewolf</h1>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     # 1. BROWSE LOGIC
     # The browser is now the primary path selection tool.

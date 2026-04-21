@@ -21,6 +21,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/wherewolf"]
 
+[project.scripts]
+wherewolf = "wherewolf.cli:main"
+
 [tool.uv]
 cache-dir = "/tmp/wherewolf/.uv_cache"
 
