@@ -7,6 +7,13 @@ from wherewolf.storage import HistoryManager
 from wherewolf.export import Exporter
 from wherewolf.ui import FileBrowser
 from streamlit_ace import st_ace
+import importlib.metadata
+
+# Get version from metadata
+try:
+    __version__ = importlib.metadata.version("wherewolf")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "0.2.2"  # Fallback for dev runs
 
 # --- Configuration ---
 st.set_page_config(
@@ -30,16 +37,10 @@ hide_st_style = """
                 background-color: #000000;
             }
 
-            /* Add back some top padding for main content, and zero left padding */
+            /* Add back some top padding for main content */
             .main .block-container, .block-container {
-                padding-top: 1.5rem !important;
-                padding-left: 0rem !important;
+                padding-top: 4rem !important;
                 margin-top: 0rem !important;
-            }
-
-            /* Ensure editor and button align */
-            [data-testid="stVerticalBlock"] {
-                padding-left: 0rem !important;
             }
 
             /* Aggressively remove top padding for sidebar */
@@ -135,9 +136,12 @@ with st.sidebar:
 
     st.markdown(
         f"""
-        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px; position: relative;">
             <img src="data:image/png;base64,{logo_b64}" width="60">
-            <h1 style="margin: 0; white-space: nowrap; font-size: 2.2rem;">Wherewolf</h1>
+            <div>
+                <h1 style="margin: 0; white-space: nowrap; font-size: 2.2rem;">Wherewolf</h1>
+                <p style="margin: 0; font-size: 0.8rem; color: #666; position: absolute; bottom: -12px; left: 72px;">v{__version__}</p>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -252,53 +256,36 @@ with st.sidebar:
         index=themes.index("dracula"),
     )
 
-# --- Main Area ---
-col_h1, col_h2 = st.columns([0.7, 0.3])
-with col_h2:
-    input_dialect_ui = st.selectbox(
-        "Input Dialect", options=["DuckDB", "Spark", "Azure SQL"], key="input_dialect_ui"
+# Use a container-like column to force alignment of editor and buttons
+main_col, _ = st.columns([0.99, 0.01])
+with main_col:
+    # Dialect selector right-aligned within the main column
+    _, col_h2 = st.columns([0.7, 0.3])
+    with col_h2:
+        input_dialect_ui = st.selectbox(
+            "Input Dialect", options=["DuckDB", "Spark", "Azure SQL"], key="input_dialect_ui"
+        )
+
+    # Use st_ace for syntax highlighting
+    query_text = st_ace(
+        value=st.session_state.selected_query,
+        language="sql",
+        theme=ace_theme,
+        height=300,
+        key="sql_editor",
+        auto_update=True,
     )
 
-# --- Execution Logic ---
-# Handle completion of background query
-if st.session_state.query_future and st.session_state.query_future.done():
-    try:
-        result = st.session_state.query_future.result()
-        st.session_state.query_result = result
-        if result.success:
-            history_manager.add_entry(
-                st.session_state.last_engine_name.lower(),
-                st.session_state.executed_query,
-                st.session_state.path_input,
-            )
-    except Exception as e:
-        st.session_state.query_result = QueryResult(success=False, error_message=str(e))
-
-    st.session_state.is_running = False
-    st.session_state.query_future = None
-    st.session_state.active_engine = None
-    st.rerun()
-
-# Use st_ace for syntax highlighting
-query_text = st_ace(
-    value=st.session_state.selected_query,
-    language="sql",
-    theme=ace_theme,
-    height=300,
-    key="sql_editor",
-    auto_update=True,
-)
-
-# Button row
-col_b1, col_b2, col_b3 = st.columns([0.1, 0.1, 0.8])
-with col_b1:
-    run_button = st.button(
-        "Run",
-        type="primary",
-        disabled=st.session_state.is_running or not st.session_state.path_input,
-    )
-with col_b2:
-    cancel_button = st.button("Cancel", disabled=not st.session_state.is_running)
+    # Button row inside the same alignment context
+    col_b1, col_b2, col_b3 = st.columns([0.12, 0.12, 0.76])
+    with col_b1:
+        run_button = st.button(
+            "Run",
+            type="primary",
+            disabled=st.session_state.is_running or not st.session_state.path_input,
+        )
+    with col_b2:
+        cancel_button = st.button("Cancel", disabled=not st.session_state.is_running)
 
 if run_button and st.session_state.path_input:
     if engine_name == "DuckDB":
@@ -351,6 +338,26 @@ if cancel_button and st.session_state.active_engine:
     st.session_state.query_future = None
     st.session_state.active_engine = None
     st.warning("Query cancelled.")
+    st.rerun()
+
+# --- Execution Logic ---
+# Handle completion of background query
+if st.session_state.query_future and st.session_state.query_future.done():
+    try:
+        result = st.session_state.query_future.result()
+        st.session_state.query_result = result
+        if result.success:
+            history_manager.add_entry(
+                st.session_state.last_engine_name.lower(),
+                st.session_state.executed_query,
+                st.session_state.path_input,
+            )
+    except Exception as e:
+        st.session_state.query_result = QueryResult(success=False, error_message=str(e))
+
+    st.session_state.is_running = False
+    st.session_state.query_future = None
+    st.session_state.active_engine = None
     st.rerun()
 
 # --- Results Display ---
