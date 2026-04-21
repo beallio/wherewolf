@@ -50,6 +50,17 @@ hide_st_style = """
                 margin-bottom: 0rem !important;
                 padding-top: 0rem !important;
             }
+
+            /* Make primary buttons green */
+            button[kind="primary"] {
+                background-color: #28a745 !important;
+                border-color: #28a745 !important;
+                color: white !important;
+            }
+            button[kind="primary"]:hover {
+                background-color: #218838 !important;
+                border-color: #1e7e34 !important;
+            }
             </style>
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
@@ -272,14 +283,15 @@ query_text = st_ace(
     auto_update=True,
 )
 
-col1, col2 = st.columns([0.1, 0.9])
-with col1:
+# Button row
+col_b1, col_b2, col_b3 = st.columns([0.1, 0.1, 0.8])
+with col_b1:
     run_button = st.button(
         "Run",
         type="primary",
         disabled=st.session_state.is_running or not st.session_state.path_input,
     )
-with col2:
+with col_b2:
     cancel_button = st.button("Cancel", disabled=not st.session_state.is_running)
 
 if run_button and st.session_state.path_input:
