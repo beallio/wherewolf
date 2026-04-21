@@ -43,7 +43,10 @@ hide_st_style = """
             }
 
             /* Remove top padding for sidebar */
-            [data-testid="stSidebarUserContent"] {
+            [data-testid="stSidebarUserContent"], 
+            [data-testid="stSidebarContent"], 
+            [data-testid="stSidebarNav"],
+            [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
                 padding-top: 0rem !important;
                 margin-top: 0rem !important;
             }
