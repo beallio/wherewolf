@@ -1,22 +1,24 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=5" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=6" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=5)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=5)](https://pypi.org/project/wherewolf/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?cacheBuster=5)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=6)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=6)](https://pypi.org/project/wherewolf/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?cacheBuster=6)](https://opensource.org/licenses/MIT)
 
 A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
 
 ## Features
-- **Multi-Engine Support:** Execute SQL via DuckDB (local) or Spark (local[*]).
+- **Multi-Engine Support:** Execute SQL via DuckDB (local) or Spark (local[*]). Native support for CSV, Parquet, JSON, and Excel (`.xlsx`, `.xls`).
+- **📊 Schema & Metadata HUD:** Instant visibility of column names and data types as soon as a file is loaded.
 - **SQL Translation:** Real-time translation between DuckDB and SparkSQL dialects using SQLGlot.
+- **Modern UI:** Distraction-free interface with a hidden toolbar, reduced whitespace, and clear visual hierarchy.
 - **Safe Preview:** Scrollable results limited to 1000 rows.
 - **Query History:** Persists past queries in `~/.wherewolf/history.json`.
 - **Export:** Download query results as CSV, Excel, or Parquet.
 - **Execution Metrics:** Tracks row count and execution time.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=5)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=6)
 
 ## Installation
 
