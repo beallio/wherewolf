@@ -13,7 +13,7 @@ import importlib.metadata
 try:
     __version__ = importlib.metadata.version("wherewolf")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.2.2"  # Fallback for dev runs
+    __version__ = "0.3.0"  # Fallback for dev runs
 
 # --- Configuration ---
 st.set_page_config(
