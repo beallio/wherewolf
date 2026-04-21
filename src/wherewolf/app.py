@@ -67,8 +67,10 @@ translator = Translator()
 with st.sidebar:
     # Use base64 to embed logo for custom HTML
     import base64
+    from pathlib import Path
 
-    with open("src/wherewolf/assets/img/wherewolf_logo.png", "rb") as f:
+    logo_path = Path(__file__).parent / "assets/img/wherewolf_logo.png"
+    with open(logo_path, "rb") as f:
         logo_b64 = base64.b64encode(f.read()).decode()
 
     st.markdown(

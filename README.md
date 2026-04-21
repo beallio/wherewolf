@@ -1,6 +1,6 @@
 # Wherewolf
 
-<img src="src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=1" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=1" width="100%">
 
 [![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=1)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
 [![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=1)](https://pypi.org/project/wherewolf/)
@@ -16,7 +16,7 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 - **Export:** Download query results as CSV, Excel, or Parquet.
 - **Execution Metrics:** Tracks row count and execution time.
 
-![Wherewolf Screenshot](src/wherewolf/assets/img/screenshot.png)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=1)
 
 ## Installation
 
