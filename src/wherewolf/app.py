@@ -30,10 +30,16 @@ hide_st_style = """
                 background-color: #000000;
             }
 
-            /* Add back some top padding for main content */
+            /* Add back some top padding for main content, and zero left padding */
             .main .block-container, .block-container {
                 padding-top: 1.5rem !important;
+                padding-left: 0rem !important;
                 margin-top: 0rem !important;
+            }
+
+            /* Ensure editor and button align */
+            [data-testid="stVerticalBlock"] {
+                padding-left: 0rem !important;
             }
 
             /* Aggressively remove top padding for sidebar */
