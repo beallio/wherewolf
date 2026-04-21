@@ -48,17 +48,21 @@ class DuckDBEngine:
             # Note: The user query must refer to 'dataset'
             rel = self.con.sql(query)
 
-            # 3. Get total row count (might be expensive for large datasets,
-            # but usually okay for local DuckDB)
-            res = rel.count("*").fetchone()
-            row_count = int(res[0]) if res else 0
+            # 3. Fetch the preview + 1 extra row
+            df_preview_plus_one = rel.limit(limit + 1).df()
 
-            # 4. Fetch the preview DataFrame
-            df = rel.limit(limit).df()
+            # 4. Extract results
+            df_preview = df_preview_plus_one.head(limit)
+            row_count = len(df_preview)
+            is_truncated = len(df_preview_plus_one) > limit
 
             execution_time = time.time() - start_time
             return QueryResult(
-                df=df, execution_time=execution_time, row_count=row_count, success=True
+                df=df_preview,
+                execution_time=execution_time,
+                row_count=row_count,
+                success=True,
+                is_truncated=is_truncated,
             )
         except Exception as e:
             return QueryResult(

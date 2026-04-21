@@ -11,3 +11,4 @@ class QueryResult:
     row_count: int = 0
     success: bool = True
     error_message: str = ""
+    is_truncated: bool = False

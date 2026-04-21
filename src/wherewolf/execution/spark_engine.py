@@ -55,16 +55,22 @@ class SparkEngine:
             # 3. Execute query
             res_spark = spark.sql(query)
 
-            # 4. Get count
-            row_count = res_spark.count()
+            # 4. Fetch the preview + 1 extra row to see if there's more
+            # This avoids a full scan of the dataset with count()
+            preview_plus_one = res_spark.limit(limit + 1).toPandas()
 
-            # 5. Preview
-            # Using limit to avoid fetching everything
-            df_preview = res_spark.limit(limit).toPandas()
+            # 5. Extract results
+            df_preview = preview_plus_one.head(limit)
+            row_count = len(df_preview)
+            is_truncated = len(preview_plus_one) > limit
 
             execution_time = time.time() - start_time
             return QueryResult(
-                df=df_preview, execution_time=execution_time, row_count=row_count, success=True
+                df=df_preview,
+                execution_time=execution_time,
+                row_count=row_count,
+                success=True,
+                is_truncated=is_truncated,
             )
         except Exception as e:
             return QueryResult(
