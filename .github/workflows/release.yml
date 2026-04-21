@@ -13,7 +13,47 @@ permissions:
   id-token: write
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python
+        run: uv python install 3.12
+      - name: Install dependencies
+        run: ./run.sh uv sync --all-extras --dev
+      - name: Lint with ruff
+        run: |
+          ./run.sh uv run ruff check .
+          ./run.sh uv run ruff format --check .
+      - name: Type check with ty
+        run: ./run.sh uv run ty check . --python /tmp/wherewolf/.venv/bin/python
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: ./run.sh uv sync --all-extras --dev
+      - name: Run tests
+        run: ./run.sh uv run pytest
+
   build:
+    needs: [lint, test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
