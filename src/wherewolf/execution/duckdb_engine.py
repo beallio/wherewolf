@@ -20,14 +20,28 @@ class DuckDBEngine:
         Returns:
             A QueryResult object.
         """
-        import os
+        from pathlib import Path
 
-        abs_path = os.path.abspath(path)
+        abs_path = Path(path).expanduser().resolve()
         start_time = time.time()
         try:
             # 1. Register the dataset view
             # DuckDB automatically detects CSV, Parquet, JSON based on extension or content
-            self.con.execute(f"CREATE OR REPLACE VIEW dataset AS SELECT * FROM '{abs_path}'")
+            # Using Relation API to safely handle paths with special characters
+            suffix = abs_path.suffix.lower()
+            if suffix == ".csv":
+                rel_source = self.con.from_csv_auto(str(abs_path))
+            elif suffix == ".parquet":
+                rel_source = self.con.from_parquet(str(abs_path))
+            elif suffix == ".json":
+                # read_json_auto doesn't have a direct 'from_json_auto' in all versions
+                # so we can use the sql method with a Relation
+                rel_source = self.con.read_json_auto(str(abs_path))
+            else:
+                # Fallback to auto-detection
+                rel_source = self.con.from_csv_auto(str(abs_path))
+
+            rel_source.create_view("dataset", replace=True)
 
             # 2. Execute the user query
             # We wrap the user query to handle limits for the preview
