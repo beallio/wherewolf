@@ -5,6 +5,9 @@ on:
     tags:
       - "v*.*.*"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: write
   id-token: write
@@ -40,7 +43,7 @@ jobs:
           name: dist
           path: dist/
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
