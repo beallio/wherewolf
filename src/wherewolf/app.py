@@ -147,7 +147,7 @@ with st.sidebar:
                 st.dataframe(
                     st.session_state.schema,
                     hide_index=True,
-                    use_container_width=True,
+                    width="stretch",
                     height=200,
                 )
         elif st.session_state.schema is not None:
