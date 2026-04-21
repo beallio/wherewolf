@@ -1,0 +1,13 @@
+{
+  "date": "2026-04-21",
+  "task_objective": "Fix data loading regression (infinite loop in app.py)",
+  "files_modified": [
+    "src/wherewolf/app.py"
+  ],
+  "tests_added": [],
+  "design_decisions": [
+    "Moved background query completion check above the autorefresh block.",
+    "Moved the autorefresh block to the end of the script to ensure UI components are rendered before rerunning."
+  ],
+  "results": "Fixed the regression where the app would enter an infinite loop during query execution, preventing results from loading and UI components from appearing. Verified via existing test suite."
+}

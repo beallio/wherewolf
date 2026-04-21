@@ -223,11 +223,24 @@ with col_h2:
         "Input Dialect", options=["DuckDB", "Spark", "Azure SQL"], key="input_dialect_ui"
     )
 
-# --- Autorefresh while running ---
-if st.session_state.is_running and "PYTEST_CURRENT_TEST" not in os.environ:
-    import time
+# --- Execution Logic ---
+# Handle completion of background query
+if st.session_state.query_future and st.session_state.query_future.done():
+    try:
+        result = st.session_state.query_future.result()
+        st.session_state.query_result = result
+        if result.success:
+            history_manager.add_entry(
+                st.session_state.last_engine_name.lower(),
+                st.session_state.executed_query,
+                st.session_state.path_input,
+            )
+    except Exception as e:
+        st.session_state.query_result = QueryResult(success=False, error_message=str(e))
 
-    time.sleep(0.1)
+    st.session_state.is_running = False
+    st.session_state.query_future = None
+    st.session_state.active_engine = None
     st.rerun()
 
 # Use st_ace for syntax highlighting
@@ -249,26 +262,6 @@ with col1:
     )
 with col2:
     cancel_button = st.button("🛑 Cancel", disabled=not st.session_state.is_running)
-
-# --- Execution Logic ---
-# Handle completion of background query
-if st.session_state.query_future and st.session_state.query_future.done():
-    try:
-        result = st.session_state.query_future.result()
-        st.session_state.query_result = result
-        if result.success:
-            history_manager.add_entry(
-                st.session_state.last_engine_name.lower(),
-                st.session_state.executed_query,
-                st.session_state.path_input,
-            )
-    except Exception as e:
-        st.session_state.query_result = QueryResult(success=False, error_message=str(e))
-
-    st.session_state.is_running = False
-    st.session_state.query_future = None
-    st.session_state.active_engine = None
-    st.rerun()
 
 if run_button and st.session_state.path_input:
     if engine_name == "DuckDB":
@@ -410,3 +403,10 @@ if st.session_state.query_result:
 
 elif not st.session_state.path_input:
     st.info("👈 Please provide a dataset path in the sidebar to begin.")
+
+# --- Autorefresh while running ---
+if st.session_state.is_running and "PYTEST_CURRENT_TEST" not in os.environ:
+    import time
+
+    time.sleep(0.1)
+    st.rerun()
