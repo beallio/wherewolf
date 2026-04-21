@@ -379,6 +379,7 @@ Before any commit, agents MUST execute:
 
 ruff check . --fix
 ruff format .
+ty check .
 uv run pytest
 
 ```
