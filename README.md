@@ -1,10 +1,10 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=1" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=2" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=1)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=1)](https://pypi.org/project/wherewolf/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?cacheBuster=1)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=2)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=2)](https://pypi.org/project/wherewolf/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?cacheBuster=2)](https://opensource.org/licenses/MIT)
 
 A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
 
@@ -16,7 +16,7 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 - **Export:** Download query results as CSV, Excel, or Parquet.
 - **Execution Metrics:** Tracks row count and execution time.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=1)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=2)
 
 ## Installation
 

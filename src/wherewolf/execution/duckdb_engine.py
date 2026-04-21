@@ -34,9 +34,8 @@ class DuckDBEngine:
             elif suffix == ".parquet":
                 rel_source = self.con.from_parquet(str(abs_path))
             elif suffix == ".json":
-                # read_json_auto doesn't have a direct 'from_json_auto' in all versions
-                # so we can use the sql method with a Relation
-                rel_source = self.con.read_json_auto(str(abs_path))
+                # Use SQL with read_json_auto to avoid ty check warning about missing attribute
+                rel_source = self.con.sql("SELECT * FROM read_json_auto(?)", params=[str(abs_path)])
             else:
                 # Fallback to auto-detection
                 rel_source = self.con.from_csv_auto(str(abs_path))
