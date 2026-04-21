@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 from concurrent.futures import ThreadPoolExecutor
 from wherewolf.execution import DuckDBEngine, SparkEngine, QueryResult
 from wherewolf.translation import Translator
@@ -32,6 +33,14 @@ hide_st_style = """
             """
 st.markdown(hide_st_style, unsafe_allow_html=True)
 
+
+@st.cache_resource
+def get_executor():
+    return ThreadPoolExecutor(max_workers=4)
+
+
+executor = get_executor()
+
 # --- Initialize Session State ---
 if "path_input" not in st.session_state:
     st.session_state.path_input = ""
@@ -51,8 +60,6 @@ if "last_engine_name" not in st.session_state:
     st.session_state.last_engine_name = "DuckDB"
 if "input_dialect_ui" not in st.session_state:
     st.session_state.input_dialect_ui = "DuckDB"
-if "executor" not in st.session_state:
-    st.session_state.executor = ThreadPoolExecutor(max_workers=1)
 if "active_engine" not in st.session_state:
     st.session_state.active_engine = None
 if "query_future" not in st.session_state:
@@ -180,6 +187,13 @@ with col_h2:
         "Input Dialect", options=["DuckDB", "Spark", "Azure SQL"], key="input_dialect_ui"
     )
 
+# --- Autorefresh while running ---
+if st.session_state.is_running and "PYTEST_CURRENT_TEST" not in os.environ:
+    import time
+
+    time.sleep(0.1)
+    st.rerun()
+
 # Use st_ace for syntax highlighting
 query_text = st_ace(
     value=st.session_state.selected_query,
@@ -256,7 +270,7 @@ if run_button and st.session_state.path_input:
         st.session_state.active_engine = engine
 
         # Submit to executor
-        st.session_state.query_future = st.session_state.executor.submit(
+        st.session_state.query_future = executor.submit(
             engine.execute, query_to_run, st.session_state.path_input, preview_limit
         )
 
