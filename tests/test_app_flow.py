@@ -17,12 +17,19 @@ def test_app_query_execution_flow(tmp_path):
     at.run()
 
     # 3. Trigger 'Run' button
-    run_btn = at.button[0]  # The '🚀 Run' button
-    assert run_btn.label == "🚀 Run"
+    run_btn = next(b for b in at.button if b.label == "🚀 Run")
     run_btn.click().run()
 
+    # 3.5 Run again to process the completed future
+    # Since it's a fast query on a small local file, it should be done.
+    # In AppTest, we might need to wait a bit or just run again.
+    import time
+
+    time.sleep(0.5)
+    at.run()
+
     # 4. Assert results exist in UI
-    assert any("Rows Returned" in m.label for m in at.metric)
+    assert any("Rows" in m.label for m in at.metric)
     assert len(at.dataframe) > 0
     assert at.dataframe[0].value.shape[0] == 3
 

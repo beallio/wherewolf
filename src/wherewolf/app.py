@@ -1,4 +1,5 @@
 import streamlit as st
+from concurrent.futures import ThreadPoolExecutor
 from wherewolf.execution import DuckDBEngine, SparkEngine, QueryResult
 from wherewolf.translation import Translator
 from wherewolf.storage import HistoryManager
@@ -42,12 +43,20 @@ if "history" not in st.session_state:
     st.session_state.history = []
 if "selected_query" not in st.session_state:
     st.session_state.selected_query = "SELECT * FROM dataset LIMIT 10"
+if "executed_query" not in st.session_state:
+    st.session_state.executed_query = ""
 if "executed_input_dialect_key" not in st.session_state:
     st.session_state.executed_input_dialect_key = "duckdb"
 if "last_engine_name" not in st.session_state:
     st.session_state.last_engine_name = "DuckDB"
 if "input_dialect_ui" not in st.session_state:
     st.session_state.input_dialect_ui = "DuckDB"
+if "executor" not in st.session_state:
+    st.session_state.executor = ThreadPoolExecutor(max_workers=1)
+if "active_engine" not in st.session_state:
+    st.session_state.active_engine = None
+if "query_future" not in st.session_state:
+    st.session_state.query_future = None
 
 # --- Early State Update Pattern ---
 # This avoids StreamlitAPIException by updating state BEFORE widgets are instantiated.
@@ -183,15 +192,35 @@ query_text = st_ace(
 
 col1, col2 = st.columns([0.1, 0.9])
 with col1:
-    run_button = st.button("🚀 Run", type="primary", disabled=st.session_state.is_running)
+    run_button = st.button(
+        "🚀 Run",
+        type="primary",
+        disabled=st.session_state.is_running or not st.session_state.path_input,
+    )
 with col2:
     cancel_button = st.button("🛑 Cancel", disabled=not st.session_state.is_running)
 
 # --- Execution Logic ---
-if run_button and st.session_state.path_input:
-    st.session_state.is_running = True
-    st.session_state.query_result = None
+# Handle completion of background query
+if st.session_state.query_future and st.session_state.query_future.done():
+    try:
+        result = st.session_state.query_future.result()
+        st.session_state.query_result = result
+        if result.success:
+            history_manager.add_entry(
+                st.session_state.last_engine_name.lower(),
+                st.session_state.executed_query,
+                st.session_state.path_input,
+            )
+    except Exception as e:
+        st.session_state.query_result = QueryResult(success=False, error_message=str(e))
 
+    st.session_state.is_running = False
+    st.session_state.query_future = None
+    st.session_state.active_engine = None
+    st.rerun()
+
+if run_button and st.session_state.path_input:
     if engine_name == "DuckDB":
         engine = DuckDBEngine()
     else:
@@ -201,9 +230,6 @@ if run_button and st.session_state.path_input:
     dialect_mapping = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
     input_dialect_key = dialect_mapping[input_dialect_ui]
     engine_dialect_key = dialect_mapping[engine_name]
-
-    # Save the executed input dialect so the Translation section knows where to translate from
-    st.session_state.executed_input_dialect_key = input_dialect_key
 
     query_to_run = query_text
     translation_error = None
@@ -222,19 +248,29 @@ if run_button and st.session_state.path_input:
             success=False,
             error_message=f"Failed to translate input query from {input_dialect_ui} to {engine_name}:\n{translation_error}",
         )
-        st.session_state.selected_query = query_text
     else:
-        with st.spinner(f"Running query on {engine_name}..."):
-            result = engine.execute(query_to_run, st.session_state.path_input, limit=preview_limit)
-            st.session_state.query_result = result
-            st.session_state.selected_query = query_text
+        st.session_state.is_running = True
+        st.session_state.query_result = None
+        st.session_state.executed_query = query_text
+        st.session_state.executed_input_dialect_key = input_dialect_key
+        st.session_state.active_engine = engine
 
-            if result.success:
-                history_manager.add_entry(
-                    engine_name.lower(), query_text, st.session_state.path_input
-                )
+        # Submit to executor
+        st.session_state.query_future = st.session_state.executor.submit(
+            engine.execute, query_to_run, st.session_state.path_input, preview_limit
+        )
+
+    st.rerun()
+
+if cancel_button and st.session_state.active_engine:
+    st.session_state.active_engine.interrupt()
+    if st.session_state.query_future:
+        st.session_state.query_future.cancel()
 
     st.session_state.is_running = False
+    st.session_state.query_future = None
+    st.session_state.active_engine = None
+    st.warning("Query cancelled.")
     st.rerun()
 
 # --- Results Display ---
@@ -251,12 +287,12 @@ if st.session_state.query_result:
             # All available dialects
             all_dialects_map = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
 
-            # Map CURRENT UI selection to key for live translation logic
-            current_input_key = all_dialects_map[input_dialect_ui]
+            # Map the EXECUTED input dialect to key for consistent translation logic
+            executed_input_key = st.session_state.executed_input_dialect_key
 
-            # Determine target options: everything except the CURRENT input dialect
+            # Determine target options: everything except the EXECUTED input dialect
             target_options = [
-                ui_name for ui_name, key in all_dialects_map.items() if key != current_input_key
+                ui_name for ui_name, key in all_dialects_map.items() if key != executed_input_key
             ]
 
             selected_target_ui = st.selectbox(
@@ -267,10 +303,10 @@ if st.session_state.query_result:
             target_dialect = all_dialects_map[selected_target_ui]
 
         try:
-            # Translate from the CURRENTLY SELECTED input dialect, not just the last executed one
+            # Translate from the EXECUTED query and dialect
             translated_sql = translator.translate(
-                query_text,
-                from_dialect=current_input_key,
+                st.session_state.executed_query,
+                from_dialect=executed_input_key,
                 to_dialect=target_dialect,
             )
             with st.expander(f"✨ Translated SQL ({selected_target_ui})", expanded=True):
@@ -279,7 +315,11 @@ if st.session_state.query_result:
             st.warning(f"Translation failed: {str(e)}")
 
         m1, m2 = st.columns(2)
-        m1.metric("Rows Returned", f"{result.row_count:,}")
+        if result.is_truncated:
+            m1.metric("Rows Previewed", f"{result.row_count:,}")
+            st.caption(f"Note: Preview is truncated at {result.row_count} rows.")
+        else:
+            m1.metric("Rows Returned", f"{result.row_count:,}")
         m2.metric("Execution Time", f"{result.execution_time:.4f}s")
 
         st.subheader("Preview")
