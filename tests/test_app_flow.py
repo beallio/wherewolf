@@ -11,8 +11,8 @@ def test_app_query_execution_flow(tmp_path):
     at = AppTest.from_file("src/wherewolf/app.py")
     at.run()
 
-    # 2. Inject path and query into session state (simulating browser selection)
-    at.session_state.path_input = str(csv_file)
+    # 2. Inject catalog and query into session state
+    at.session_state.catalog = {"dataset": str(csv_file)}
     at.session_state.selected_query = "SELECT * FROM dataset"
     at.run()
 
@@ -54,7 +54,7 @@ def test_translation_target_options():
     at.run()
 
     # Simulate a successful execution with DuckDB as input
-    at.session_state.path_input = "/tmp/fake.csv"
+    at.session_state.catalog = {"dataset": "/tmp/fake.csv"}
     at.session_state.input_dialect_ui = "DuckDB"
     # We need a query result to show the translation section
     from wherewolf.execution import QueryResult

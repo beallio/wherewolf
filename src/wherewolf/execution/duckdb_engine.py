@@ -1,6 +1,7 @@
 import duckdb
 import time
 import pandas as pd
+from typing import Optional
 from .models import QueryResult
 
 
@@ -9,9 +10,14 @@ class DuckDBEngine:
 
     def __init__(self):
         self.con = duckdb.connect(database=":memory:")
+        self._registered_views = {}  # alias -> path mapping for idempotency
 
-    def _register_view(self, path: str):
-        """Registers the dataset as a view named 'dataset'."""
+    def _register_view(self, path: str, alias: str = "dataset"):
+        """Registers a dataset as a view with the given alias."""
+        # Idempotency check
+        if self._registered_views.get(alias) == path:
+            return
+
         from pathlib import Path
 
         abs_path = Path(path).expanduser().resolve()
@@ -28,7 +34,8 @@ class DuckDBEngine:
         else:
             rel_source = self.con.from_csv_auto(str(abs_path))
 
-        rel_source.create_view("dataset", replace=True)
+        rel_source.create_view(alias, replace=True)
+        self._registered_views[alias] = path
 
     def get_schema(self, path: str) -> pd.DataFrame:
         """Returns the schema of the dataset.
@@ -37,9 +44,11 @@ class DuckDBEngine:
             A DataFrame with 'Column' and 'Type' columns.
         """
         try:
-            self._register_view(path)
-            # DESCRIBE dataset returns: column_name, column_type, null, key, default, extra
-            df = self.con.sql("DESCRIBE dataset").df()
+            # We use a temporary alias for schema HUD to avoid polluting the main query namespace
+            temp_alias = "_schema_hud"
+            self._register_view(path, alias=temp_alias)
+            # DESCRIBE returns: column_name, column_type, null, key, default, extra
+            df = self.con.sql(f"DESCRIBE {temp_alias}").df()
             # Normalize to Column/Type
             return df[["column_name", "column_type"]].rename(
                 columns={"column_name": "Column", "column_type": "Type"}
@@ -47,25 +56,37 @@ class DuckDBEngine:
         except Exception:
             return pd.DataFrame({"Column": [], "Type": []})
 
-    def execute(self, query: str, path: str, limit: int = 1000) -> QueryResult:
-        """Executes a SQL query against a local file using DuckDB.
+    def execute(
+        self,
+        query: str,
+        path: str = "",
+        limit: int = 1000,
+        catalog: Optional[dict[str, str]] = None,
+    ) -> QueryResult:
+        """Executes a SQL query against local files using DuckDB.
 
         Args:
             query: The SQL query to execute.
-            path: The filesystem path to the data file.
+            path: Legacy single-file path (deprecated).
             limit: Maximum number of rows to return in the preview.
+            catalog: A mapping of aliases to filesystem paths.
 
         Returns:
             A QueryResult object.
         """
         start_time = time.time()
         try:
-            # 1. Register the dataset view
-            self._register_view(path)
+            # 1. Prepare Catalog
+            # Handle legacy 'path' parameter by wrapping it in a default catalog
+            active_catalog = catalog or {}
+            if path and "dataset" not in active_catalog:
+                active_catalog["dataset"] = path
 
-            # 2. Execute the user query
-            # We wrap the user query to handle limits for the preview
-            # Note: The user query must refer to 'dataset'
+            # 2. Register all datasets in the catalog
+            for alias, dataset_path in active_catalog.items():
+                self._register_view(dataset_path, alias=alias)
+
+            # 3. Execute the user query
             rel = self.con.sql(query)
 
             # 3. Fetch the preview + 1 extra row

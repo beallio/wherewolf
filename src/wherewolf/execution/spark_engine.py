@@ -1,5 +1,6 @@
 import time
 import pandas as pd
+from typing import Optional
 from .models import QueryResult
 
 try:
@@ -15,6 +16,7 @@ class SparkEngine:
 
     def __init__(self):
         self.spark = None
+        self._registered_views = {}  # alias -> path mapping for idempotency
         if SPARK_AVAILABLE:
             # Note: We'll lazily create the session or expect it in the execute
             pass
@@ -24,8 +26,16 @@ class SparkEngine:
             self.spark = SparkSession.builder.appName("Wherewolf").master("local[*]").getOrCreate()
         return self.spark
 
-    def _register_view(self, path: str):
-        """Registers the dataset as a view named 'dataset'."""
+    def _register_view(self, path: str, alias: str = "dataset"):
+        """Registers a dataset as a view with the given alias."""
+        # Idempotency check
+        if self._registered_views.get(alias) == path:
+            # We still need the dataframe for get_schema if we just registered it
+            # But for execute, we just need the view to exist.
+            # To be safe, we'll re-read if it's not in the spark catalog,
+            # but usually it's faster to trust self._registered_views.
+            pass
+
         import os
 
         spark = self._get_session()
@@ -48,7 +58,8 @@ class SparkEngine:
             raise ValueError(f"Unsupported file format for path: {abs_path}")
 
         # 2. Register temp view
-        df_spark.createOrReplaceTempView("dataset")
+        df_spark.createOrReplaceTempView(alias)
+        self._registered_views[alias] = path
         return df_spark
 
     def get_schema(self, path: str) -> pd.DataFrame:
@@ -61,7 +72,8 @@ class SparkEngine:
             return pd.DataFrame({"Column": [], "Type": []})
 
         try:
-            df_spark = self._register_view(path)
+            temp_alias = "_schema_hud"
+            df_spark = self._register_view(path, alias=temp_alias)
             # Spark schema to pandas
             schema_data = []
             for field in df_spark.schema:
@@ -70,7 +82,13 @@ class SparkEngine:
         except Exception:
             return pd.DataFrame({"Column": [], "Type": []})
 
-    def execute(self, query: str, path: str, limit: int = 1000) -> QueryResult:
+    def execute(
+        self,
+        query: str,
+        path: str = "",
+        limit: int = 1000,
+        catalog: Optional[dict[str, str]] = None,
+    ) -> QueryResult:
         if not SPARK_AVAILABLE:
             return QueryResult(success=False, error_message="PySpark not installed")
 
@@ -78,10 +96,16 @@ class SparkEngine:
         try:
             spark = self._get_session()
 
-            # 1. Register the dataset view
-            self._register_view(path)
+            # 1. Prepare Catalog
+            active_catalog = catalog or {}
+            if path and "dataset" not in active_catalog:
+                active_catalog["dataset"] = path
 
-            # 2. Execute query
+            # 2. Register all datasets in the catalog
+            for alias, dataset_path in active_catalog.items():
+                self._register_view(dataset_path, alias=alias)
+
+            # 3. Execute query
             res_spark = spark.sql(query)
 
             # 4. Fetch the preview + 1 extra row to see if there's more

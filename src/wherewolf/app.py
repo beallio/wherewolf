@@ -110,6 +110,61 @@ if "last_schema_path" not in st.session_state:
 if "last_schema_engine" not in st.session_state:
     st.session_state.last_schema_engine = ""
 
+if "catalog" not in st.session_state:
+    st.session_state.catalog = {}  # alias -> path
+if "schema_focus" not in st.session_state:
+    st.session_state.schema_focus = None
+
+
+def sanitize_alias(name: str) -> str:
+    """Sanitizes a string to be a valid SQL identifier."""
+    import re
+
+    # Force start with letter/underscore, only alphanumeric/underscore
+    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    if not name or not name[0].isalpha() and name[0] != "_":
+        name = "t_" + name
+    # Block common keywords (basic check)
+    reserved = {
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "JOIN",
+        "UNION",
+        "GROUP",
+        "ORDER",
+        "LIMIT",
+        "TABLE",
+        "VIEW",
+    }
+    if name.upper() in reserved:
+        name = name + "_alias"
+    return name
+
+
+def get_default_alias(path: str) -> str:
+    """Derives a default alias from the path with collision handling."""
+    from pathlib import Path
+
+    p = Path(path)
+    stem = sanitize_alias(p.stem)
+
+    # Priority 1: Stem
+    if stem not in st.session_state.catalog:
+        return stem
+
+    # Priority 2: Full filename with extension as suffix
+    fullname = sanitize_alias(p.name.replace(".", "_"))
+    if fullname not in st.session_state.catalog:
+        return fullname
+
+    # Priority 3: Stem + counter
+    counter = 1
+    while f"{stem}_{counter}" in st.session_state.catalog:
+        counter += 1
+    return f"{stem}_{counter}"
+
+
 # --- Early State Update Pattern ---
 # This avoids StreamlitAPIException by updating state BEFORE widgets are instantiated.
 if "pending_path" in st.session_state:
@@ -119,6 +174,10 @@ if "pending_path" in st.session_state:
 if "pending_query" in st.session_state:
     st.session_state.selected_query = st.session_state.pending_query
     del st.session_state.pending_query
+
+if "pending_catalog" in st.session_state:
+    st.session_state.catalog = st.session_state.pending_catalog
+    del st.session_state.pending_catalog
 
 # --- Instances ---
 history_manager = HistoryManager()
@@ -147,29 +206,58 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
-    # 1. BROWSE LOGIC
-    # The browser is now the primary path selection tool.
-    with st.expander("📁 Browse Local Files", expanded=True):
+    # 1. CATALOG MANAGEMENT
+    with st.expander("📁 Manage Dataset Catalog", expanded=True):
+        st.caption("Browse and add files to your SQL namespace.")
         show_hidden = st.checkbox("Show Hidden Files", value=False)
         selected_path = FileBrowser.render_explorer(show_hidden=show_hidden)
+
         if selected_path:
-            # Set PENDING path and rerun
-            st.session_state.pending_path = selected_path
+            # Determine alias and add
+            alias = get_default_alias(selected_path)
+            st.session_state.catalog[alias] = selected_path
+            st.session_state.schema_focus = alias
+            st.success(f"Added `{alias}` to catalog.")
             st.rerun()
 
-    # Display the active path clearly in the sidebar
-    if st.session_state.path_input:
-        st.info(f"📄 Active: `{st.session_state.path_input}`")
+    if st.session_state.catalog:
+        st.subheader("Active Catalog")
+        for alias in list(st.session_state.catalog.keys()):
+            col_a, col_r = st.columns([0.8, 0.2])
+            col_a.code(f"{alias}", language="sql")
+            if col_r.button("🗑️", key=f"remove_{alias}", help=f"Remove {alias}"):
+                del st.session_state.catalog[alias]
+                if st.session_state.schema_focus == alias:
+                    st.session_state.schema_focus = (
+                        list(st.session_state.catalog.keys())[0]
+                        if st.session_state.catalog
+                        else None
+                    )
+                st.rerun()
+            st.caption(f"`{st.session_state.catalog[alias]}`")
     else:
-        st.warning("⚠️ No dataset loaded.")
+        st.warning("⚠️ No datasets loaded.")
 
     engine_name = st.selectbox("Execution Engine", ["DuckDB", "Spark"])
 
     # --- Schema HUD Logic ---
-    if st.session_state.path_input:
+    if st.session_state.catalog:
+        # Selector for which schema to focus on
+        schema_options = list(st.session_state.catalog.keys())
+        if st.session_state.schema_focus not in schema_options:
+            st.session_state.schema_focus = schema_options[0]
+
+        focus_alias = st.selectbox(
+            "Metadata Focus",
+            options=schema_options,
+            index=schema_options.index(st.session_state.schema_focus),
+        )
+        st.session_state.schema_focus = focus_alias
+        focus_path = st.session_state.catalog[focus_alias]
+
         # Refresh schema if path or engine changed
         if (
-            st.session_state.path_input != st.session_state.last_schema_path
+            focus_path != st.session_state.last_schema_path
             or engine_name != st.session_state.last_schema_engine
         ):
             try:
@@ -177,15 +265,15 @@ with st.sidebar:
                     temp_engine = DuckDBEngine()
                 else:
                     temp_engine = SparkEngine()
-                st.session_state.schema = temp_engine.get_schema(st.session_state.path_input)
-                st.session_state.last_schema_path = st.session_state.path_input
+                st.session_state.schema = temp_engine.get_schema(focus_path)
+                st.session_state.last_schema_path = focus_path
                 st.session_state.last_schema_engine = engine_name
             except Exception as e:
                 st.session_state.schema = None
                 st.sidebar.error(f"Failed to fetch schema: {e}")
 
         if st.session_state.schema is not None and not st.session_state.schema.empty:
-            with st.expander("📊 Schema Preview", expanded=True):
+            with st.expander(f"📊 {focus_alias} Schema", expanded=True):
                 st.dataframe(
                     st.session_state.schema,
                     hide_index=True,
@@ -213,7 +301,7 @@ with st.sidebar:
             idx = history_labels.index(selected_history)
             # Use PENDING state to avoid instantiation errors
             st.session_state.pending_query = history[idx]["query"]
-            st.session_state.pending_path = history[idx]["path"]
+            st.session_state.pending_catalog = history[idx]["catalog"]
             st.rerun()
     else:
         st.write("No history yet.")
@@ -282,12 +370,12 @@ with main_col:
         run_button = st.button(
             "Run",
             type="primary",
-            disabled=st.session_state.is_running or not st.session_state.path_input,
+            disabled=st.session_state.is_running or not st.session_state.catalog,
         )
     with col_b2:
         cancel_button = st.button("Cancel", disabled=not st.session_state.is_running)
 
-if run_button and st.session_state.path_input:
+if run_button and st.session_state.catalog:
     if engine_name == "DuckDB":
         engine = DuckDBEngine()
     else:
@@ -295,7 +383,7 @@ if run_button and st.session_state.path_input:
 
     # Map dialects
     dialect_mapping = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
-    input_dialect_key = dialect_mapping[input_dialect_ui]
+    input_dialect_key = dialect_mapping[st.session_state.input_dialect_ui]
     engine_dialect_key = dialect_mapping[engine_name]
 
     query_to_run = query_text
@@ -313,7 +401,7 @@ if run_button and st.session_state.path_input:
     if translation_error:
         st.session_state.query_result = QueryResult(
             success=False,
-            error_message=f"Failed to translate input query from {input_dialect_ui} to {engine_name}:\n{translation_error}",
+            error_message=f"Failed to translate input query from {st.session_state.input_dialect_ui} to {engine_name}:\n{translation_error}",
         )
     else:
         st.session_state.is_running = True
@@ -324,7 +412,7 @@ if run_button and st.session_state.path_input:
 
         # Submit to executor
         st.session_state.query_future = executor.submit(
-            engine.execute, query_to_run, st.session_state.path_input, preview_limit
+            engine.execute, query_to_run, "", preview_limit, st.session_state.catalog.copy()
         )
 
     st.rerun()
@@ -350,7 +438,8 @@ if st.session_state.query_future and st.session_state.query_future.done():
             history_manager.add_entry(
                 st.session_state.last_engine_name.lower(),
                 st.session_state.executed_query,
-                st.session_state.path_input,
+                "",  # path is deprecated
+                catalog=st.session_state.catalog,
             )
     except Exception as e:
         st.session_state.query_result = QueryResult(success=False, error_message=str(e))
@@ -433,9 +522,14 @@ if st.session_state.query_result:
         # Derive original filename for the export
         import os
 
-        orig_filename = os.path.basename(st.session_state.path_input)
-        # Strip extension from original if present
-        base_name = os.path.splitext(orig_filename)[0] or "wherewolf"
+        # Use first catalog entry for filename
+        if st.session_state.catalog:
+            first_path = list(st.session_state.catalog.values())[0]
+            orig_filename = os.path.basename(first_path)
+            base_name = os.path.splitext(orig_filename)[0] or "wherewolf"
+        else:
+            base_name = "wherewolf"
+
         download_name = f"{base_name}_export{ext}"
 
         st.download_button(label=export_label, data=data, file_name=download_name, mime=mime)
@@ -445,8 +539,8 @@ if st.session_state.query_result:
         with st.expander("Show Details"):
             st.text(result.error_message)
 
-elif not st.session_state.path_input:
-    st.info("👈 Please provide a dataset path in the sidebar to begin.")
+elif not st.session_state.catalog:
+    st.info("👈 Please add a dataset to the catalog in the sidebar to begin.")
 
 # --- Autorefresh while running ---
 if st.session_state.is_running and "PYTEST_CURRENT_TEST" not in os.environ:
