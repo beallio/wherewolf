@@ -10,7 +10,9 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 
 ## Features
 - **Multi-Engine Support:** Execute SQL via DuckDB (local) or Spark (local[*]). Native support for CSV, Parquet, JSON, and Excel (`.xlsx`, `.xls`).
-- **📊 Schema & Metadata HUD:** Instant visibility of column names and data types as soon as a file is loaded.
+- **📁 Dataset Catalog:** Load multiple files simultaneously and assign custom SQL aliases for complex analysis.
+- **🔗 Multi-Table Queries:** Perform JOINs, unions, and subqueries across different file formats in a single session.
+- **📊 Schema & Metadata HUD:** Instant visibility of column names and data types for any dataset in your catalog.
 - **SQL Translation:** Real-time translation between DuckDB and SparkSQL dialects using SQLGlot.
 - **Modern UI:** Distraction-free interface with a hidden toolbar, reduced whitespace, and clear visual hierarchy.
 - **Safe Preview:** Scrollable results limited to 1000 rows.
@@ -44,11 +46,12 @@ If running from source:
 uv run streamlit run src/wherewolf/app.py
 ```
 
-1. Enter the local path to your dataset in the sidebar.
-2. Write your SQL query (use `dataset` as the table name).
-3. Click **Run** to execute.
-4. View results and execution metrics.
-5. Export or view the translated SQL if needed.
+1. Use the **Manage Dataset Catalog** section in the sidebar to browse and add files.
+2. Each file is assigned an alias (e.g., `users`, `orders`).
+3. Write your SQL query using these aliases in the editor.
+4. Click **Run** to execute.
+5. View results, execution metrics, or switch the **Metadata Focus** to inspect other schemas.
+6. Export or view the translated SQL if needed.
 
 ## Development
 
