@@ -299,7 +299,6 @@ with st.sidebar:
         st.session_state.last_engine_name = engine_name
 
     preview_limit = st.slider("Preview Size", 10, 1000, 100)
-    export_format = st.selectbox("Export Format", ["CSV", "Excel", "Parquet"])
 
     st.divider()
     st.subheader("Query History")
@@ -515,34 +514,43 @@ if st.session_state.query_result:
         st.divider()
         st.subheader("Export Results")
 
-        export_label = f"Download as {export_format}"
-        if export_format == "CSV":
-            data = Exporter.to_csv(result.df)
-            mime = "text/csv"
-            ext = ".csv"
-        elif export_format == "Excel":
-            data = Exporter.to_excel(result.df)
-            mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            ext = ".xlsx"
-        else:
-            data = Exporter.to_parquet(result.df)
-            mime = "application/octet-stream"
-            ext = ".parquet"
+        col_e1, col_e2 = st.columns([0.2, 0.8])
+        with col_e1:
+            export_format = st.selectbox(
+                "Export Format",
+                ["CSV", "Excel", "Parquet"],
+                label_visibility="collapsed",
+            )
 
-        # Derive original filename for the export
-        import os
+        with col_e2:
+            export_label = f"Download as {export_format}"
+            if export_format == "CSV":
+                data = Exporter.to_csv(result.df)
+                mime = "text/csv"
+                ext = ".csv"
+            elif export_format == "Excel":
+                data = Exporter.to_excel(result.df)
+                mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                ext = ".xlsx"
+            else:
+                data = Exporter.to_parquet(result.df)
+                mime = "application/octet-stream"
+                ext = ".parquet"
 
-        # Use first catalog entry for filename
-        if st.session_state.catalog:
-            first_path = list(st.session_state.catalog.values())[0]
-            orig_filename = os.path.basename(first_path)
-            base_name = os.path.splitext(orig_filename)[0] or "wherewolf"
-        else:
-            base_name = "wherewolf"
+            # Derive original filename for the export
+            import os
 
-        download_name = f"{base_name}_export{ext}"
+            # Use first catalog entry for filename
+            if st.session_state.catalog:
+                first_path = list(st.session_state.catalog.values())[0]
+                orig_filename = os.path.basename(first_path)
+                base_name = os.path.splitext(orig_filename)[0] or "wherewolf"
+            else:
+                base_name = "wherewolf"
 
-        st.download_button(label=export_label, data=data, file_name=download_name, mime=mime)
+            download_name = f"{base_name}_export{ext}"
+
+            st.download_button(label=export_label, data=data, file_name=download_name, mime=mime)
 
     else:
         st.error("Query Failed")

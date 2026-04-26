@@ -1,0 +1,14 @@
+{
+  "date": "2026-04-22",
+  "task_objective": "Move export format dropdown next to download button",
+  "files_modified": [
+    "src/wherewolf/app.py"
+  ],
+  "tests_added": [],
+  "design_decisions": [
+    "Moved 'export_format' selectbox from sidebar to the main results display.",
+    "Used st.columns([0.2, 0.8]) to align the format selector and download button side-by-side.",
+    "Set label_visibility='collapsed' for the format selector to maintain a clean horizontal alignment."
+  ],
+  "results": "Improved user flow by co-locating export settings with the export action. All tests passed."
+}
