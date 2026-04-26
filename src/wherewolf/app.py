@@ -78,6 +78,16 @@ def get_executor():
     return ThreadPoolExecutor(max_workers=4)
 
 
+@st.cache_resource
+def get_duckdb_engine():
+    return DuckDBEngine()
+
+
+@st.cache_resource
+def get_spark_engine():
+    return SparkEngine()
+
+
 executor = get_executor()
 
 # --- Initialize Session State ---
@@ -262,9 +272,9 @@ with st.sidebar:
         ):
             try:
                 if engine_name == "DuckDB":
-                    temp_engine = DuckDBEngine()
+                    temp_engine = get_duckdb_engine()
                 else:
-                    temp_engine = SparkEngine()
+                    temp_engine = get_spark_engine()
                 st.session_state.schema = temp_engine.get_schema(focus_path)
                 st.session_state.last_schema_path = focus_path
                 st.session_state.last_schema_engine = engine_name
@@ -377,9 +387,9 @@ with main_col:
 
 if run_button and st.session_state.catalog:
     if engine_name == "DuckDB":
-        engine = DuckDBEngine()
+        engine = get_duckdb_engine()
     else:
-        engine = SparkEngine()
+        engine = get_spark_engine()
 
     # Map dialects
     dialect_mapping = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
