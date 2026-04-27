@@ -1,0 +1,14 @@
+{
+  "date": "2026-04-26",
+  "task_objective": "Update default query when the first dataset is loaded",
+  "files_modified": [
+    "src/wherewolf/app.py",
+    "tests/test_app.py"
+  ],
+  "tests_added": [
+    "test_query_updates_on_first_dataset",
+    "test_query_does_not_update_on_second_dataset"
+  ],
+  "design_decisions": "Automatically update the SQL editor content to point to the first loaded dataset's alias to improve user onboarding experience.",
+  "results": "Default query now dynamically adjusts upon first file load. All tests pass with 81% total coverage."
+}

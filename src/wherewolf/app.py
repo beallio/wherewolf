@@ -13,7 +13,7 @@ import importlib.metadata
 try:
     __version__ = importlib.metadata.version("wherewolf")
 except importlib.metadata.PackageNotFoundError:
-    __version__ = "0.3.0"  # Fallback for dev runs
+    __version__ = "0.3.1-dev"  # Fallback for dev runs
 
 # --- Configuration ---
 st.set_page_config(
@@ -88,11 +88,12 @@ def get_spark_engine():
     return SparkEngine()
 
 
+if "editor_reset_counter" not in st.session_state:
+    st.session_state.editor_reset_counter = 0
+
 executor = get_executor()
 
 # --- Initialize Session State ---
-if "path_input" not in st.session_state:
-    st.session_state.path_input = ""
 if "query_result" not in st.session_state:
     st.session_state.query_result = None
 if "is_running" not in st.session_state:
@@ -177,12 +178,10 @@ def get_default_alias(path: str) -> str:
 
 # --- Early State Update Pattern ---
 # This avoids StreamlitAPIException by updating state BEFORE widgets are instantiated.
-if "pending_path" in st.session_state:
-    st.session_state.path_input = st.session_state.pending_path
-    del st.session_state.pending_path
-
 if "pending_query" in st.session_state:
     st.session_state.selected_query = st.session_state.pending_query
+    if "editor_reset_counter" in st.session_state:
+        st.session_state.editor_reset_counter += 1
     del st.session_state.pending_query
 
 if "pending_catalog" in st.session_state:
@@ -225,8 +224,18 @@ with st.sidebar:
         if selected_path:
             # Determine alias and add
             alias = get_default_alias(selected_path)
+
+            # If this is the FIRST dataset, update the default query
+            if not st.session_state.catalog:
+                query = f"SELECT * FROM {alias} LIMIT 10"
+                st.session_state.selected_query = query
+                # Increment counter to force st_ace to re-mount with new value
+                if "editor_reset_counter" in st.session_state:
+                    st.session_state.editor_reset_counter += 1
+
             st.session_state.catalog[alias] = selected_path
             st.session_state.schema_focus = alias
+
             st.success(f"Added `{alias}` to catalog.")
             st.rerun()
 
@@ -364,12 +373,15 @@ with main_col:
         )
 
     # Use st_ace for syntax highlighting
+    # Use a dynamic key based on selected_query to force re-render when the query is updated programmatically
+    # But we want to maintain the same key for user typing, so we only change it when we WANT to force a reset.
+    # Actually, a better way is to use a specific reset key in session state.
     query_text = st_ace(
         value=st.session_state.selected_query,
         language="sql",
         theme=ace_theme,
         height=300,
-        key="sql_editor",
+        key=f"sql_editor_{st.session_state.editor_reset_counter}",
         auto_update=True,
     )
 
