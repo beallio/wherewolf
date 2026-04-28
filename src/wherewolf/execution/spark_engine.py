@@ -37,20 +37,22 @@ class SparkEngine:
             pass
 
         import os
+        from pathlib import Path
 
         spark = self._get_session()
         abs_path = os.path.abspath(path)
+        suffix = Path(abs_path).suffix.lower()
 
         # Determine format by extension (basic detection)
-        if abs_path.endswith(".csv"):
+        if suffix == ".csv":
             df_spark = (
                 spark.read.option("header", "true").option("inferSchema", "true").csv(abs_path)
             )
-        elif abs_path.endswith(".parquet"):
+        elif suffix == ".parquet":
             df_spark = spark.read.parquet(abs_path)
-        elif abs_path.endswith(".json"):
+        elif suffix == ".json":
             df_spark = spark.read.json(abs_path)
-        elif abs_path.endswith(".xlsx") or abs_path.endswith(".xls"):
+        elif suffix in [".xlsx", ".xls"]:
             # Use pandas as a bridge for Excel in local Spark
             df_pd = pd.read_excel(abs_path)
             df_spark = spark.createDataFrame(df_pd)

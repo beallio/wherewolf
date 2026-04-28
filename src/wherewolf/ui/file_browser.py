@@ -2,6 +2,7 @@ import os
 import streamlit as st
 from pathlib import Path
 from typing import Optional
+from wherewolf.constants import SUPPORTED_EXTENSIONS
 
 
 class FileBrowser:
@@ -55,11 +56,21 @@ class FileBrowser:
             if not show_hidden:
                 raw_items = [f for f in raw_items if not f.startswith(".")]
 
+            # Filter items: always show directories, only show files with supported extensions
+            filtered_items = []
+            for item in raw_items:
+                full_item_path = os.path.join(current_path, item)
+                if os.path.isdir(full_item_path):
+                    filtered_items.append(item)
+                else:
+                    if Path(item).suffix.lower() in SUPPORTED_EXTENSIONS:
+                        filtered_items.append(item)
+
             # Remove '..' if we are at root
             if current_path == os.path.abspath(os.sep):
-                files = ["Select file/folder..."] + raw_items
+                files = ["Select file/folder..."] + filtered_items
             else:
-                files = ["Select file/folder...", ".."] + raw_items
+                files = ["Select file/folder...", ".."] + filtered_items
 
             st.session_state[files_key] = files
         except Exception as e:
@@ -88,14 +99,14 @@ class FileBrowser:
             st.caption("📁 *Directory selected. Change selection to enter.*")
         else:
             # Display file info
-            valid_exts = {".csv", ".parquet", ".json", ".xlsx", ".xls"}
-            is_valid = Path(full_path).suffix.lower() in valid_exts
+            is_valid = Path(full_path).suffix.lower() in SUPPORTED_EXTENSIONS
 
             if is_valid:
                 st.success(f"📄 Ready to load: `{selected_file}`")
                 if st.button("Load This File", width="stretch", type="primary"):
                     return full_path
             else:
+                # This case should be rare now that we filter, but keep for safety
                 st.warning(f"⚠️ `{selected_file}` is not a supported data format.")
 
         return None

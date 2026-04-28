@@ -1,23 +1,25 @@
 from streamlit.testing.v1 import AppTest
 
 
-def test_file_browser_invalid_extension(tmp_path):
-    """Verify file browser warns about unsupported file types using AppTest."""
-    # 1. Create an unsupported file
+def test_file_browser_filters_invalid_extension(tmp_path):
+    """Verify file browser filters out unsupported file types."""
+    # 1. Create files: one supported, one unsupported
+    valid_file = tmp_path / "data.csv"
+    valid_file.write_text("a,b\n1,2")
     invalid_file = tmp_path / "data.txt"
     invalid_file.write_text("not data")
 
     at = AppTest.from_file("src/wherewolf/app.py")
 
-    # 2. Mock session state to simulate selecting this file in the browser
-    # The browser key is 'wherewolf_fs'
+    # 2. Set the directory in session state
     at.session_state["wherewolf_fs_curr_dir"] = str(tmp_path)
-    at.session_state["wherewolf_fs_files"] = ["Select file/folder...", "data.txt"]
-    at.session_state["wherewolf_fs"] = "data.txt"
 
     at.run()
 
-    # 3. Check for the warning in the UI
-    # In AppTest, warnings are usually captured in the element tree
-    all_warnings = [w.body for w in at.warning]
-    assert any("not a supported data format" in w for w in all_warnings)
+    # 3. Verify that only the CSV file is in the selectbox options
+    # The selectbox has key 'wherewolf_fs'
+    fs_selectbox = at.selectbox(key="wherewolf_fs")
+    options = fs_selectbox.options
+
+    assert "data.csv" in options
+    assert "data.txt" not in options

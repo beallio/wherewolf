@@ -32,6 +32,7 @@ class DuckDBEngine:
             self.con.execute("INSTALL excel; LOAD excel;")
             rel_source = self.con.sql("SELECT * FROM read_xlsx(?)", params=[str(abs_path)])
         else:
+            # Fallback for other extensions if somehow passed
             rel_source = self.con.from_csv_auto(str(abs_path))
 
         rel_source.create_view(alias, replace=True)
