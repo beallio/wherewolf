@@ -1,0 +1,23 @@
+{
+  "date": "2026-04-27",
+  "task_objective": "Release version 0.4.0 with enhanced file browser and UI improvements.",
+  "files_modified": [
+    "pyproject.toml",
+    "src/wherewolf/app.py",
+    "src/wherewolf/ui/file_browser.py",
+    "src/wherewolf/constants.py",
+    "README.md"
+  ],
+  "tests_added": [
+    "tests/test_constants.py",
+    "tests/test_file_browser_filtering.py"
+  ],
+  "design_decisions": [
+    "Bumped version to 0.4.0 to reflect significant UI and navigation improvements.",
+    "Integrated directory-first sorting, folder icons, and extension filtering into the file browser.",
+    "Switched to native Streamlit selectbox placeholder (index=None) for a cleaner UI.",
+    "Increased default sidebar width to 450px to improve catalog visibility.",
+    "Centralized supported extensions in a new constants module."
+  ],
+  "results": "Successfully released v0.4.0. Documentation updated, cachebusters incremented, and all tests passing."
+}
