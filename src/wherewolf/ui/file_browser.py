@@ -56,29 +56,45 @@ class FileBrowser:
             if not show_hidden:
                 raw_items = [f for f in raw_items if not f.startswith(".")]
 
-            # Filter items: always show directories, only show files with supported extensions
-            filtered_items = []
+            # Filter and sort items: always show directories, only show files with supported extensions
+            dirs = []
+            files = []
             for item in raw_items:
                 full_item_path = os.path.join(current_path, item)
                 if os.path.isdir(full_item_path):
-                    filtered_items.append(item)
+                    dirs.append(item)
                 else:
                     if Path(item).suffix.lower() in SUPPORTED_EXTENSIONS:
-                        filtered_items.append(item)
+                        files.append(item)
+
+            # Combine: directories first, then files
+            filtered_items = dirs + files
 
             # Remove '..' if we are at root
             if current_path == os.path.abspath(os.sep):
-                files = ["Select file/folder..."] + filtered_items
+                options = ["Select file/folder..."] + filtered_items
             else:
-                files = ["Select file/folder...", ".."] + filtered_items
+                options = ["Select file/folder...", ".."] + filtered_items
 
-            st.session_state[files_key] = files
+            st.session_state[files_key] = options
         except Exception as e:
             st.error(f"Error reading directory {current_path}: {e}")
             st.session_state[files_key] = ["Select file/folder...", ".."]
 
         # --- UI Navigation ---
         st.write(f"📂 `{current_path}`")
+
+        def format_item(item: str) -> str:
+            """Adds icons to directories for display."""
+            if item == "Select file/folder...":
+                return item
+            if item == "..":
+                return "⤴️ .."
+
+            full_item_path = os.path.join(current_path, item)
+            if os.path.isdir(full_item_path):
+                return f"📁 {item}"
+            return item
 
         selected_file = st.selectbox(
             label="Select file or directory",
@@ -87,6 +103,7 @@ class FileBrowser:
             on_change=lambda: FileBrowser._update_dir(key),
             help="Select a directory to enter it, or a file to load it.",
             index=0,  # Always reset to placeholder after a change triggers rerun
+            format_func=format_item,
         )
 
         if selected_file == "Select file/folder...":

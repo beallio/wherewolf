@@ -48,9 +48,19 @@ def test_file_browser_filtering(tmp_path):
         assert ".hidden_file.csv" not in files
         assert ".." in files
 
+        # Verify sorting: 'subdir' should come before files like 'data.csv'
+        idx_subdir = files.index("subdir")
+        idx_csv = files.index("data.csv")
+        assert idx_subdir < idx_csv, "Directories should be sorted before files"
+
         # Test show_hidden=True
         FileBrowser.render_explorer(show_hidden=True)
         files_hidden = session_state[files_key]
         assert ".hidden_dir" in files_hidden
         assert ".hidden_file.csv" in files_hidden
         assert "notes.txt" not in files_hidden
+
+        # Verify sorting with hidden: .hidden_dir should come before data.csv
+        idx_hidden_dir = files_hidden.index(".hidden_dir")
+        idx_csv_hidden = files_hidden.index("data.csv")
+        assert idx_hidden_dir < idx_csv_hidden, "Hidden directories should be sorted before files"
