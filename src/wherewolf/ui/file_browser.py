@@ -12,9 +12,11 @@ class FileBrowser:
     def _update_dir(key: str):
         """Callback to update the current directory based on selection."""
         # Use session_state directly to avoid stale variable issues
-        choice = st.session_state[key]
-        curr_dir_key = f"{key}_curr_dir"
+        choice = st.session_state.get(key)
+        if choice is None:
+            return
 
+        curr_dir_key = f"{key}_curr_dir"
         curr_dir = st.session_state[curr_dir_key]
 
         # Resolve the new path
@@ -72,22 +74,20 @@ class FileBrowser:
 
             # Remove '..' if we are at root
             if current_path == os.path.abspath(os.sep):
-                options = ["Select file/folder..."] + filtered_items
+                options = filtered_items
             else:
-                options = ["Select file/folder...", ".."] + filtered_items
+                options = [".."] + filtered_items
 
             st.session_state[files_key] = options
         except Exception as e:
             st.error(f"Error reading directory {current_path}: {e}")
-            st.session_state[files_key] = ["Select file/folder...", ".."]
+            st.session_state[files_key] = [".."]
 
         # --- UI Navigation ---
         st.write(f"📂 `{current_path}`")
 
         def format_item(item: str) -> str:
             """Adds icons to directories for display."""
-            if item == "Select file/folder...":
-                return item
             if item == "..":
                 return "⤴️ .."
 
@@ -102,15 +102,15 @@ class FileBrowser:
             key=key,
             on_change=lambda: FileBrowser._update_dir(key),
             help="Select a directory to enter it, or a file to load it.",
-            index=0,  # Always reset to placeholder after a change triggers rerun
+            index=None,  # Use native placeholder
+            placeholder="Select file/folder...",
             format_func=format_item,
         )
 
-        if selected_file == "Select file/folder...":
+        if selected_file is None:
             return None
 
         full_path = os.path.normpath(os.path.join(current_path, selected_file))
-
         # --- Contextual Actions ---
         if os.path.isdir(full_path):
             st.caption("📁 *Directory selected. Change selection to enter.*")

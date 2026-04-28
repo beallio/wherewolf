@@ -27,15 +27,16 @@ def test_file_browser_filtering(tmp_path):
         patch("streamlit.session_state", session_state),
         patch("streamlit.error"),
         patch("streamlit.write"),
-        patch("streamlit.selectbox", return_value="Select file/folder..."),
+        patch("streamlit.selectbox", return_value=None),
         patch("streamlit.caption"),
     ):
         # Test default filtering (no hidden)
         FileBrowser.render_explorer(show_hidden=False)
 
         files = session_state[files_key]
-        # Should contain: Placeholder, .., subdir, data.csv, data.parquet, data.json, data.xlsx, data.xls
-        # Should NOT contain: notes.txt, script.py, .hidden_dir, .hidden_file.csv
+        # Should contain: .., subdir, data.csv, data.parquet, data.json, data.xlsx, data.xls
+        # Should NOT contain: Select file/folder..., notes.txt, script.py, .hidden_dir, .hidden_file.csv
+        assert "Select file/folder..." not in files
         assert "subdir" in files
         assert "data.csv" in files
         assert "data.parquet" in files
@@ -52,7 +53,6 @@ def test_file_browser_filtering(tmp_path):
         idx_subdir = files.index("subdir")
         idx_csv = files.index("data.csv")
         assert idx_subdir < idx_csv, "Directories should be sorted before files"
-
         # Test show_hidden=True
         FileBrowser.render_explorer(show_hidden=True)
         files_hidden = session_state[files_key]
