@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-27",
+  "task_objective": "Enhance file browser UI with directory-first sorting, folder icons, and native selectbox placeholder.",
+  "files_modified": [
+    "src/wherewolf/ui/file_browser.py",
+    "tests/test_file_browser_filtering.py"
+  ],
+  "tests_added": [
+    "Updated tests/test_file_browser_filtering.py for sorting and placeholder removal."
+  ],
+  "design_decisions": [
+    "Used st.selectbox(index=None, placeholder=...) to provide a clean prompt without adding a placeholder item to the options list.",
+    "Updated selection logic to handle None when no item is selected (initial state).",
+    "Maintained directory-first sorting and folder icons (📁, ⤴️) for better visual navigation."
+  ],
+  "results": "File browser UI is now clean, sorted, and uses native Streamlit placeholder functionality. All tests pass."
+}

@@ -1,0 +1,17 @@
+{
+  "date": "2026-04-27",
+  "task_objective": "Enhance file browser with directory-first sorting and folder icons.",
+  "files_modified": [
+    "src/wherewolf/ui/file_browser.py",
+    "tests/test_file_browser_filtering.py"
+  ],
+  "tests_added": [
+    "Sorting verification added to tests/test_file_browser_filtering.py"
+  ],
+  "design_decisions": [
+    "Implemented directory-first sorting by separating items into two lists (dirs and files) before combining them.",
+    "Used Streamlit's format_func in st.selectbox to add emojis (📁 for folders, ⤴️ for parent directory) to the display while keeping underlying values as raw strings.",
+    "Kept file display without icons to maintain a clean interface as requested."
+  ],
+  "results": "File browser now displays directories at the top with folder icons. All tests pass."
+}
