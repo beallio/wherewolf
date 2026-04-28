@@ -32,9 +32,11 @@ hide_st_style = """
             /* Hide the Deploy button specifically */
             .stAppDeployButton {display: none;}
 
-            /* Darken the sidebar */
+            /* Darken and widen the sidebar */
             [data-testid="stSidebar"] {
                 background-color: #000000;
+                min-width: 450px !important;
+                max-width: 450px !important;
             }
 
             /* Add back some top padding for main content */
