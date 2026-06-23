@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Project quality gates. Invoked by orchestration/run-quality-gates from the repo
+# root. Exit non-zero to fail the gate. The engine separately enforces that
+# review notes are not deleted, so you do not need to repeat that here.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+./run.sh uv run ruff check . --fix
+./run.sh uv run ruff format .
+./run.sh uv run ty check src/
+./run.sh uv run pytest
