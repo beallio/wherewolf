@@ -34,3 +34,28 @@ def test_spark_engine_optimization_no_full_count():
         assert result.success is True
         assert result.row_count == 1
         assert result.is_truncated is True
+
+
+def test_spark_engine_none_limit_fetches_full_result():
+    with patch("wherewolf.execution.spark_engine.SparkSession") as mock_spark_session:
+        mock_spark = MagicMock()
+        mock_spark_session.builder.appName.return_value.master.return_value.getOrCreate.return_value = mock_spark
+
+        engine = SparkEngine()
+        mock_df = MagicMock()
+        mock_spark.read.option.return_value = mock_spark.read
+        mock_spark.read.csv.return_value = mock_df
+        mock_spark.sql.return_value = mock_df
+
+        # Full result: toPandas() is called directly on the result frame
+        mock_df.toPandas.return_value = pd.DataFrame({"a": [1, 2, 3]})
+
+        result = engine.execute("SELECT * FROM dataset", "test.csv", limit=None)
+
+        # No row cap should be applied
+        mock_df.limit.assert_not_called()
+        mock_df.toPandas.assert_called_once()
+
+        assert result.success is True
+        assert result.row_count == 3
+        assert result.is_truncated is False
