@@ -61,7 +61,7 @@ class DuckDBEngine:
         self,
         query: str,
         path: str = "",
-        limit: int = 1000,
+        limit: Optional[int] = 1000,
         catalog: Optional[dict[str, str]] = None,
     ) -> QueryResult:
         """Executes a SQL query against local files using DuckDB.
@@ -69,7 +69,8 @@ class DuckDBEngine:
         Args:
             query: The SQL query to execute.
             path: Legacy single-file path (deprecated).
-            limit: Maximum number of rows to return in the preview.
+            limit: Maximum number of rows to return in the preview. Pass ``None``
+                to return the full result set (used for full exports).
             catalog: A mapping of aliases to filesystem paths.
 
         Returns:
@@ -90,13 +91,17 @@ class DuckDBEngine:
             # 3. Execute the user query
             rel = self.con.sql(query)
 
-            # 3. Fetch the preview + 1 extra row
-            df_preview_plus_one = rel.limit(limit + 1).df()
-
-            # 4. Extract results
-            df_preview = df_preview_plus_one.head(limit)
-            row_count = len(df_preview)
-            is_truncated = len(df_preview_plus_one) > limit
+            if limit is None:
+                # Full result set (used for full exports): no row cap.
+                df_preview = rel.df()
+                row_count = len(df_preview)
+                is_truncated = False
+            else:
+                # Fetch the preview + 1 extra row to detect truncation cheaply.
+                df_preview_plus_one = rel.limit(limit + 1).df()
+                df_preview = df_preview_plus_one.head(limit)
+                row_count = len(df_preview)
+                is_truncated = len(df_preview_plus_one) > limit
 
             execution_time = time.time() - start_time
             return QueryResult(

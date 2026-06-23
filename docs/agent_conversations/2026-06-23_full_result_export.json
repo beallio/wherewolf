@@ -1,0 +1,25 @@
+{
+  "date": "2026-06-23",
+  "task_objective": "Exports previously serialized only the truncated preview DataFrame (capped by the Preview Size slider). Allow downloading the full result set.",
+  "files_modified": [
+    "src/wherewolf/execution/duckdb_engine.py",
+    "src/wherewolf/execution/spark_engine.py",
+    "src/wherewolf/app.py",
+    "tests/test_duckdb_engine.py",
+    "tests/test_spark_engine_optimization.py",
+    "README.md",
+    "docs/plans/full_result_export.md"
+  ],
+  "tests_added": [
+    "test_duckdb_engine_limit_truncates",
+    "test_duckdb_engine_none_limit_returns_full_result",
+    "test_spark_engine_none_limit_fetches_full_result"
+  ],
+  "design_decisions": [
+    "Engines accept limit=None to mean 'no row cap' (full result set, is_truncated=False); the integer preview path is unchanged.",
+    "app.py records the engine-dialect query (query_to_run) and engine name at submit time so a full export re-runs the exact query without re-translating.",
+    "Full export is opt-in via a 'Prepare full export' button (only shown when the preview is truncated), since an unbounded re-run can be expensive, especially on Spark. The result bytes are cached in session_state.full_export.",
+    "Extracted encode_export() and export_base_name() helpers to avoid duplicating the format->bytes mapping between the preview and full-export download buttons."
+  ],
+  "results": "ruff check/format clean, ty check clean, 55 passed / 1 skipped via ./run.sh uv run pytest. README updated."
+}

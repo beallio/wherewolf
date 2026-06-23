@@ -24,6 +24,34 @@ def test_duckdb_engine_success(csv_path):
     assert result.row_count == 2
 
 
+@pytest.fixture
+def large_csv_path(tmp_path):
+    path = tmp_path / "large.csv"
+    df = pd.DataFrame({"value": list(range(5))})
+    df.to_csv(path, index=False)
+    return str(path)
+
+
+def test_duckdb_engine_limit_truncates(large_csv_path):
+    engine = DuckDBEngine()
+    result = engine.execute("SELECT * FROM dataset", large_csv_path, limit=2)
+
+    assert result.success is True
+    assert result.row_count == 2
+    assert result.is_truncated is True
+
+
+def test_duckdb_engine_none_limit_returns_full_result(large_csv_path):
+    engine = DuckDBEngine()
+    result = engine.execute("SELECT * FROM dataset", large_csv_path, limit=None)
+
+    assert result.success is True
+    assert result.row_count == 5
+    assert len(result.df) == 5
+    assert result.is_truncated is False
+    assert list(result.df["value"]) == [0, 1, 2, 3, 4]
+
+
 def test_duckdb_engine_failure(csv_path):
     engine = DuckDBEngine()
     # Invalid SQL

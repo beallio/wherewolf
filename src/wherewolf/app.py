@@ -108,6 +108,12 @@ if "executed_query" not in st.session_state:
     st.session_state.executed_query = ""
 if "executed_input_dialect_key" not in st.session_state:
     st.session_state.executed_input_dialect_key = "duckdb"
+if "executed_engine_query" not in st.session_state:
+    st.session_state.executed_engine_query = ""
+if "executed_engine_name" not in st.session_state:
+    st.session_state.executed_engine_name = "DuckDB"
+if "full_export" not in st.session_state:
+    st.session_state.full_export = None
 if "last_engine_name" not in st.session_state:
     st.session_state.last_engine_name = "DuckDB"
 if "input_dialect_ui" not in st.session_state:
@@ -176,6 +182,30 @@ def get_default_alias(path: str) -> str:
     while f"{stem}_{counter}" in st.session_state.catalog:
         counter += 1
     return f"{stem}_{counter}"
+
+
+def encode_export(df, export_format: str):
+    """Encodes a DataFrame to (bytes, mime, extension) for the given format."""
+    if export_format == "CSV":
+        return Exporter.to_csv(df), "text/csv", ".csv"
+    if export_format == "Excel":
+        return (
+            Exporter.to_excel(df),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".xlsx",
+        )
+    return Exporter.to_parquet(df), "application/octet-stream", ".parquet"
+
+
+def export_base_name() -> str:
+    """Derives a base filename for exports from the first catalog entry."""
+    import os
+
+    if st.session_state.catalog:
+        first_path = list(st.session_state.catalog.values())[0]
+        orig_filename = os.path.basename(first_path)
+        return os.path.splitext(orig_filename)[0] or "wherewolf"
+    return "wherewolf"
 
 
 # --- Early State Update Pattern ---
@@ -431,6 +461,11 @@ if run_button and st.session_state.catalog:
         st.session_state.query_result = None
         st.session_state.executed_query = query_text
         st.session_state.executed_input_dialect_key = input_dialect_key
+        # Record the engine-dialect query and engine actually executed so a full
+        # export can re-run the exact query without re-translating.
+        st.session_state.executed_engine_query = query_to_run
+        st.session_state.executed_engine_name = engine_name
+        st.session_state.full_export = None
         st.session_state.active_engine = engine
 
         # Submit to executor
@@ -536,35 +571,65 @@ if st.session_state.query_result:
                 label_visibility="collapsed",
             )
 
+        base_name = export_base_name()
+
         with col_e2:
-            export_label = f"Download as {export_format}"
-            if export_format == "CSV":
-                data = Exporter.to_csv(result.df)
-                mime = "text/csv"
-                ext = ".csv"
-            elif export_format == "Excel":
-                data = Exporter.to_excel(result.df)
-                mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                ext = ".xlsx"
+            data, mime, ext = encode_export(result.df, export_format)
+            if result.is_truncated:
+                export_label = f"Download preview ({result.row_count:,} rows) as {export_format}"
             else:
-                data = Exporter.to_parquet(result.df)
-                mime = "application/octet-stream"
-                ext = ".parquet"
-
-            # Derive original filename for the export
-            import os
-
-            # Use first catalog entry for filename
-            if st.session_state.catalog:
-                first_path = list(st.session_state.catalog.values())[0]
-                orig_filename = os.path.basename(first_path)
-                base_name = os.path.splitext(orig_filename)[0] or "wherewolf"
-            else:
-                base_name = "wherewolf"
-
+                export_label = f"Download as {export_format}"
             download_name = f"{base_name}_export{ext}"
-
             st.download_button(label=export_label, data=data, file_name=download_name, mime=mime)
+
+        # When the preview is truncated, offer a full-result export. This re-runs
+        # the executed query without a row limit, so it is opt-in via a button.
+        if result.is_truncated:
+            st.caption(
+                "The preview above is truncated. Generate a full export to download the "
+                "entire result set (this re-runs the query without a row limit)."
+            )
+            if st.button("Prepare full export"):
+                if st.session_state.executed_engine_name == "DuckDB":
+                    full_engine = get_duckdb_engine()
+                else:
+                    full_engine = get_spark_engine()
+
+                with st.spinner("Running full query..."):
+                    full_result = full_engine.execute(
+                        st.session_state.executed_engine_query,
+                        "",
+                        None,
+                        st.session_state.catalog.copy(),
+                    )
+
+                if full_result.success:
+                    f_data, f_mime, f_ext = encode_export(full_result.df, export_format)
+                    st.session_state.full_export = {
+                        "data": f_data,
+                        "mime": f_mime,
+                        "file_name": f"{base_name}_full{f_ext}",
+                        "rows": full_result.row_count,
+                        "format": export_format,
+                    }
+                else:
+                    st.session_state.full_export = None
+                    st.error(f"Full export failed: {full_result.error_message}")
+
+            full_export = st.session_state.full_export
+            if full_export and full_export["format"] == export_format:
+                st.download_button(
+                    label=f"Download full result ({full_export['rows']:,} rows) as {export_format}",
+                    data=full_export["data"],
+                    file_name=full_export["file_name"],
+                    mime=full_export["mime"],
+                    key="full_export_download",
+                )
+            elif full_export:
+                st.caption(
+                    f"A full export is ready in {full_export['format']} format. "
+                    "Switch the format selector back or press 'Prepare full export' again."
+                )
 
     else:
         st.error("Query Failed")

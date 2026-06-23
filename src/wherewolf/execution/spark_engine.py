@@ -88,7 +88,7 @@ class SparkEngine:
         self,
         query: str,
         path: str = "",
-        limit: int = 1000,
+        limit: Optional[int] = 1000,
         catalog: Optional[dict[str, str]] = None,
     ) -> QueryResult:
         if not SPARK_AVAILABLE:
@@ -110,14 +110,18 @@ class SparkEngine:
             # 3. Execute query
             res_spark = spark.sql(query)
 
-            # 4. Fetch the preview + 1 extra row to see if there's more
-            # This avoids a full scan of the dataset with count()
-            preview_plus_one = res_spark.limit(limit + 1).toPandas()
-
-            # 5. Extract results
-            df_preview = preview_plus_one.head(limit)
-            row_count = len(df_preview)
-            is_truncated = len(preview_plus_one) > limit
+            if limit is None:
+                # Full result set (used for full exports): no row cap.
+                df_preview = res_spark.toPandas()
+                row_count = len(df_preview)
+                is_truncated = False
+            else:
+                # Fetch the preview + 1 extra row to see if there's more.
+                # This avoids a full scan of the dataset with count()
+                preview_plus_one = res_spark.limit(limit + 1).toPandas()
+                df_preview = preview_plus_one.head(limit)
+                row_count = len(df_preview)
+                is_truncated = len(preview_plus_one) > limit
 
             execution_time = time.time() - start_time
             return QueryResult(

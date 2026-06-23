@@ -17,7 +17,7 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 - **Modern UI:** Distraction-free interface with a hidden toolbar, reduced whitespace, and clear visual hierarchy.
 - **Safe Preview:** Scrollable results limited to 1000 rows.
 - **Query History:** Persists past queries in `~/.wherewolf/history.json`.
-- **Export:** Download query results as CSV, Excel, or Parquet.
+- **Export:** Download query results as CSV, Excel, or Parquet. When the preview is truncated, use **Prepare full export** to re-run the query without a row limit and download the entire result set.
 - **Execution Metrics:** Tracks row count and execution time.
 
 ![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=8)
