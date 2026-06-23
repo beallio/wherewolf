@@ -4,6 +4,7 @@ version = "0.4.0"
 requires-python = ">=3.11"
 dependencies = [
     "duckdb>=1.5.0",
+    "fastexcel>=0.20.2",
     "ibis-framework>=12.0.0",
     "openpyxl>=3.1.5",
     "pandas>=2.3.3",
@@ -14,6 +15,7 @@ dependencies = [
     "sqlglot>=29.0.1",
     "streamlit>=1.55.0",
     "streamlit-ace>=0.1.1",
+    "xlsxwriter>=3.2.9",
 ]
 
 [build-system]
