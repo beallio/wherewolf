@@ -17,7 +17,7 @@ def test_spark_engine_optimization_no_full_count():
         mock_spark.read.json.return_value = mock_df
         mock_spark.sql.return_value = mock_df
 
-        # Mock limit and toPandas
+        # Mock limit and toArrow
         mock_preview_df = MagicMock()
         mock_df.limit.return_value = mock_preview_df
         mock_preview_df.toArrow.return_value = pa.table({"a": [1, 2]})
