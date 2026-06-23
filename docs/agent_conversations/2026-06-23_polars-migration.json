@@ -1,0 +1,34 @@
+{
+  "date": "2026-06-23",
+  "task_objective": "Migrate DataFrames from pandas to Polars and remove pandas as a direct dependency.",
+  "files_modified": [
+    "README.md",
+    "pyproject.toml",
+    "uv.lock",
+    "src/wherewolf/export/exporter.py",
+    "src/wherewolf/execution/models.py",
+    "src/wherewolf/execution/duckdb_engine.py",
+    "src/wherewolf/execution/spark_engine.py",
+    "src/wherewolf/app.py",
+    "tests/test_exporter.py",
+    "tests/test_models.py",
+    "tests/test_duckdb_engine.py",
+    "tests/test_multi_dataset.py",
+    "tests/test_duckdb_sql_injection.py",
+    "tests/test_spark_engine_optimization.py",
+    "tests/test_app_flow.py",
+    "tests/test_excel_support.py"
+  ],
+  "tests_added": [
+    "Updated existing tests to mock and use toArrow() instead of toPandas().",
+    "Updated existing tests to construct and assert against pl.DataFrame instead of pd.DataFrame."
+  ],
+  "design_decisions": [
+    "Changed canonical DataFrame type across the application boundary to pl.DataFrame.",
+    "Used public toArrow() API in PySpark to fully remove pandas dependencies from Spark integration.",
+    "Switched file export implementations (CSV, Parquet, Excel) to use native Polars write methods.",
+    "Replaced pandas and openpyxl dependencies with polars, fastexcel, and xlsxwriter.",
+    "Maintained limit=None semantics for full-result exports using Spark Arrow collection without row caps."
+  ],
+  "results": "Polars is now the canonical type. pandas and openpyxl are removed as dependencies. Spark integration relies entirely on Arrow. All quality gates pass and the application maintains its existing functionality without pandas overhead."
+}

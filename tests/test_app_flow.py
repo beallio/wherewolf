@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 from streamlit.testing.v1 import AppTest
 
 
@@ -6,7 +6,7 @@ def test_app_query_execution_flow(tmp_path):
     """Simulate selecting a file and running a query via DuckDB."""
     # 1. Create a dummy CSV
     csv_file = tmp_path / "app_test.csv"
-    pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}).to_csv(csv_file, index=False)
+    pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_csv(csv_file)
 
     at = AppTest.from_file("src/wherewolf/app.py")
     at.run()
@@ -58,9 +58,9 @@ def test_translation_target_options():
     at.session_state.input_dialect_ui = "DuckDB"
     # We need a query result to show the translation section
     from wherewolf.execution import QueryResult
-    import pandas as pd
+    import polars as pl
 
-    at.session_state.query_result = QueryResult(df=pd.DataFrame({"a": [1]}), success=True)
+    at.session_state.query_result = QueryResult(df=pl.DataFrame({"a": [1]}), success=True)
     at.session_state.executed_input_dialect_key = "duckdb"
     at.run()
 

@@ -323,7 +323,7 @@ with st.sidebar:
                 st.session_state.schema = None
                 st.sidebar.error(f"Failed to fetch schema: {e}")
 
-        if st.session_state.schema is not None and not st.session_state.schema.empty:
+        if st.session_state.schema is not None and not st.session_state.schema.is_empty():
             with st.expander(f"📊 {focus_alias} Schema", expanded=True):
                 st.dataframe(
                     st.session_state.schema,

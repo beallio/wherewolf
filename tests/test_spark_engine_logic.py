@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock, patch
+import pyarrow as pa
 from wherewolf.execution import SparkEngine
 
 
@@ -9,9 +10,12 @@ def test_spark_engine_execute_logic_parquet():
         patch("wherewolf.execution.spark_engine.SparkSession") as mock_spark_session,
     ):
         # Setup mock chain
-        mock_spark = mock_spark_session.builder.appName.return_value.master.return_value.getOrCreate.return_value
+        mock_spark = mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value
         mock_df = MagicMock()
         mock_spark.read.parquet.return_value = mock_df
+        mock_res = MagicMock()
+        mock_spark.sql.return_value = mock_res
+        mock_res.limit.return_value.toArrow.return_value = pa.table({"a": [1]})
 
         engine = SparkEngine()
         query = "SELECT * FROM dataset"

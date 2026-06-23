@@ -1,6 +1,6 @@
 import time
-import pandas as pd
-from typing import Optional
+import polars as pl
+from typing import Optional, cast
 from .models import QueryResult
 
 try:
@@ -23,7 +23,12 @@ class SparkEngine:
 
     def _get_session(self):
         if not self.spark:
-            self.spark = SparkSession.builder.appName("Wherewolf").master("local[*]").getOrCreate()
+            self.spark = (
+                SparkSession.builder.appName("Wherewolf")
+                .master("local[*]")
+                .config("spark.sql.execution.arrow.pyspark.enabled", "true")
+                .getOrCreate()
+            )
         return self.spark
 
     def _register_view(self, path: str, alias: str = "dataset"):
@@ -53,9 +58,9 @@ class SparkEngine:
         elif suffix == ".json":
             df_spark = spark.read.json(abs_path)
         elif suffix in [".xlsx", ".xls"]:
-            # Use pandas as a bridge for Excel in local Spark
-            df_pd = pd.read_excel(abs_path)
-            df_spark = spark.createDataFrame(df_pd)
+            # Use polars as a bridge for Excel in local Spark
+            df_arrow = pl.read_excel(abs_path).to_arrow()
+            df_spark = spark.createDataFrame(df_arrow)
         else:
             raise ValueError(f"Unsupported file format for path: {abs_path}")
 
@@ -64,25 +69,25 @@ class SparkEngine:
         self._registered_views[alias] = path
         return df_spark
 
-    def get_schema(self, path: str) -> pd.DataFrame:
+    def get_schema(self, path: str) -> pl.DataFrame:
         """Returns the schema of the dataset.
 
         Returns:
             A DataFrame with 'Column' and 'Type' columns.
         """
         if not SPARK_AVAILABLE:
-            return pd.DataFrame({"Column": [], "Type": []})
+            return pl.DataFrame(schema={"Column": pl.Utf8, "Type": pl.Utf8})
 
         try:
             temp_alias = "_schema_hud"
             df_spark = self._register_view(path, alias=temp_alias)
-            # Spark schema to pandas
+            # Spark schema to polars
             schema_data = []
             for field in df_spark.schema:
                 schema_data.append({"Column": field.name, "Type": field.dataType.simpleString()})
-            return pd.DataFrame(schema_data)
+            return pl.DataFrame(schema_data, schema={"Column": pl.Utf8, "Type": pl.Utf8})
         except Exception:
-            return pd.DataFrame({"Column": [], "Type": []})
+            return pl.DataFrame(schema={"Column": pl.Utf8, "Type": pl.Utf8})
 
     def execute(
         self,
@@ -112,13 +117,15 @@ class SparkEngine:
 
             if limit is None:
                 # Full result set (used for full exports): no row cap.
-                df_preview = res_spark.toPandas()
+                df_preview = cast(pl.DataFrame, pl.from_arrow(res_spark.toArrow()))
                 row_count = len(df_preview)
                 is_truncated = False
             else:
                 # Fetch the preview + 1 extra row to see if there's more.
                 # This avoids a full scan of the dataset with count()
-                preview_plus_one = res_spark.limit(limit + 1).toPandas()
+                preview_plus_one = cast(
+                    pl.DataFrame, pl.from_arrow(res_spark.limit(limit + 1).toArrow())
+                )
                 df_preview = preview_plus_one.head(limit)
                 row_count = len(df_preview)
                 is_truncated = len(preview_plus_one) > limit

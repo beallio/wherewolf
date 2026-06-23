@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import pytest
 from wherewolf.execution import DuckDBEngine, SparkEngine
 
@@ -6,8 +6,8 @@ from wherewolf.execution import DuckDBEngine, SparkEngine
 @pytest.fixture
 def csv_path(tmp_path):
     path = tmp_path / "test.csv"
-    df = pd.DataFrame({"name": ["alice", "bob", "charlie"], "value": [100, 200, 300]})
-    df.to_csv(path, index=False)
+    df = pl.DataFrame({"name": ["alice", "bob", "charlie"], "value": [100, 200, 300]})
+    df.write_csv(path)
     return str(path)
 
 
@@ -19,7 +19,7 @@ def test_duckdb_engine_success(csv_path):
 
     assert result.success is True
     assert len(result.df) == 2
-    assert "bob" in result.df["name"].values
+    assert "bob" in result.df["name"].to_list()
     assert result.execution_time > 0
     assert result.row_count == 2
 
@@ -27,8 +27,8 @@ def test_duckdb_engine_success(csv_path):
 @pytest.fixture
 def large_csv_path(tmp_path):
     path = tmp_path / "large.csv"
-    df = pd.DataFrame({"value": list(range(5))})
-    df.to_csv(path, index=False)
+    df = pl.DataFrame({"value": list(range(5))})
+    df.write_csv(path)
     return str(path)
 
 
@@ -49,7 +49,7 @@ def test_duckdb_engine_none_limit_returns_full_result(large_csv_path):
     assert result.row_count == 5
     assert len(result.df) == 5
     assert result.is_truncated is False
-    assert list(result.df["value"]) == [0, 1, 2, 3, 4]
+    assert result.df["value"].to_list() == [0, 1, 2, 3, 4]
 
 
 def test_duckdb_engine_failure(csv_path):
@@ -66,11 +66,11 @@ def test_duckdb_get_schema(csv_path):
     engine = DuckDBEngine()
     schema_df = engine.get_schema(csv_path)
 
-    assert isinstance(schema_df, pd.DataFrame)
+    assert isinstance(schema_df, pl.DataFrame)
     # DuckDB's DESCRIBE returns many columns, but our HUD should normalize to ["Column", "Type"]
     assert list(schema_df.columns) == ["Column", "Type"]
-    assert "name" in schema_df["Column"].values
-    assert "value" in schema_df["Column"].values
+    assert "name" in schema_df["Column"].to_list()
+    assert "value" in schema_df["Column"].to_list()
 
 
 @pytest.mark.skip(reason="Spark requires complex setup for CI, focus on DuckDB first")

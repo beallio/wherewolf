@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import io
 
 
@@ -6,21 +6,20 @@ class Exporter:
     """Utility to convert DataFrames to various byte formats for download."""
 
     @staticmethod
-    def to_csv(df: pd.DataFrame) -> bytes:
+    def to_csv(df: pl.DataFrame) -> bytes:
         """Converts DataFrame to CSV bytes."""
-        return df.to_csv(index=False).encode("utf-8")
+        return df.write_csv().encode("utf-8")
 
     @staticmethod
-    def to_excel(df: pd.DataFrame) -> bytes:
+    def to_excel(df: pl.DataFrame) -> bytes:
         """Converts DataFrame to Excel bytes."""
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:  # type: ignore
-            df.to_excel(writer, index=False)
+        df.write_excel(output)
         return output.getvalue()
 
     @staticmethod
-    def to_parquet(df: pd.DataFrame) -> bytes:
+    def to_parquet(df: pl.DataFrame) -> bytes:
         """Converts DataFrame to Parquet bytes."""
         output = io.BytesIO()
-        df.to_parquet(output, index=False)
+        df.write_parquet(output)
         return output.getvalue()
