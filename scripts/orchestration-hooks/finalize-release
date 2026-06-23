@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Project release step. Invoked by orchestration/finalize AFTER it has merged the
+# feature branch into the base branch. Any args passed to `finalize` after the
+# slug are forwarded here as the release bump (e.g. patch | minor | major | X.Y.Z).
+#
+# Optional: with no argument it is a no-op, so an ordinary finalize never cuts a
+# release. Pass a bump to tag + push, which triggers the GitHub release workflow.
+# See docs/RELEASING.md for the full flow.
+set -euo pipefail
+
+bump="${1:-}"
+if [[ -z "$bump" ]]; then
+  echo "finalize-release: no version bump given; skipping release." >&2
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Bump the version in pyproject.toml (accepts patch/minor/major or an explicit version).
+./run.sh uv run hatch version "$bump"
+version="$(./run.sh uv run hatch version)"
+
+git add pyproject.toml
+git commit -m "chore: bump version to ${version}"
+git tag -a "v${version}" -m "Release v${version}"
+
+# Push commit + tag; the tag push triggers CI + the release workflow (PyPI via OIDC).
+git push origin HEAD --follow-tags
