@@ -13,11 +13,13 @@ ruff check .
 ```
 
 ### 2. Bump the Version
-Use `hatch` (via `uv`) to increment the version in `pyproject.toml`.
+Use `uv` to increment the static version in `pyproject.toml` (this also updates
+`uv.lock`). `hatch version` cannot be used here because the version is defined
+statically under `[project].version`.
 
 ```bash
-# Options: patch, minor, major
-uv run hatch version patch
+# Options: patch, minor, major (or pass an explicit X.Y.Z)
+uv version --bump patch
 ```
 
 ### 3. Commit and Tag
@@ -25,10 +27,10 @@ Commit the version bump and create a git tag.
 
 ```bash
 # Get the new version string
-VERSION=$(uv run hatch version)
+VERSION=$(uv version --short)
 
-# Commit the version bump
-git add pyproject.toml
+# Commit the version bump (pyproject.toml + uv.lock)
+git add pyproject.toml uv.lock
 git commit -m "chore: bump version to $VERSION"
 
 # Create a tag

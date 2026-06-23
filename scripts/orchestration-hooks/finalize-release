@@ -16,11 +16,17 @@ fi
 
 cd "$(git rev-parse --show-toplevel)"
 
-# Bump the version in pyproject.toml (accepts patch/minor/major or an explicit version).
-./run.sh uv run hatch version "$bump"
-version="$(./run.sh uv run hatch version)"
+# Bump the version in pyproject.toml + uv.lock (accepts patch/minor/major or an
+# explicit X.Y.Z version). uv keeps the lockfile in sync; hatch's CLI cannot write
+# the version because it is defined statically under [project].version.
+if [[ "$bump" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+-].*)?$ ]]; then
+  ./run.sh uv version "$bump"
+else
+  ./run.sh uv version --bump "$bump"
+fi
+version="$(./run.sh uv version --short)"
 
-git add pyproject.toml
+git add pyproject.toml uv.lock
 git commit -m "chore: bump version to ${version}"
 git tag -a "v${version}" -m "Release v${version}"
 
