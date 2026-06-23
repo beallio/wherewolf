@@ -4,9 +4,13 @@ __pycache__/
 .pytest_cache/
 .cache/
 .venv/
+.venv
 dist/
 build/
 coverage.xml
+.coverage
+*.parquet
+/tmp/
 
 # orchestration engine: machine/trial-only config override
 orchestration.conf.local
