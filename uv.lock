@@ -14,7 +14,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-06-16T20:22:21.888712602Z"
+exclude-newer = "2026-06-16T22:48:10.928630809Z"
 exclude-newer-span = "P7D"
 
 [options.exclude-newer-package]
@@ -2073,7 +2073,7 @@ wheels = [
 
 [[package]]
 name = "wherewolf"
-version = "0.4.0"
+version = "0.5.0"
 source = { editable = "." }
 dependencies = [
     { name = "duckdb" },
