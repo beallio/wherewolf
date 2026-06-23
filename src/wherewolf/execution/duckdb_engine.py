@@ -1,6 +1,6 @@
 import duckdb
 import time
-import pandas as pd
+import polars as pl
 from typing import Optional
 from .models import QueryResult
 
@@ -38,7 +38,7 @@ class DuckDBEngine:
         rel_source.create_view(alias, replace=True)
         self._registered_views[alias] = path
 
-    def get_schema(self, path: str) -> pd.DataFrame:
+    def get_schema(self, path: str) -> pl.DataFrame:
         """Returns the schema of the dataset.
 
         Returns:
@@ -49,13 +49,13 @@ class DuckDBEngine:
             temp_alias = "_schema_hud"
             self._register_view(path, alias=temp_alias)
             # DESCRIBE returns: column_name, column_type, null, key, default, extra
-            df = self.con.sql(f"DESCRIBE {temp_alias}").df()
+            df = self.con.sql(f"DESCRIBE {temp_alias}").pl()
             # Normalize to Column/Type
-            return df[["column_name", "column_type"]].rename(
-                columns={"column_name": "Column", "column_type": "Type"}
+            return df.select(["column_name", "column_type"]).rename(
+                {"column_name": "Column", "column_type": "Type"}
             )
         except Exception:
-            return pd.DataFrame({"Column": [], "Type": []})
+            return pl.DataFrame(schema={"Column": pl.Utf8, "Type": pl.Utf8})
 
     def execute(
         self,
@@ -93,12 +93,12 @@ class DuckDBEngine:
 
             if limit is None:
                 # Full result set (used for full exports): no row cap.
-                df_preview = rel.df()
+                df_preview = rel.pl()
                 row_count = len(df_preview)
                 is_truncated = False
             else:
                 # Fetch the preview + 1 extra row to detect truncation cheaply.
-                df_preview_plus_one = rel.limit(limit + 1).df()
+                df_preview_plus_one = rel.limit(limit + 1).pl()
                 df_preview = df_preview_plus_one.head(limit)
                 row_count = len(df_preview)
                 is_truncated = len(df_preview_plus_one) > limit

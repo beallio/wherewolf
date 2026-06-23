@@ -1,12 +1,12 @@
 from unittest.mock import MagicMock, patch
-import pandas as pd
+import pyarrow as pa
 from wherewolf.execution.spark_engine import SparkEngine
 
 
 def test_spark_engine_optimization_no_full_count():
     with patch("wherewolf.execution.spark_engine.SparkSession") as mock_spark_session:
         mock_spark = MagicMock()
-        mock_spark_session.builder.appName.return_value.master.return_value.getOrCreate.return_value = mock_spark
+        mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = mock_spark
 
         engine = SparkEngine()
         mock_df = MagicMock()
@@ -20,7 +20,7 @@ def test_spark_engine_optimization_no_full_count():
         # Mock limit and toPandas
         mock_preview_df = MagicMock()
         mock_df.limit.return_value = mock_preview_df
-        mock_preview_df.toPandas.return_value = pd.DataFrame({"a": [1, 2]})
+        mock_preview_df.toArrow.return_value = pa.table({"a": [1, 2]})
         # Execute
         result = engine.execute("SELECT * FROM dataset", "test.csv", limit=1)
 
@@ -39,7 +39,7 @@ def test_spark_engine_optimization_no_full_count():
 def test_spark_engine_none_limit_fetches_full_result():
     with patch("wherewolf.execution.spark_engine.SparkSession") as mock_spark_session:
         mock_spark = MagicMock()
-        mock_spark_session.builder.appName.return_value.master.return_value.getOrCreate.return_value = mock_spark
+        mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = mock_spark
 
         engine = SparkEngine()
         mock_df = MagicMock()
@@ -47,14 +47,13 @@ def test_spark_engine_none_limit_fetches_full_result():
         mock_spark.read.csv.return_value = mock_df
         mock_spark.sql.return_value = mock_df
 
-        # Full result: toPandas() is called directly on the result frame
-        mock_df.toPandas.return_value = pd.DataFrame({"a": [1, 2, 3]})
+        mock_df.toArrow.return_value = pa.table({"a": [1, 2, 3]})
 
         result = engine.execute("SELECT * FROM dataset", "test.csv", limit=None)
 
         # No row cap should be applied
         mock_df.limit.assert_not_called()
-        mock_df.toPandas.assert_called_once()
+        mock_df.toArrow.assert_called_once()
 
         assert result.success is True
         assert result.row_count == 3

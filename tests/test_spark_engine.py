@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import pytest
 from wherewolf.execution.spark_engine import SparkEngine, SPARK_AVAILABLE
 
@@ -6,8 +6,8 @@ from wherewolf.execution.spark_engine import SparkEngine, SPARK_AVAILABLE
 @pytest.fixture
 def csv_path(tmp_path):
     path = tmp_path / "test.csv"
-    df = pd.DataFrame({"name": ["alice", "bob", "charlie"], "value": [100, 200, 300]})
-    df.to_csv(path, index=False)
+    df = pl.DataFrame({"name": ["alice", "bob", "charlie"], "value": [100, 200, 300]})
+    df.write_csv(path)
     return str(path)
 
 
@@ -16,10 +16,10 @@ def test_spark_get_schema(csv_path):
     engine = SparkEngine()
     schema_df = engine.get_schema(csv_path)
 
-    assert isinstance(schema_df, pd.DataFrame)
+    assert isinstance(schema_df, pl.DataFrame)
     assert list(schema_df.columns) == ["Column", "Type"]
-    assert "name" in schema_df["Column"].values
-    assert "value" in schema_df["Column"].values
+    assert "name" in schema_df["Column"].to_list()
+    assert "value" in schema_df["Column"].to_list()
 
 
 def test_spark_engine_init():

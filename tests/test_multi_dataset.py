@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 from wherewolf.execution import DuckDBEngine, SparkEngine
 
 
@@ -7,8 +7,8 @@ def test_duckdb_multi_dataset_join(tmp_path):
     path1 = tmp_path / "users.csv"
     path2 = tmp_path / "orders.parquet"
 
-    pd.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]}).to_csv(path1, index=False)
-    pd.DataFrame({"user_id": [1, 2], "amount": [100, 200]}).to_parquet(path2, index=False)
+    pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]}).write_csv(path1)
+    pl.DataFrame({"user_id": [1, 2], "amount": [100, 200]}).write_parquet(path2)
 
     engine = DuckDBEngine()
     catalog = {"u": str(path1), "o": str(path2)}
@@ -27,8 +27,8 @@ def test_spark_multi_dataset_join(tmp_path):
     path1 = tmp_path / "users.csv"
     path2 = tmp_path / "orders.parquet"
 
-    pd.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]}).to_csv(path1, index=False)
-    pd.DataFrame({"user_id": [1, 2], "amount": [100, 200]}).to_parquet(path2, index=False)
+    pl.DataFrame({"id": [1, 2], "name": ["Alice", "Bob"]}).write_csv(path1)
+    pl.DataFrame({"user_id": [1, 2], "amount": [100, 200]}).write_parquet(path2)
 
     engine = SparkEngine()
     catalog = {"u": str(path1), "o": str(path2)}
