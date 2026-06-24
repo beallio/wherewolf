@@ -1,12 +1,13 @@
 import streamlit as st
 import os
 from concurrent.futures import ThreadPoolExecutor
-from wherewolf.execution import DuckDBEngine, SparkEngine, QueryResult
+from wherewolf.execution import QueryResult
 from wherewolf.translation import Translator
 from wherewolf.storage import HistoryManager
 from wherewolf.export import Exporter
 from wherewolf.ui import FileBrowser
 from wherewolf.constants import DIALECT_MAPPING
+from wherewolf.engines import get_engine, get_duckdb_engine, get_spark_engine  # noqa: F401
 from streamlit_ace import st_ace
 import importlib.metadata
 
@@ -79,16 +80,6 @@ st.markdown(hide_st_style, unsafe_allow_html=True)
 @st.cache_resource
 def get_executor():
     return ThreadPoolExecutor(max_workers=4)
-
-
-@st.cache_resource
-def get_duckdb_engine():
-    return DuckDBEngine()
-
-
-@st.cache_resource
-def get_spark_engine():
-    return SparkEngine()
 
 
 if "editor_reset_counter" not in st.session_state:
@@ -313,10 +304,7 @@ with st.sidebar:
             or engine_name != st.session_state.last_schema_engine
         ):
             try:
-                if engine_name == "DuckDB":
-                    temp_engine = get_duckdb_engine()
-                else:
-                    temp_engine = get_spark_engine()
+                temp_engine = get_engine(engine_name)
                 st.session_state.schema = temp_engine.get_schema(focus_path)
                 st.session_state.last_schema_path = focus_path
                 st.session_state.last_schema_engine = engine_name
@@ -430,10 +418,7 @@ with main_col:
         cancel_button = st.button("Cancel", disabled=not st.session_state.is_running)
 
 if run_button and st.session_state.catalog:
-    if engine_name == "DuckDB":
-        engine = get_duckdb_engine()
-    else:
-        engine = get_spark_engine()
+    engine = get_engine(engine_name)
 
     # Map dialects
     input_dialect_key = DIALECT_MAPPING[st.session_state.input_dialect_ui]
@@ -587,10 +572,7 @@ if st.session_state.query_result:
                 "entire result set (this re-runs the query without a row limit)."
             )
             if st.button("Prepare full export"):
-                if st.session_state.executed_engine_name == "DuckDB":
-                    full_engine = get_duckdb_engine()
-                else:
-                    full_engine = get_spark_engine()
+                full_engine = get_engine(st.session_state.executed_engine_name)
 
                 with st.spinner("Running full query..."):
                     full_result = full_engine.execute(

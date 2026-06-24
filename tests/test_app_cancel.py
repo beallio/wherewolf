@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 def test_app_cancel_logic_mocked():
     """Verify that clicking Cancel calls interrupt on the active engine."""
-    with patch("wherewolf.app.DuckDBEngine") as mock_engine_cls:
+    with patch("wherewolf.engines.DuckDBEngine") as mock_engine_cls:
         mock_engine = MagicMock()
         mock_engine_cls.return_value = mock_engine
 
