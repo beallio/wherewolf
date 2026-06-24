@@ -70,7 +70,6 @@ ruff format .
 - `streamlit`
 - `duckdb`
 - `pyspark`
-- `ibis-framework`
 - `sqlglot`
 - `pyarrow`
 - `polars`
