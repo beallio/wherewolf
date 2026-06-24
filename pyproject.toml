@@ -1,6 +1,6 @@
 [project]
 name = "wherewolf"
-version = "0.5.0"
+version = "0.5.1"
 description = "A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark."
 readme = "README.md"
 requires-python = ">=3.11"
