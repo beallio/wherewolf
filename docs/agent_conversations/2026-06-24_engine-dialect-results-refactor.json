@@ -1,0 +1,22 @@
+{
+  "date": "2026-06-24",
+  "task_objective": "Implement the existing implementation plan to centralize Engine/Dialect logic and extract the Results view, addressing duplicated engine initialization, inline dialect mapping, and monolithic results rendering in app.py.",
+  "files_modified": [
+    "src/wherewolf/constants.py",
+    "src/wherewolf/app.py",
+    "src/wherewolf/engines.py",
+    "src/wherewolf/ui/__init__.py",
+    "src/wherewolf/ui/results.py"
+  ],
+  "tests_added": [
+    "tests/test_constants.py",
+    "tests/test_engines.py",
+    "tests/test_results.py"
+  ],
+  "design_decisions": [
+    "DIALECT_MAPPING was centralized in constants.py to provide a single source of truth without circular dependencies.",
+    "Extracted caching engine getters to src/wherewolf/engines.py to create a Streamlit-aware module separate from execution layer (which remains Streamlit-free) while avoiding a circular dependency between app.py and ui/results.py. This ensures @st.cache_resource is still utilized correctly.",
+    "Created ResultsView in src/wherewolf/ui/results.py following the FileBrowser convention, managing the complex result rendering and export UI cleanly."
+  ],
+  "results": "All quality gates and pre-existing tests passed after adapting the patch target in test_app_cancel.py. Code is cleaner, modular, and safely retains existing Streamlit singleton cache constraints."
+}
