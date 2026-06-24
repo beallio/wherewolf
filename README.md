@@ -66,8 +66,6 @@ ruff check . --fix
 ruff format .
 ```
 
-For information on how to release new versions, see [RELEASING.md](docs/RELEASING.md).
-
 ## Dependencies
 - `streamlit`
 - `duckdb`
