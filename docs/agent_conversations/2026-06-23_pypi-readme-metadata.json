@@ -1,0 +1,20 @@
+{
+  "date": "2026-06-23",
+  "task_objective": "Sync the PyPI project description to the GitHub README.",
+  "root_cause": "[project] in pyproject.toml had neither a 'readme' nor 'description' field, so the built package metadata carried no long description and PyPI rendered nothing.",
+  "files_modified": [
+    "pyproject.toml"
+  ],
+  "tests_added": [],
+  "design_decisions": [
+    "Added readme = \"README.md\" so Hatchling embeds the README as a text/markdown long description; uv build drives the same backend, so the release workflow is unchanged.",
+    "Added a description (Summary) one-liner sourced from the README intro.",
+    "No new tests: change is package metadata only. Verified by building the wheel and inspecting METADATA (Description-Content-Type text/markdown, Summary set, 3059-byte body matching README.md)."
+  ],
+  "results": "Build metadata now carries the full README. Pre-commit suite passed (ruff, ty, 55 tests). Committed on branch fix/pypi-readme-metadata. PyPI only refreshes the description on a new upload, so a version bump + tag is required to publish.",
+  "notes": [
+    "README image links use absolute raw.githubusercontent.com URLs, so they render on PyPI.",
+    "One relative link remains: [RELEASING.md](docs/RELEASING.md) will not resolve on the PyPI page (minor).",
+    "The /tmp venv was stale; ./run.sh uv sync --all-extras --dev was needed before ty/pytest passed."
+  ]
+}
