@@ -6,6 +6,7 @@ from wherewolf.translation import Translator
 from wherewolf.storage import HistoryManager
 from wherewolf.export import Exporter
 from wherewolf.ui import FileBrowser
+from wherewolf.constants import DIALECT_MAPPING
 from streamlit_ace import st_ace
 import importlib.metadata
 
@@ -435,9 +436,8 @@ if run_button and st.session_state.catalog:
         engine = get_spark_engine()
 
     # Map dialects
-    dialect_mapping = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
-    input_dialect_key = dialect_mapping[st.session_state.input_dialect_ui]
-    engine_dialect_key = dialect_mapping[engine_name]
+    input_dialect_key = DIALECT_MAPPING[st.session_state.input_dialect_ui]
+    engine_dialect_key = DIALECT_MAPPING[engine_name]
 
     query_to_run = query_text
     translation_error = None
@@ -518,15 +518,12 @@ if st.session_state.query_result:
         with col_t1:
             st.subheader("SQL Translation")
         with col_t2:
-            # All available dialects
-            all_dialects_map = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
-
             # Map the EXECUTED input dialect to key for consistent translation logic
             executed_input_key = st.session_state.executed_input_dialect_key
 
             # Determine target options: everything except the EXECUTED input dialect
             target_options = [
-                ui_name for ui_name, key in all_dialects_map.items() if key != executed_input_key
+                ui_name for ui_name, key in DIALECT_MAPPING.items() if key != executed_input_key
             ]
 
             selected_target_ui = st.selectbox(
@@ -534,7 +531,7 @@ if st.session_state.query_result:
             )
 
             # Map UI selection to SQLGlot dialect identifiers
-            target_dialect = all_dialects_map[selected_target_ui]
+            target_dialect = DIALECT_MAPPING[selected_target_ui]
 
         try:
             # Translate from the EXECUTED query and dialect
