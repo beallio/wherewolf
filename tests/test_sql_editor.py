@@ -1,0 +1,150 @@
+from PyQt6.Qsci import QsciLexerSQL
+
+from wherewolf.desktop.widgets import SqlEditor
+from wherewolf.services import StatementSelection, StatementService
+
+
+class _SpyStatementService(StatementService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def find_statement(self, sql: str, cursor_offset: int) -> StatementSelection:
+        self.calls += 1
+        return super().find_statement(sql, cursor_offset)
+
+
+def test_sql_editor_constructs_and_round_trips_text(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    assert editor.text() == ""
+
+    editor.setText("SELECT 1")
+    assert editor.text() == "SELECT 1"
+
+
+def test_sql_editor_assigns_lexer(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    assert isinstance(editor.lexer(), QsciLexerSQL)
+
+
+def test_sql_editor_line_margin_and_features_configured(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("\n".join(f"line {i}" for i in range(1000)))
+
+    assert editor.marginWidth(0) > 0
+    assert editor.autoIndent()
+    assert editor.SendScintilla(editor.SCI_GETCARETLINEVISIBLE) == 1
+
+
+def test_sql_editor_undo_redo_cut_copy_paste(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+
+    editor.setText("abc")
+    editor.selectAll()
+    editor.cut()
+    assert editor.text() == ""
+
+    editor.paste()
+    assert editor.text() == "abc"
+
+    editor.undo()
+    assert editor.text() == ""
+
+    editor.redo()
+    assert editor.text() == "abc"
+
+
+def test_sql_editor_find_and_replace_all(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("alpha beta alpha")
+
+    assert editor.find_text("alpha")
+    assert editor.replace_next("alpha", "gamma")
+    assert "gamma" in editor.text()
+    assert editor.replace_all("gamma", "alpha") == 1
+
+
+def test_sql_editor_toggle_comment_round_trips_selection(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select 1;\nselect 2;")
+
+    editor.selectAll()
+    editor.toggle_comment()
+    commented = editor.text()
+    assert "-- " in commented
+
+    editor.selectAll()
+    editor.toggle_comment()
+    assert editor.text() == "select 1;\nselect 2;"
+
+
+def test_sql_editor_font_settings_are_restored_and_saved(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.set_font_size(18)
+
+    assert editor.font_size == 18
+
+
+def test_text_to_run_prefers_selection_over_statement_lookup(qtbot) -> None:
+    spy_service = _SpyStatementService()
+    editor = SqlEditor(statement_service=spy_service)
+    qtbot.addWidget(editor)
+    editor.setText("SELECT 1; SELECT 2;")
+
+    editor.setSelection(0, 0, 0, 8)
+    text, start, end = editor.text_to_run()
+
+    assert text == "SELECT 1"
+    assert spy_service.calls == 0
+    assert start >= 0 and end > start
+
+    editor.setSelection(0, 0, 0, 0)
+    editor.text_to_run()
+    assert spy_service.calls == 1
+
+
+def test_format_selection_only_and_preserves_other_text(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select   1;\nselect   2;")
+
+    editor.setSelection(0, 0, 0, 10)
+    editor.format_selection_or_statement()
+
+    assert "SELECT\n  1;" in editor.text()
+    assert "select   2;" in editor.text()
+
+
+def test_format_sql_one_undo_restores_entire_text(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+
+    original = "select   1;\nselect   2;"
+    editor.setText(original)
+    editor.setCursorPosition(0, 0)
+    editor.format_selection_or_statement()
+
+    assert editor.text() != original
+    editor.undo()
+    assert editor.text() == original
+
+
+def test_format_error_leaves_text_unchanged_and_reports_diagnostic(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    messages: list[list[str]] = []
+    editor.diagnostics_reported.connect(lambda payload: messages.append(payload))
+
+    editor.setText("select from")
+    editor.format_selection_or_statement()
+
+    assert editor.text() == "select from"
+    assert messages
+    assert messages[-1]

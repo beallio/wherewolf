@@ -28,11 +28,13 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     cancel.setEnabled(False)
 
     format_sql = QAction("Format SQL", parent)
-    format_sql.setEnabled(False)
-    format_sql.setToolTip("Unavailable in Phase 3 desktop foundation")
+    format_sql.setEnabled(True)
+    format_sql.setShortcut(QKeySequence("Ctrl+Shift+F"))
+    format_sql.setToolTip("")
 
     add_datasets = QAction("Add Datasets…", parent)
-    add_datasets.setEnabled(False)
-    add_datasets.setToolTip("Unavailable in Phase 3 desktop foundation")
+    add_datasets.setEnabled(True)
+    add_datasets.setShortcut(QKeySequence.StandardKey.Open)
+    add_datasets.setToolTip("")
 
     return DesktopActions(run=run, cancel=cancel, format_sql=format_sql, add_datasets=add_datasets)
