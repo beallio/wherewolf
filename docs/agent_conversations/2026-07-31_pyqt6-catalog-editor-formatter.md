@@ -204,3 +204,62 @@ Task 13 outcomes:
 - The claim that real `QDropEvent` creation always crashed under pytest was not reproducible against this implementation.
 - Drag/drop tests now use real `QDropEvent` objects plus real `QMimeData.setUrls(...)` for all five drop tests.
 - The session evidence now reflects that real `QDropEvent`/`QMimeData` construction is stable in the current implementation and test environment.
+
+### Round 03
+
+#### B4 — Format SQL macOS shortcut branch
+
+- Root cause:
+  - Qt maps `Ctrl` to Command on macOS and `Meta` to Control.
+  - The implementation branch in `src/wherewolf/desktop/actions.py` using `Meta+Shift+F` on macOS bound Format SQL to Control+Shift+F instead of Cmd+Shift+F.
+- Fix applied:
+  - Removed the platform branch and use `QKeySequence("Ctrl+Shift+F")` unconditionally in Task 12.
+  - Updated the test in `tests/test_actions.py` to assert against a concrete sequence directly.
+- Why prior test was flawed:
+  - It recomputed the expected sequence with the same branching logic and literals, so it only checked internal consistency, not actual cross-platform behavior.
+- Verification:
+  - Linux/CI still reports Ctrl+Shift+F as expected.
+  - `Cmd+Shift+F` remains unverified on macOS as CI is Linux-only in this branch.
+
+#### B5 — Case-insensitive alias uniqueness hardening
+
+- Root cause:
+  - `test_add_paths_alias_uniqueness_is_casefold` and `test_rename_rejects_casefold_collision` did not actually exercise casefold-only differences.
+  - `Orders.csv` vs `orders.csv` were normalized to the same pre-check alias; rename test targeted an exact alias value.
+- Fix applied:
+  - Strengthened tests in `tests/test_catalog_service.py` to construct genuine casefold-only comparisons while avoiding false positives from filename normalization.
+  - Ensured fixtures write `Orders.csv` and `orders.csv` before calling `add_paths` for deterministic validation.
+- Verification:
+  - `./run.sh uv run pytest -q tests/test_catalog_service.py` still passes with `.casefold()` preserved.
+  - Mutating to remove `.casefold()` now fails both casefold-specific tests.
+
+#### B6 — Missing toolbar object name
+
+- Root cause:
+  - `primary_toolbar` was created without `objectName`, causing `QMainWindow.saveState()` to warn and omit stable toolbar persistence metadata.
+- Fix applied:
+  - Set `QMainWindow`-scoped object names in `src/wherewolf/desktop/main_window.py` for:
+    - `primary_toolbar`
+    - `dataset_catalog_dock`
+    - `editor`
+    - `results_tabs`
+    - `vertical_splitter`
+    - `file_menu`, `edit_menu`, `query_menu`, `view_menu`, `help_menu`
+- Result:
+  - Layout persistence paths no longer emit toolbar naming warnings in main-window structure checks.
+
+#### Final tallies
+
+- Baseline: `107 passed, 1 skipped` (captured in Task 1)
+- Final: `179 passed, 1 skipped`
+
+#### Deferred / unverified items carried from verification section
+
+- No native dialog was opened by tests; dialog behavior is validated through `FakeFileDialogService`.
+- No real file-manager drag/drop was executed; drag/drop paths are synthesized via `QMimeData`.
+- No real Qt window was shown; tests run offscreen.
+- macOS and Windows not verified in CI; corrected `Cmd+Shift+F` mapping remains unverified on macOS.
+- No query execution in desktop (still disabled).
+- No completion/call tips implemented (Phase 7).
+- Clipboard assertions are on the offscreen platform clipboard.
+- CI matrix behavior remains unverified until first push of the branch.
