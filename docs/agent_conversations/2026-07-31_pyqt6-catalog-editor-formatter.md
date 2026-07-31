@@ -103,3 +103,19 @@ Results:
 - `./run.sh uv run pytest -q tests/test_actions.py tests/test_settings_service.py` -> 10 passed
 - `./run.sh uv run pytest -q tests/test_main_window.py` -> 4 passed
 
+## Task 6
+
+Files added/updated:
+- src/wherewolf/desktop/main_window.py
+- tests/test_catalog_dock.py
+
+Design decisions:
+- Avoid direct `QDropEvent` construction in tests because this Qt runtime's `QDropEvent` creation
+  segfaults even in isolation; use a tiny test-only event stand-in with `mimeData`, `acceptProposedAction`,
+  `ignore`, and `isAccepted` semantics.
+
+Tests added:
+- 7 new assertions in `tests/test_catalog_dock.py` under drag/drop behavior
+
+Results:
+- `./run.sh uv run pytest -q tests/test_catalog_dock.py` -> 7 passed

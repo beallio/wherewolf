@@ -176,3 +176,9 @@ class MainWindow(QMainWindow):
         self._settings_service.save_window_state(self.saveState().data())
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())
         super().closeEvent(a0)
+
+    def dragEnterEvent(self, event) -> None:
+        self.catalog_dock.dragEnterEvent(event)
+
+    def dropEvent(self, event) -> None:
+        self.catalog_dock.dropEvent(event)
