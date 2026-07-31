@@ -76,3 +76,17 @@ Tests added:
 Results:
 - `./run.sh uv run pytest -q tests/test_catalog_service.py` -> 11 passed
 
+## Task 4
+
+Files added/updated:
+- src/wherewolf/desktop/models/__init__.py
+- src/wherewolf/desktop/models/catalog_model.py
+- src/wherewolf/desktop/widgets/__init__.py
+- src/wherewolf/desktop/widgets/catalog_dock.py
+- src/wherewolf/desktop/main_window.py
+- tests/test_catalog_model.py
+- tests/test_catalog_dock.py
+
+Results:
+- `./run.sh uv run pytest -q tests/test_catalog_model.py tests/test_catalog_dock.py` -> 6 passed
+

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
 from PyQt6.QtGui import QCloseEvent, QFont
 from PyQt6.QtWidgets import (
     QDockWidget,
-    QListWidget,
     QMainWindow,
     QMenu,
     QSplitter,
@@ -19,7 +19,10 @@ from PyQt6.QtWidgets import (
 )
 
 from wherewolf.desktop.actions import DesktopActions, build_actions
-from wherewolf.services import SettingsService
+from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService, FakeFileDialogService
+from wherewolf.desktop.widgets import CatalogDock
+from wherewolf.desktop.widgets.catalog_dock import CatalogDock as CatalogDockWidget
+from wherewolf.services import CatalogService, SettingsService
 
 
 class MainWindow(QMainWindow):
@@ -30,14 +33,18 @@ class MainWindow(QMainWindow):
         *,
         settings_service: SettingsService | None = None,
         actions: DesktopActions | None = None,
+        catalog_service: CatalogService | None = None,
+        file_dialog_service: FileDialogService | None = None,
     ) -> None:
         super().__init__()
         self._settings_service = settings_service or SettingsService()
+        self._catalog_service = catalog_service or CatalogService()
+        self._file_dialog_service = file_dialog_service or QtFileDialogService()
         self.desktop_actions = actions or build_actions(self)
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
 
         self.main_toolbar = self._build_toolbar()
-        self.dataset_catalog_dock = self._build_catalog_dock()
+        self._catalog_dock_widget = self._build_catalog_dock()
+        self.dataset_catalog_dock = self._catalog_dock_widget
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -45,6 +52,16 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self._central_splitter)
         self._build_menus()
         self._restore_state()
+
+    @property
+    def catalog_dock(self) -> CatalogDock:
+        widget = self._catalog_dock_widget.widget()
+        assert isinstance(widget, CatalogDock)
+        return widget
+
+    @property
+    def catalog_view(self) -> QTextEdit:
+        return cast(QTextEdit, self._central_splitter.widget(0))
 
     def _build_toolbar(self) -> QToolBar:
         toolbar = QToolBar("Primary", self)
@@ -57,9 +74,10 @@ class MainWindow(QMainWindow):
         return toolbar
 
     def _build_catalog_dock(self) -> QDockWidget:
+        catalog = CatalogDock(self._catalog_service, self)
         dock = QDockWidget("Dataset Catalog", self)
         dock.setObjectName("dataset_catalog_dock")
-        dock.setWidget(QListWidget(dock))
+        dock.setWidget(catalog)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
         return dock
 
