@@ -1,4 +1,4 @@
-"""Main PyQt6 window for the desktop foundation shell."""
+"""Main PyQt6 window for the desktop shell."""
 
 from __future__ import annotations
 
@@ -19,7 +19,10 @@ from PyQt6.QtWidgets import (
 
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
-from wherewolf.desktop.widgets import CatalogDock
+from wherewolf.desktop.widgets import CatalogDock, SqlEditor
+from wherewolf.desktop.workers import SchemaWorker
+from wherewolf.domain import CatalogBinding, SchemaResult
+from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import CatalogService, SettingsService
 
 
@@ -33,13 +36,16 @@ class MainWindow(QMainWindow):
         actions: DesktopActions | None = None,
         catalog_service: CatalogService | None = None,
         file_dialog_service: FileDialogService | None = None,
+        engine_registry: EngineRegistry | None = None,
     ) -> None:
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._settings_service = settings_service or SettingsService()
         self._catalog_service = catalog_service or CatalogService()
         self._file_dialog_service = file_dialog_service or QtFileDialogService()
+        self._engine_registry = engine_registry or EngineRegistry()
         self.desktop_actions = actions or build_actions(self)
+        self._schema_workers: list[SchemaWorker] = []
 
         self.main_toolbar = self._build_toolbar()
         self._catalog_dock_widget = self._build_catalog_dock()
@@ -54,32 +60,44 @@ class MainWindow(QMainWindow):
         self._restore_state()
 
     @property
-    def catalog_dock(self) -> CatalogDock:
+    def catalog(self) -> CatalogDock:
         widget = self._catalog_dock_widget.widget()
         assert isinstance(widget, CatalogDock)
         return widget
 
     @property
-    def catalog_view(self) -> QTextEdit:
-        return cast(QTextEdit, self._central_splitter.widget(0))
+    def catalog_dock(self) -> QDockWidget:
+        return self._catalog_dock_widget
+
+    @property
+    def catalog_view(self) -> QDockWidget:
+        return self._catalog_dock_widget
+
+    @property
+    def editor(self) -> SqlEditor:
+        widget = self._central_splitter.widget(0)
+        assert isinstance(widget, SqlEditor)
+        return widget
 
     def _build_toolbar(self) -> QToolBar:
-        toolbar = QToolBar("Primary", self)
-        toolbar.setObjectName("main_toolbar")
+        toolbar = self.addToolBar("Primary")
+        assert toolbar is not None
         toolbar.addAction(self.desktop_actions.run)
         toolbar.addAction(self.desktop_actions.cancel)
         toolbar.addAction(self.desktop_actions.format_sql)
         toolbar.addAction(self.desktop_actions.add_datasets)
-        self.addToolBar(toolbar)
         return toolbar
 
     def _build_catalog_dock(self) -> QDockWidget:
         catalog = CatalogDock(self._catalog_service, self)
+        catalog.error_reported.connect(self._show_status)
+        catalog.refresh_schema_requested.connect(self._on_refresh_catalog_schema)
+        catalog.insert_alias_requested.connect(self.editor_insert_text)
+
         dock = QDockWidget("Dataset Catalog", self)
         dock.setObjectName("dataset_catalog_dock")
         dock.setWidget(catalog)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
-        catalog.error_reported.connect(self._show_status)
         return dock
 
     def _connect_actions(self) -> None:
@@ -96,18 +114,49 @@ class MainWindow(QMainWindow):
 
         result = self._catalog_service.add_paths(paths)
         if result.added:
-            self._settings_service.save_last_dataset_directory(result.added[0].path.parent)
-
+            first = result.added[0]
+            self._settings_service.save_last_dataset_directory(first.path.parent)
+            for entry in result.added:
+                self._queue_schema_work(
+                    CatalogBinding(
+                        entry_id=entry.id,
+                        alias=entry.alias,
+                        path=entry.path,
+                        source_format=entry.source_format,
+                    )
+                )
         if result.warnings:
             self._show_status("\n".join(sorted(set(result.warnings))))
 
-    def _show_status(self, message: str, timeout: int = 3000) -> None:
-        self.status_bar.showMessage(message, timeout)
+    def _on_refresh_catalog_schema(self, binding: CatalogBinding) -> None:
+        self._queue_schema_work(binding)
+
+    def _queue_schema_work(self, binding: CatalogBinding) -> None:
+        worker = SchemaWorker(
+            engine_registry=self._engine_registry,
+            binding=binding,
+            parent=self,
+        )
+        worker.result_ready.connect(self._on_schema_result)
+        worker.finished.connect(
+            lambda: self._schema_workers.remove(worker) if worker in self._schema_workers else None
+        )
+        self._schema_workers.append(worker)
+        worker.start()
+
+    def _on_schema_result(self, schema_result: SchemaResult) -> None:
+        self._catalog_service.update_schema(schema_result)
 
     def _build_central_area(self) -> QSplitter:
-        editor = QTextEdit(self)
+        editor = SqlEditor(
+            settings_service=self._settings_service,
+            format_action=self.desktop_actions.format_sql,
+            parent=self,
+        )
         editor.setObjectName("query_editor")
-        editor.setPlaceholderText("Enter SQL query")
+        editor.diagnostics_reported.connect(
+            lambda payload: self._show_status(payload[0].message if payload else "", 5000)
+        )
 
         results = QTabWidget(self)
         results.setObjectName("results_tabs")
@@ -118,6 +167,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(editor)
         splitter.addWidget(results)
         return splitter
+
+    def editor_insert_text(self, alias: str) -> None:
+        self.editor.insert(alias)
 
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
@@ -160,28 +212,26 @@ class MainWindow(QMainWindow):
             self._central_splitter.setSizes(list(sizes))
 
         font_size = self._settings_service.restore_editor_font_size()
-        editor = self._central_splitter.widget(0)
-        if editor is None:
-            return
-
-        font = editor.font()
-        if not isinstance(font, QFont):
-            return
-        font.setPointSize(font_size)
-        editor.setFont(font)
+        self.editor.set_font_size(font_size)
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())
+        font = self.editor.font()
+        if isinstance(font, QFont):
+            self._settings_service.save_editor_font_size(font.pointSize())
         super().closeEvent(a0)
 
     def dragEnterEvent(self, a0: QDragEnterEvent | None) -> None:
         if a0 is None:
             return
-        self.catalog_dock.dragEnterEvent(a0)
+        self.catalog.dragEnterEvent(a0)
 
     def dropEvent(self, a0: QDropEvent | None) -> None:
         if a0 is None:
             return
-        self.catalog_dock.dropEvent(a0)
+        self.catalog.dropEvent(a0)
+
+    def _show_status(self, message: str, timeout: int = 3000) -> None:
+        self.status_bar.showMessage(message, timeout)

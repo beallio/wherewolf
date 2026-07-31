@@ -110,12 +110,97 @@ Files added/updated:
 - tests/test_catalog_dock.py
 
 Design decisions:
-- Avoid direct `QDropEvent` construction in tests because this Qt runtime's `QDropEvent` creation
-  segfaults even in isolation; use a tiny test-only event stand-in with `mimeData`, `acceptProposedAction`,
-  `ignore`, and `isAccepted` semantics.
+- Drag/drop tests were migrated back to real `QDropEvent` + `QMimeData.setUrls(...)` and wired through the `MainWindow` catalog path so they do not rely on a fake event object.
+- In this environment, constructing a standalone `CatalogDock` directly under pytest produced an abort in Qt widget construction (`QWidget` assertion) before event handling, including:
+  - `./run.sh uv run pytest -q tests/test_catalog_dock.py::test_catalog_dock_drag_and_drop_adds_supported_files`
+  - stack showed abort in `QtWidgets.abi3.so` during `catalog_dock.py` construction.
+- A direct integration path through `MainWindow` remains stable and is used by drag/drop tests.
 
 Tests added:
 - 7 new assertions in `tests/test_catalog_dock.py` under drag/drop behavior
 
 Results:
-- `./run.sh uv run pytest -q tests/test_catalog_dock.py` -> 7 passed
+- `./run.sh uv run pytest -q tests/test_catalog_dock.py::test_catalog_dock_drag_and_drop_adds_supported_files`
+  -> 1 passed (after routing the drag/drop path through `MainWindow`)
+
+## Task 7
+
+Files updated:
+- src/wherewolf/desktop/widgets/catalog_dock.py
+- tests/test_catalog_dock.py
+
+Task 7 outcomes:
+- Added catalog context actions: Rename Alias, Remove, Refresh Schema, Copy Alias, Copy File Path, Insert Alias at Editor Cursor.
+- Inline rename now reports validation failures through the catalog error channel and preserves row state.
+- Refresh schema now emits `CatalogBinding` entries for worker-driven schema reload.
+- Clipboard copy actions and alias insertion flow through editor signals.
+
+## Task 8
+
+Files added/updated:
+- src/wherewolf/desktop/workers/__init__.py
+- src/wherewolf/desktop/workers/schema_worker.py
+- tests/test_schema_worker.py
+
+Task 8 outcomes:
+- Added asynchronous schema loading worker and wired it from the catalog model path and catalog action flow.
+- Added regression guard in tests so emitted schema results are observed via Qt signal and adapter cleanup is asserted.
+
+## Task 9
+
+Files added:
+- src/wherewolf/services/statement_service.py
+- tests/test_statement_service.py
+
+Task 9 outcomes:
+- Implemented quote/comment-aware statement splitting with cursor resolution and explicit ambiguity/error reasons.
+
+## Task 10
+
+Files added:
+- src/wherewolf/desktop/widgets/sql_editor.py
+- tests/test_sql_editor.py
+
+Task 10 outcomes:
+- Added QScintilla editor with margin, indentation, brace matching, caret-line highlighting, copy/cut/paste, find/replace, and toggle comment behavior.
+- Delegated statement targeting through `StatementService` when no text is selected.
+
+## Task 11
+
+Files added:
+- src/wherewolf/services/formatting_service.py
+- tests/test_formatting_service.py
+
+Task 11 outcomes:
+- Added statement-preserving formatting service with SQLGlot pretty-print and diagnostics for parse failures.
+
+## Task 12
+
+Files updated:
+- src/wherewolf/desktop/actions.py
+- src/wherewolf/desktop/main_window.py
+- src/wherewolf/desktop/widgets/sql_editor.py
+- tests/test_actions.py
+- tests/test_sql_editor.py
+
+Task 12 outcomes:
+- Enabled `Format SQL` action and removed Phase 3 placeholder tooltip.
+- Reused the shared `format_sql` `QAction` across toolbar, query menu, and editor context menu.
+- Formatting uses one undo action boundary and reports diagnostics without mutating source text on parse failure.
+
+## Task 13
+
+Files updated:
+- README.md
+- docs/agent_conversations/2026-07-31_pyqt6-catalog-editor-formatter.md
+
+Task 13 outcomes:
+- README now states desktop shell feature set for catalog, editor, and formatting and explicitly notes query execution is still not implemented in desktop.
+
+## Review-response updates
+
+### B2 correction (post-review)
+
+- The claim that real `QDropEvent` creation always crashed under pytest was not reproducible against this implementation.
+- Drag/drop tests now use real `QDropEvent` objects plus real `QMimeData.setUrls(...)` for all five drop tests.
+- The session evidence now reflects that real `QDropEvent`/`QMimeData` construction is stable in the current implementation and test environment.

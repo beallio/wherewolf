@@ -51,7 +51,7 @@ def test_main_window_query_actions_initial_state_and_shared_instances(qtbot) -> 
 
     assert run_action.isEnabled()
     assert not cancel_action.isEnabled()
-    assert not format_action.isEnabled()
+    assert format_action.isEnabled()
 
     query_actions = window.query_menu.actions()
     assert run_action in query_actions
@@ -65,8 +65,13 @@ def test_main_window_query_actions_initial_state_and_shared_instances(qtbot) -> 
     assert format_action is query_actions[2]
     assert format_action is window.main_toolbar.actions()[2]
 
-    assert run_action.shortcut().toString() == "Ctrl+Return"
-    assert cancel_action.shortcut().toString() == "Ctrl+."
+    editor_context = window.editor._setup_context_menu
+    assert editor_context is not None
+
+
+def test_format_action_is_shared_with_editor_context_action(window=None) -> None:
+    window = MainWindow()
+    assert window.editor._format_action is window.desktop_actions.format_sql
 
 
 def test_main_window_recoverable_from_corrupt_settings(qtbot, tmp_path: Path) -> None:

@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from PyQt6.QtGui import QKeySequence
@@ -8,23 +9,35 @@ from wherewolf.desktop.main_window import MainWindow
 from wherewolf.services import CatalogService, SettingsService
 
 
-def test_build_actions_contains_expected_shortcuts_and_states(qapp) -> None:
+def _expected_format_shortcut() -> str:
+    return (
+        QKeySequence("Meta+Shift+F").toString()
+        if sys.platform == "darwin"
+        else QKeySequence("Ctrl+Shift+F").toString()
+    )
+
+
+def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
     actions = build_actions()
 
     assert isinstance(actions, DesktopActions)
     assert actions.run.text() == "Run"
     assert actions.run.isEnabled()
-    assert actions.run.shortcut() == QKeySequence("Ctrl+Return")
+    assert actions.run.shortcut().toString() == QKeySequence("Ctrl+Return").toString()
 
     assert actions.cancel.text() == "Cancel"
     assert not actions.cancel.isEnabled()
-    assert actions.cancel.shortcut() == QKeySequence("Ctrl+.")
+    assert actions.cancel.shortcut().toString() == QKeySequence("Ctrl+.").toString()
 
-    assert not actions.format_sql.isEnabled()
-    assert "Phase 3" in actions.format_sql.toolTip()
+    assert actions.format_sql.isEnabled()
+    assert _expected_format_shortcut() in actions.format_sql.shortcut().toString()
+    assert "Unavailable in Phase 3" not in actions.format_sql.toolTip()
 
     assert actions.add_datasets.isEnabled()
-    assert actions.add_datasets.shortcut().toString() == QKeySequence("Ctrl+O").toString()
+    assert (
+        actions.add_datasets.shortcut().toString()
+        == QKeySequence(QKeySequence.StandardKey.Open).toString()
+    )
     assert "Unavailable" not in actions.add_datasets.toolTip()
 
 
@@ -84,3 +97,10 @@ def test_add_datasets_opens_at_last_directory_and_updates_on_success(tmp_path, q
 
     assert observed and observed[0] == start_dir
     assert settings.restore_last_dataset_directory() == (tmp_path / "a.csv").parent
+
+
+def test_format_action_is_enabled_and_bound(qtbot) -> None:
+    actions = build_actions()
+
+    assert actions.format_sql.isEnabled()
+    assert actions.format_sql.shortcut().toString() == _expected_format_shortcut()

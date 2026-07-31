@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from typing import ClassVar
 
-from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt, pyqtSignal
+from PyQt6.QtCore import (
+    QAbstractTableModel,
+    QMetaObject,
+    QModelIndex,
+    Qt,
+    QThread,
+    pyqtSignal,
+    pyqtSlot,
+)
 
 from wherewolf.domain import CatalogEntry
 from wherewolf.services import CatalogService
@@ -14,6 +22,12 @@ class CatalogModel(QAbstractTableModel):
     """QAbstractTableModel facade over :class:`CatalogService`."""
 
     _INVALID_PARENT: QModelIndex = QModelIndex()
+    _COLUMNS: ClassVar[tuple[str, str, str, str]] = (
+        "Alias",
+        "File",
+        "Format",
+        "Schema status",
+    )
 
     class SchemaStatus:
         LOADING = "Loading"
@@ -22,18 +36,11 @@ class CatalogModel(QAbstractTableModel):
 
     rename_failed = pyqtSignal(str)
 
-    _COLUMNS: ClassVar[tuple[str, str, str, str]] = (
-        "Alias",
-        "File",
-        "Format",
-        "Schema status",
-    )
-
     def __init__(self, catalog_service: CatalogService, parent=None) -> None:
         super().__init__(parent)
         self._catalog_service = catalog_service
         self._entries = tuple(catalog_service.entries)
-        catalog_service.subscribe(self._on_catalog_changed)
+        self._catalog_service.subscribe(self._on_catalog_changed)
 
     @staticmethod
     def headers() -> tuple[str, ...]:
@@ -41,14 +48,14 @@ class CatalogModel(QAbstractTableModel):
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:
         if parent is None:
-            parent = CatalogModel._INVALID_PARENT
+            parent = self._INVALID_PARENT
         if parent.isValid():
             return 0
         return len(self._entries)
 
     def columnCount(self, parent: QModelIndex | None = None) -> int:
         if parent is None:
-            parent = CatalogModel._INVALID_PARENT
+            parent = self._INVALID_PARENT
         if parent.isValid():
             return 0
         return len(self._COLUMNS)
@@ -68,8 +75,10 @@ class CatalogModel(QAbstractTableModel):
             if index.column() == 3:
                 return self._schema_status_text(entry)
             return None
+
         if role == Qt.ItemDataRole.ToolTipRole and index.column() == 1:
             return str(entry.path)
+
         return None
 
     def headerData(
@@ -105,10 +114,20 @@ class CatalogModel(QAbstractTableModel):
     def entry_at(self, row: int) -> CatalogEntry:
         return self._entries[row]
 
+    @pyqtSlot()
     def _on_catalog_changed(self) -> None:
+        if QThread.currentThread() is not self.thread():
+            QMetaObject.invokeMethod(
+                self,
+                "_on_catalog_changed",
+                Qt.ConnectionType.QueuedConnection,
+            )
+            return
+
         new_entries = tuple(self._catalog_service.entries)
         if new_entries == self._entries:
             return
+
         self.beginResetModel()
         self._entries = new_entries
         self.endResetModel()

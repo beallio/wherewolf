@@ -1,0 +1,319 @@
+"""QScintilla SQL editor used by the desktop shell."""
+
+from __future__ import annotations
+
+from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence
+from PyQt6.QtWidgets import QMenu
+
+from wherewolf.domain import SqlDiagnostic
+from wherewolf.services import SettingsService, SqlFormattingService, StatementService
+
+
+class SqlEditor(QsciScintilla):
+    """QScintilla-based SQL editor with minimal desktop actions."""
+
+    diagnostics_reported = pyqtSignal(list)
+
+    def __init__(
+        self,
+        *,
+        settings_service: SettingsService | None = None,
+        statement_service: StatementService | None = None,
+        formatting_service: SqlFormattingService | None = None,
+        format_action: QAction | None = None,
+        parent=None,
+    ) -> None:
+        super().__init__(parent=parent)
+        self._settings_service = settings_service or SettingsService()
+        self._statement_service = statement_service or StatementService()
+        self._formatting_service = formatting_service or SqlFormattingService()
+        self._format_action = format_action
+        self._diagnostic_indicator = 1
+        self._font_size = self._settings_service.restore_editor_font_size()
+
+        self._setup_editor()
+        self._setup_actions()
+        self._setup_context_menu()
+        self._setup_settings()
+        self._refresh_line_margin()
+        self.textChanged.connect(self._refresh_line_margin)
+
+    @property
+    def font_size(self) -> int:
+        return self._font_size
+
+    def _setup_editor(self) -> None:
+        self.setLexer(QsciLexerSQL(self))
+        self.setAutoIndent(True)
+        self.setIndentationGuides(True)
+        self.setIndentationWidth(2)
+        self.setTabWidth(2)
+        self.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
+        self.setCaretLineVisible(True)
+        self.setCaretLineBackgroundColor(QColor("#f5f5f5"))
+        self.setMarginLineNumbers(0, True)
+        self.setWrapMode(QsciScintilla.WrapMode.WrapNone)
+
+        self.indicatorDefine(
+            QsciScintilla.IndicatorStyle.SquiggleIndicator,
+            self._diagnostic_indicator,
+        )
+        self.setIndicatorForegroundColor(QColor("#d7191c"), self._diagnostic_indicator)
+
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._show_context_menu)
+
+        self._undo_action = QAction("Undo", self)
+        self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self._undo_action.triggered.connect(self.undo)
+
+        self._redo_action = QAction("Redo", self)
+        self._redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        self._redo_action.triggered.connect(self.redo)
+
+        self._cut_action = QAction("Cut", self)
+        self._cut_action.setShortcut(QKeySequence.StandardKey.Cut)
+        self._cut_action.triggered.connect(self.cut)
+
+        self._copy_action = QAction("Copy", self)
+        self._copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        self._copy_action.triggered.connect(self.copy)
+
+        self._paste_action = QAction("Paste", self)
+        self._paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        self._paste_action.triggered.connect(self.paste)
+
+        self._toggle_comment_action = QAction("Toggle Comment", self)
+        self._toggle_comment_action.triggered.connect(self.toggle_comment)
+
+        if self._format_action is not None:
+            self._format_action.triggered.connect(self.format_selection_or_statement)
+
+    def _setup_actions(self) -> None:
+        self.setCaretLineVisible(True)
+
+    def _setup_context_menu(self) -> None:
+        # Context menu is populated dynamically at show time so all actions stay
+        # current with latest formatting action state.
+        return
+
+    def _setup_settings(self) -> None:
+        self._apply_font_size(self._font_size)
+
+    def _apply_font_size(self, size: int) -> None:
+        size = max(6, min(int(size), 64))
+        self._font_size = size
+
+        font = self.font()
+        if isinstance(font, QFont):
+            font.setPointSize(size)
+            self.setFont(font)
+
+        lexer = self.lexer()
+        if isinstance(lexer, QsciLexerSQL):
+            lexer_font = lexer.defaultFont(0)
+            if isinstance(lexer_font, QFont):
+                lexer_font.setPointSize(size)
+                lexer.setDefaultFont(lexer_font)
+
+    def _refresh_line_margin(self) -> None:
+        line_count = max(self.lines(), 1)
+        width = len(str(line_count)) + 1
+        self.setMarginWidth(0, " " * width)
+
+    def _update_status(self, message: str | None = None) -> None:
+        if message is None:
+            self.diagnostics_reported.emit(())
+        else:
+            self.diagnostics_reported.emit(
+                (
+                    SqlDiagnostic(
+                        message=message,
+                        severity="info",
+                        start_line=1,
+                        start_column=1,
+                    ),
+                )
+            )
+
+    def set_font_size(self, size: int) -> None:
+        self._apply_font_size(size)
+        self._settings_service.save_editor_font_size(self._font_size)
+
+    def text_to_run(self) -> tuple[str, int, int]:
+        selected = self._selected_text_range()
+        if selected is not None:
+            return selected
+
+        cursor_line, cursor_column = self.getCursorPosition()
+        cursor = self.positionFromLineIndex(cursor_line, cursor_column)
+        selection = self._statement_service.find_statement(self.text(), cursor)
+        if selection.text is None:
+            self._update_status(selection.reason)
+            return "", -1, -1
+
+        return (
+            selection.text,
+            selection.start_offset,
+            selection.end_offset,
+        )
+
+    def _selected_text_range(self) -> tuple[str, int, int] | None:
+        if not self.hasSelectedText():
+            return None
+
+        start_line, start_col, end_line, end_col = self.getSelection()
+        if (start_line, start_col) == (end_line, end_col):
+            return None
+
+        start = self.positionFromLineIndex(start_line, start_col)
+        end = self.positionFromLineIndex(end_line, end_col)
+        return self.selectedText(), start, end
+
+    def format_selection_or_statement(self) -> None:
+        text, start, end = self.text_to_run()
+        if not text or start < 0 or end < 0:
+            return
+
+        cursor_line, cursor_column = self.getCursorPosition()
+        visible_line = self.firstVisibleLine()
+        horizontal_bar = self.horizontalScrollBar()
+        horizontal = horizontal_bar.value() if horizontal_bar is not None else 0
+
+        result = self._formatting_service.format_sql(text, dialect="duckdb")
+        self._clear_diagnostic_indicator()
+
+        if result.diagnostics:
+            self._show_parse_diagnostic(result.diagnostics[0])
+            self._update_status(result.diagnostics[0].message)
+            return
+
+        if result.formatted_sql is None or result.formatted_sql == text:
+            self._update_status()
+            return
+
+        start_line, start_col = self.lineIndexFromPosition(start)
+        end_line, end_col = self.lineIndexFromPosition(end)
+
+        self.beginUndoAction()
+        try:
+            self.setSelection(start_line, start_col, end_line, end_col)
+            self.replaceSelectedText(result.formatted_sql)
+            self.setCursorPosition(cursor_line, cursor_column)
+            self._restore_view(visible_line, horizontal)
+            self._update_status()
+        finally:
+            self.endUndoAction()
+
+    def _show_parse_diagnostic(self, diagnostic: SqlDiagnostic) -> None:
+        line = max(diagnostic.start_line - 1, 0)
+        line_count = max(self.lines(), 1)
+        if line >= line_count:
+            line = line_count - 1
+
+        line_text = self.text(line)
+        start_column = max(diagnostic.start_column - 1, 0)
+        end_column = max(min(start_column + 1, max(len(line_text), 1)), 1)
+        try:
+            self.fillIndicatorRange(
+                line,
+                min(start_column, len(line_text)),
+                line,
+                min(end_column, max(len(line_text), 1)),
+                self._diagnostic_indicator,
+            )
+        except Exception:  # noqa: BLE001
+            # Indicator painting API differs across Qsci bindings; non-critical when unavailable.
+            return
+
+    def _clear_diagnostic_indicator(self) -> None:
+        line_count = max(self.lines(), 1)
+        try:
+            self.clearIndicatorRange(
+                0,
+                0,
+                line_count - 1,
+                max(self.lineLength(line_count - 1), 1),
+                self._diagnostic_indicator,
+            )
+        except Exception:  # noqa: BLE001
+            # Indicator API compatibility with Qsci bindings.
+            return
+
+    def _restore_view(self, first_visible_line: int, horizontal: int) -> None:
+        self.setFirstVisibleLine(max(0, first_visible_line))
+        horizontal_bar = self.horizontalScrollBar()
+        if horizontal_bar is not None:
+            horizontal_bar.setValue(horizontal)
+
+    def toggle_comment(self) -> None:
+        line_start, line_end = self._selected_or_current_line_range()
+        text = self.text()
+        if not text:
+            return
+
+        lines = text.splitlines(keepends=True)
+        if not lines:
+            return
+
+        for index in range(line_start - 1, line_end):
+            if index >= len(lines):
+                break
+            line = lines[index]
+            stripped = line.lstrip(" \t")
+            indent = line[: len(line) - len(stripped)]
+            if stripped.startswith("-- "):
+                lines[index] = f"{indent}{stripped[3:]}"
+            elif stripped.startswith("--"):
+                lines[index] = f"{indent}{stripped[2:].lstrip()}"
+            else:
+                lines[index] = f"{indent}-- {stripped}"
+
+        self.setText("".join(lines))
+
+    def _selected_or_current_line_range(self) -> tuple[int, int]:
+        if self.hasSelectedText():
+            start_line, _, end_line, _ = self.getSelection()
+            return start_line + 1, end_line + 1
+
+        cursor_line, _ = self.getCursorPosition()
+        return cursor_line + 1, cursor_line + 1
+
+    def insert_text(self, value: str) -> None:
+        self.insert(value)
+
+    def find_text(self, value: str) -> bool:
+        return self.findFirst(value, False, False, False, False, True, 0, 0)
+
+    def replace_next(self, old_text: str, new_text: str) -> bool:
+        if not self.find_text(old_text):
+            return False
+        self.replaceSelectedText(new_text)
+        return True
+
+    def replace_all(self, old_text: str, new_text: str) -> int:
+        current = self.text()
+        replaced = current.replace(old_text, new_text)
+        if current == replaced:
+            return 0
+
+        self.setText(replaced)
+        return current.count(old_text)
+
+    def _show_context_menu(self, position) -> None:
+        menu = QMenu(self)
+        menu.addAction(self._undo_action)
+        menu.addAction(self._redo_action)
+        menu.addSeparator()
+        menu.addAction(self._cut_action)
+        menu.addAction(self._copy_action)
+        menu.addAction(self._paste_action)
+        menu.addSeparator()
+        menu.addAction(self._toggle_comment_action)
+        if self._format_action is not None:
+            menu.addSeparator()
+            menu.addAction(self._format_action)
+
+        menu.exec(self.mapToGlobal(position))
