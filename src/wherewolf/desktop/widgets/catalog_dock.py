@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt6.QtCore import QMimeData, QModelIndex, QPoint, Qt, pyqtSignal, QUrl
-from PyQt6.QtGui import QAction
+from PyQt6.QtCore import QMimeData, QPoint, Qt, pyqtSignal
+from PyQt6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QInputDialog,
     QMenu,
     QMessageBox,
@@ -48,8 +49,10 @@ class CatalogDock(QWidget):
         self._view.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
-        self._view.viewport().setAcceptDrops(True)
-        self._view.viewport().installEventFilter(self)
+        catalog_viewport = self._view.viewport()
+        assert catalog_viewport is not None
+        catalog_viewport.setAcceptDrops(True)
+        catalog_viewport.installEventFilter(self)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -84,27 +87,33 @@ class CatalogDock(QWidget):
         if report.warnings:
             self.error_reported.emit("\n".join(sorted(set(report.warnings))))
 
-    def dragEnterEvent(self, event) -> None:
-        if self._can_accept_drop(event.mimeData()):
-            event.acceptProposedAction()
-        else:
-            event.ignore()
-
-    def dropEvent(self, event) -> None:
-        paths = self._extract_local_paths(event.mimeData())
-        if not paths:
-            event.ignore()
+    def dragEnterEvent(self, a0: QDragEnterEvent | None) -> None:
+        if a0 is None:
             return
-        self.add_paths(paths)
-        event.acceptProposedAction()
+        mime_data = a0.mimeData()
+        if mime_data is None:
+            return
+        if self._can_accept_drop(mime_data):
+            a0.acceptProposedAction()
+        else:
+            a0.ignore()
 
-    def _can_accept_drop(self, mime_data: QMimeData) -> bool:
-        if not self._extract_local_paths(mime_data):
-            return False
+    def dropEvent(self, a0: QDropEvent | None) -> None:
+        if a0 is None:
+            return
+        mime_data = a0.mimeData()
+        if mime_data is None:
+            return
         paths = self._extract_local_paths(mime_data)
         if not paths:
-            return False
-        return True
+            a0.ignore()
+            return
+        self.add_paths(paths)
+        a0.acceptProposedAction()
+
+    def _can_accept_drop(self, mime_data: QMimeData) -> bool:
+        paths = self._extract_local_paths(mime_data)
+        return bool(paths)
 
     def _extract_local_paths(self, mime_data: QMimeData) -> tuple[Path, ...]:
         paths = []
@@ -120,7 +129,10 @@ class CatalogDock(QWidget):
         return tuple(paths)
 
     def _selected_entry(self) -> tuple[CatalogEntry, int] | None:
-        indexes = self._view.selectionModel().selectedRows()
+        selection_model = self._view.selectionModel()
+        if selection_model is None:
+            return None
+        indexes = selection_model.selectedRows()
         if not indexes:
             return None
         row = indexes[0].row()
@@ -154,7 +166,9 @@ class CatalogDock(QWidget):
             self._copy_alias_action.setEnabled(True)
             self._copy_path_action.setEnabled(True)
             self._insert_alias_action.setEnabled(True)
-        menu.exec(self._view.viewport().mapToGlobal(position))
+        catalog_viewport = self._view.viewport()
+        assert catalog_viewport is not None
+        menu.popup(catalog_viewport.mapToGlobal(position))
 
     def _rename_selected_alias(self) -> None:
         selection = self._selected_entry()
@@ -188,30 +202,32 @@ class CatalogDock(QWidget):
         if selection is None:
             return
         entry, _ = selection
-        self.refresh_schema_requested.emit(CatalogBinding(
-            entry_id=entry.id,
-            alias=entry.alias,
-            path=entry.path,
-            source_format=entry.source_format,
-        ))
+        self.refresh_schema_requested.emit(
+            CatalogBinding(
+                entry_id=entry.id,
+                alias=entry.alias,
+                path=entry.path,
+                source_format=entry.source_format,
+            )
+        )
 
     def _copy_alias(self) -> None:
         selection = self._selected_entry()
         if selection is None:
             return
         entry, _ = selection
-        from PyQt6.QtWidgets import QApplication
-
-        QApplication.clipboard().setText(entry.alias)
+        clipboard = QApplication.clipboard()
+        assert clipboard is not None
+        clipboard.setText(entry.alias)
 
     def _copy_path(self) -> None:
         selection = self._selected_entry()
         if selection is None:
             return
         entry, _ = selection
-        from PyQt6.QtWidgets import QApplication
-
-        QApplication.clipboard().setText(str(entry.path))
+        clipboard = QApplication.clipboard()
+        assert clipboard is not None
+        clipboard.setText(str(entry.path))
 
     def _insert_alias(self) -> None:
         selection = self._selected_entry()

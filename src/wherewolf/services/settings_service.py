@@ -95,7 +95,9 @@ class SettingsService:
         self._settings.setValue(self.editor_font_size_key, int(size))
 
     def restore_last_dataset_directory(self) -> Path:
-        value = self._settings.value(self.last_dataset_directory_key, str(self.DEFAULT_DATASET_DIRECTORY))
+        value = self._settings.value(
+            self.last_dataset_directory_key, str(self.DEFAULT_DATASET_DIRECTORY)
+        )
         if not isinstance(value, str) or not value:
             return self.DEFAULT_DATASET_DIRECTORY
         return Path(value)

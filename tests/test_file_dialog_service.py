@@ -16,7 +16,9 @@ class FakeFileDialogService:
         self.paths = paths
         self.called_with: dict[str, Any] = {}
 
-    def choose_dataset_files(self, default_directory: Path | None, parent: QWidget | None = None) -> tuple[Path, ...]:
+    def choose_dataset_files(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> tuple[Path, ...]:
         self.called_with = {
             "default_directory": default_directory,
             "parent_is_none": parent is None,
@@ -51,7 +53,9 @@ def test_qt_file_dialog_service_filter_is_format_driven() -> None:
 
 
 @pytest.mark.parametrize("default_directory", [None, Path("/tmp")])
-def test_qt_file_dialog_service_cancellation_is_empty_tuple(monkeypatch, default_directory: Path | None) -> None:
+def test_qt_file_dialog_service_cancellation_is_empty_tuple(
+    monkeypatch, default_directory: Path | None
+) -> None:
     monkeypatch.setattr(
         "wherewolf.desktop.dialogs.file_dialog_service.QFileDialog.getOpenFileNames",
         lambda *args, **kwargs: ([], ""),

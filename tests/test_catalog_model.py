@@ -1,10 +1,9 @@
 from pathlib import Path
 
-import polars as pl
 from PyQt6.QtCore import Qt
 
-from wherewolf.domain import ColumnSchema, SchemaResult
 from wherewolf.desktop.models import CatalogModel
+from wherewolf.domain import ColumnSchema, SchemaResult
 from wherewolf.services import CatalogService
 
 
@@ -37,7 +36,6 @@ def test_catalog_model_schema_statuses_and_error_text() -> None:
 
     ready = service.snapshot()[0]
     error = service.snapshot()[1]
-    loading = service.snapshot()[2]
 
     service.update_schema(
         SchemaResult(

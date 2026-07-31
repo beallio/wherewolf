@@ -42,7 +42,9 @@ class CatalogService:
         self._listeners = (*self._listeners, listener)
 
     def unsubscribe(self, listener: Callable[[], None]) -> None:
-        self._listeners = tuple(existing for existing in self._listeners if existing is not listener)
+        self._listeners = tuple(
+            existing for existing in self._listeners if existing is not listener
+        )
 
     def add_paths(self, paths: tuple[Path, ...]) -> CatalogServiceReport:
         resolved_paths: list[Path] = [path.expanduser().resolve() for path in paths]
@@ -129,7 +131,9 @@ class CatalogService:
             schema_error = schema_result.error_message or "schema inspection failed"
 
         entries = list(self._entries)
-        index = next((i for i, entry in enumerate(entries) if entry.id == schema_result.entry_id), None)
+        index = next(
+            (i for i, entry in enumerate(entries) if entry.id == schema_result.entry_id), None
+        )
         if index is None:
             return
 

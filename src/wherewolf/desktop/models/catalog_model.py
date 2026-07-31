@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from datetime import datetime
 from typing import ClassVar
 
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt, pyqtSignal
-from PyQt6.QtCore import QAbstractTableModel
 
 from wherewolf.domain import CatalogEntry
 from wherewolf.services import CatalogService
@@ -15,6 +12,8 @@ from wherewolf.services import CatalogService
 
 class CatalogModel(QAbstractTableModel):
     """QAbstractTableModel facade over :class:`CatalogService`."""
+
+    _INVALID_PARENT: QModelIndex = QModelIndex()
 
     class SchemaStatus:
         LOADING = "Loading"
@@ -40,12 +39,16 @@ class CatalogModel(QAbstractTableModel):
     def headers() -> tuple[str, ...]:
         return CatalogModel._COLUMNS
 
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: ARG002
+    def rowCount(self, parent: QModelIndex | None = None) -> int:
+        if parent is None:
+            parent = CatalogModel._INVALID_PARENT
         if parent.isValid():
             return 0
         return len(self._entries)
 
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: ARG002
+    def columnCount(self, parent: QModelIndex | None = None) -> int:
+        if parent is None:
+            parent = CatalogModel._INVALID_PARENT
         if parent.isValid():
             return 0
         return len(self._COLUMNS)
@@ -69,7 +72,9 @@ class CatalogModel(QAbstractTableModel):
             return str(entry.path)
         return None
 
-    def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole):
+    def headerData(
+        self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole
+    ):
         if role != Qt.ItemDataRole.DisplayRole:
             return None
         if orientation == Qt.Orientation.Horizontal and 0 <= section < len(self._COLUMNS):

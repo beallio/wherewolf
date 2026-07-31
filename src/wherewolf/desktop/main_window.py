@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
-from PyQt6.QtGui import QCloseEvent, QFont
+from PyQt6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont
 from PyQt6.QtWidgets import (
     QDockWidget,
     QMainWindow,
@@ -19,7 +18,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wherewolf.desktop.actions import DesktopActions, build_actions
-from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService, FakeFileDialogService
+from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.widgets import CatalogDock
 from wherewolf.services import CatalogService, SettingsService
 
@@ -177,8 +176,12 @@ class MainWindow(QMainWindow):
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())
         super().closeEvent(a0)
 
-    def dragEnterEvent(self, event) -> None:
-        self.catalog_dock.dragEnterEvent(event)
+    def dragEnterEvent(self, a0: QDragEnterEvent | None) -> None:
+        if a0 is None:
+            return
+        self.catalog_dock.dragEnterEvent(a0)
 
-    def dropEvent(self, event) -> None:
-        self.catalog_dock.dropEvent(event)
+    def dropEvent(self, a0: QDropEvent | None) -> None:
+        if a0 is None:
+            return
+        self.catalog_dock.dropEvent(a0)

@@ -58,7 +58,9 @@ def test_add_datasets_opens_at_last_directory_and_updates_on_success(tmp_path, q
             self.paths = paths
             self.observed = observed
 
-        def choose_dataset_files(self, default_directory: Path | None, parent=None) -> tuple[Path, ...]:
+        def choose_dataset_files(
+            self, default_directory: Path | None, parent=None
+        ) -> tuple[Path, ...]:
             self.observed.append(default_directory)
             return self.paths
 

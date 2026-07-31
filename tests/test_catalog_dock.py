@@ -80,7 +80,9 @@ def test_catalog_dock_drag_and_drop_rejects_directories(qtbot) -> None:
     assert not event.isAccepted()
 
 
-def test_catalog_dock_drag_drop_unsupported_files_are_single_warning_and_still_add_supported(qtbot) -> None:
+def test_catalog_dock_drag_drop_unsupported_files_are_single_warning_and_still_add_supported(
+    qtbot,
+) -> None:
     service = CatalogService()
     window = MainWindow(catalog_service=service)
     qtbot.addWidget(window)
