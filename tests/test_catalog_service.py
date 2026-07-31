@@ -38,24 +38,28 @@ def test_add_paths_duplicate_resolved_path_in_same_call_is_a_single_entry(tmp_pa
 
 def test_add_paths_generates_valid_sql_identifier_alias(tmp_path: Path) -> None:
     service = CatalogService()
-    service.add_paths((tmp_path / "Weird Name!.csv",))
-    tmp_path.joinpath("Weird Name!.csv").write_text("a\n1")
+    weird_path = tmp_path / "Weird Name!.csv"
+    _write_csv(weird_path)
+    service.add_paths((weird_path,))
 
     assert service.snapshot()[0].alias == "weird_name"
 
 
 def test_add_paths_alias_collisions_are_deterministic(tmp_path: Path) -> None:
     service = CatalogService()
+    path_primary = tmp_path / "orders.csv"
+    path_secondary = tmp_path / "orders .csv"
+    path_tertiary = tmp_path / "orders--.csv"
+    _write_csv(path_primary)
+    _write_csv(path_secondary)
+    _write_csv(path_tertiary)
     service.add_paths(
         (
-            tmp_path / "orders.csv",
-            tmp_path / "orders .csv",
-            tmp_path / "orders--.csv",
+            path_primary,
+            path_secondary,
+            path_tertiary,
         )
     )
-    tmp_path.joinpath("orders.csv").write_text("a\n1")
-    tmp_path.joinpath("orders .csv").write_text("a\n1")
-    tmp_path.joinpath("orders--.csv").write_text("a\n1")
 
     aliases = [entry.alias for entry in service.snapshot()]
     assert aliases == ["orders", "orders_2", "orders_3"]
@@ -63,10 +67,14 @@ def test_add_paths_alias_collisions_are_deterministic(tmp_path: Path) -> None:
 
 def test_add_paths_alias_uniqueness_is_casefold(tmp_path: Path) -> None:
     service = CatalogService()
-    service.add_paths((tmp_path / "Orders.csv",))
-    tmp_path.joinpath("Orders.csv").write_text("a\n1")
-    result = service.add_paths((tmp_path / "orders.csv",))
-    tmp_path.joinpath("orders.csv").write_text("a\n1")
+    first_path = tmp_path / "Orders.csv"
+    second_path = tmp_path / "orders.csv"
+    _write_csv(first_path)
+    _write_csv(second_path)
+    first_entry = service.add_paths((first_path,)).added[0]
+    service.rename(first_entry.id, first_entry.alias.upper())
+
+    result = service.add_paths((second_path,))
 
     assert len(result.added) == 1
     assert result.added[0].alias == "orders_2"
@@ -106,9 +114,10 @@ def test_rename_rejects_casefold_collision(tmp_path: Path) -> None:
     _write_csv(a_path)
     _write_csv(b_path)
     first = service.add_paths((a_path, b_path)).added[0]
+    target_alias = f"{service.snapshot()[1].alias.upper()}"
 
     with pytest.raises(ValueError, match="already exists"):
-        service.rename(first.id, service.snapshot()[1].alias)
+        service.rename(first.id, target_alias)
 
 
 def test_remove_by_entry_id(tmp_path: Path) -> None:
