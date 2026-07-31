@@ -82,6 +82,7 @@ class MainWindow(QMainWindow):
     def _build_toolbar(self) -> QToolBar:
         toolbar = self.addToolBar("Primary")
         assert toolbar is not None
+        toolbar.setObjectName("primary_toolbar")
         toolbar.addAction(self.desktop_actions.run)
         toolbar.addAction(self.desktop_actions.cancel)
         toolbar.addAction(self.desktop_actions.format_sql)

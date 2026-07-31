@@ -33,9 +33,16 @@ def test_main_window_structure(qtbot) -> None:
     assert isinstance(window.main_toolbar, QToolBar)
     assert window.dataset_catalog_dock.objectName() == "dataset_catalog_dock"
     assert isinstance(window.dataset_catalog_dock, QDockWidget)
+    assert window.main_toolbar.objectName() == "primary_toolbar"
     assert isinstance(window.findChild(QSplitter), QSplitter)
     assert isinstance(window.findChild(QTabWidget), QTabWidget)
     assert isinstance(window.status_bar, QStatusBar)
+
+    for toolbar in window.findChildren(QToolBar):
+        assert toolbar.objectName()
+
+    for dock in window.findChildren(QDockWidget):
+        assert dock.objectName()
 
     menu_titles = [action.text() for action in menu_bar.actions()]
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
