@@ -2,6 +2,8 @@
 name = "wherewolf"
 version = "0.5.2"
 description = "A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark."
+license = "GPL-3.0-only"
+license-files = ["LICENSE", "LICENSES/*"]
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -10,6 +12,8 @@ dependencies = [
     "polars>=1.41.2",
     "psutil>=7.2.2",
     "pyarrow>=24.0.0",
+    "pyqt6>=6.8,<7",
+    "pyqt6-qscintilla>=2.14,<3",
     "pyspark>=4.1.2",
     "sqlglot>=30.11.0",
     "streamlit>=1.58.0",
@@ -26,6 +30,7 @@ packages = ["src/wherewolf"]
 
 [project.scripts]
 wherewolf = "wherewolf.cli:main"
+wherewolf-desktop = "wherewolf.desktop.application:main"
 
 [tool.uv]
 cache-dir = "/tmp/wherewolf/.uv_cache"
@@ -50,6 +55,7 @@ dev = [
     "playwright>=1.60.0",
     "pytest>=9.1.0",
     "pytest-cov>=7.1.0",
+    "pytest-qt>=4.4,<5",
     "ruff>=0.15.17",
     "ty>=0.0.49",
 ]
