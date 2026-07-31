@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Final
 
 from PyQt6.QtCore import QByteArray, QSettings
@@ -16,6 +17,7 @@ class SettingsService:
     SCHEMA_VERSION: Final = "v1"
     DEFAULT_FONT_SIZE: Final = 12
     DEFAULT_SPLITTER_SIZES: Final = (1, 1)
+    DEFAULT_DATASET_DIRECTORY: Final = Path.home()
 
     def __init__(self, settings: QSettings | None = None):
         self._settings = settings or QSettings(self.ORGANIZATION, self.APPLICATION)
@@ -36,6 +38,10 @@ class SettingsService:
     def _font_size_key(schema_version: str) -> str:
         return f"{schema_version}/editor/font_size"
 
+    @staticmethod
+    def _last_dataset_directory_key(schema_version: str) -> str:
+        return f"{schema_version}/dataset_directory/last"
+
     @property
     def namespace_prefix(self) -> str:
         return f"{self.SCHEMA_VERSION}"
@@ -55,6 +61,10 @@ class SettingsService:
     @property
     def editor_font_size_key(self) -> str:
         return self._font_size_key(self.namespace_prefix)
+
+    @property
+    def last_dataset_directory_key(self) -> str:
+        return self._last_dataset_directory_key(self.namespace_prefix)
 
     def restore_window_geometry(self) -> bytes:
         return self._read_bytes(self.window_geometry_key, b"")
@@ -83,6 +93,15 @@ class SettingsService:
 
     def save_editor_font_size(self, size: int) -> None:
         self._settings.setValue(self.editor_font_size_key, int(size))
+
+    def restore_last_dataset_directory(self) -> Path:
+        value = self._settings.value(self.last_dataset_directory_key, str(self.DEFAULT_DATASET_DIRECTORY))
+        if not isinstance(value, str) or not value:
+            return self.DEFAULT_DATASET_DIRECTORY
+        return Path(value)
+
+    def save_last_dataset_directory(self, directory: Path) -> None:
+        self._settings.setValue(self.last_dataset_directory_key, str(directory))
 
     def _read_bytes(self, key: str, default: bytes) -> bytes:
         value = self._settings.value(key, default)

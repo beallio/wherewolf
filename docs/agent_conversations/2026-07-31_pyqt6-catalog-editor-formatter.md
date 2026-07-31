@@ -90,3 +90,16 @@ Files added/updated:
 Results:
 - `./run.sh uv run pytest -q tests/test_catalog_model.py tests/test_catalog_dock.py` -> 6 passed
 
+## Task 5
+
+Files added/updated:
+- src/wherewolf/services/settings_service.py
+- src/wherewolf/desktop/actions.py
+- src/wherewolf/desktop/main_window.py
+- tests/test_actions.py
+- tests/test_settings_service.py
+
+Results:
+- `./run.sh uv run pytest -q tests/test_actions.py tests/test_settings_service.py` -> 10 passed
+- `./run.sh uv run pytest -q tests/test_main_window.py` -> 4 passed
+

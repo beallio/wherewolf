@@ -21,7 +21,6 @@ from PyQt6.QtWidgets import (
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService, FakeFileDialogService
 from wherewolf.desktop.widgets import CatalogDock
-from wherewolf.desktop.widgets.catalog_dock import CatalogDock as CatalogDockWidget
 from wherewolf.services import CatalogService, SettingsService
 
 
@@ -37,6 +36,7 @@ class MainWindow(QMainWindow):
         file_dialog_service: FileDialogService | None = None,
     ) -> None:
         super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._settings_service = settings_service or SettingsService()
         self._catalog_service = catalog_service or CatalogService()
         self._file_dialog_service = file_dialog_service or QtFileDialogService()
@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(self._central_splitter)
         self._build_menus()
+        self._connect_actions()
         self._restore_state()
 
     @property
@@ -79,7 +80,30 @@ class MainWindow(QMainWindow):
         dock.setObjectName("dataset_catalog_dock")
         dock.setWidget(catalog)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        catalog.error_reported.connect(self._show_status)
         return dock
+
+    def _connect_actions(self) -> None:
+        self.desktop_actions.add_datasets.triggered.connect(self._on_add_datasets)
+
+    def _on_add_datasets(self) -> None:
+        paths = self._file_dialog_service.choose_dataset_files(
+            default_directory=self._settings_service.restore_last_dataset_directory(),
+            parent=self,
+        )
+
+        if not paths:
+            return
+
+        result = self._catalog_service.add_paths(paths)
+        if result.added:
+            self._settings_service.save_last_dataset_directory(result.added[0].path.parent)
+
+        if result.warnings:
+            self._show_status("\n".join(sorted(set(result.warnings))))
+
+    def _show_status(self, message: str, timeout: int = 3000) -> None:
+        self.status_bar.showMessage(message, timeout)
 
     def _build_central_area(self) -> QSplitter:
         editor = QTextEdit(self)
