@@ -1,4 +1,3 @@
-import sys
 from pathlib import Path
 
 from PyQt6.QtGui import QKeySequence
@@ -7,14 +6,6 @@ from wherewolf.desktop import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.services import CatalogService, SettingsService
-
-
-def _expected_format_shortcut() -> str:
-    return (
-        QKeySequence("Meta+Shift+F").toString()
-        if sys.platform == "darwin"
-        else QKeySequence("Ctrl+Shift+F").toString()
-    )
 
 
 def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
@@ -30,7 +21,7 @@ def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
     assert actions.cancel.shortcut().toString() == QKeySequence("Ctrl+.").toString()
 
     assert actions.format_sql.isEnabled()
-    assert _expected_format_shortcut() in actions.format_sql.shortcut().toString()
+    assert actions.format_sql.shortcut().toString() == QKeySequence("Ctrl+Shift+F").toString()
     assert "Unavailable in Phase 3" not in actions.format_sql.toolTip()
 
     assert actions.add_datasets.isEnabled()
@@ -103,4 +94,4 @@ def test_format_action_is_enabled_and_bound(qtbot) -> None:
     actions = build_actions()
 
     assert actions.format_sql.isEnabled()
-    assert actions.format_sql.shortcut().toString() == _expected_format_shortcut()
+    assert actions.format_sql.shortcut().toString() == QKeySequence("Ctrl+Shift+F").toString()

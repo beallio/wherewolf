@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 
 from PyQt6.QtGui import QAction, QKeySequence
@@ -30,10 +29,7 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
 
     format_sql = QAction("Format SQL", parent)
     format_sql.setEnabled(True)
-    if sys.platform == "darwin":
-        format_sql.setShortcut(QKeySequence("Meta+Shift+F"))
-    else:
-        format_sql.setShortcut(QKeySequence("Ctrl+Shift+F"))
+    format_sql.setShortcut(QKeySequence("Ctrl+Shift+F"))
     format_sql.setToolTip("")
 
     add_datasets = QAction("Add Datasets…", parent)
