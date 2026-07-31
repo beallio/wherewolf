@@ -1,4 +1,5 @@
 import pytest
+
 from wherewolf.engines import get_engine
 from wherewolf.execution import DuckDBEngine, SparkEngine
 

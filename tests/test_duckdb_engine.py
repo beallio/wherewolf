@@ -1,5 +1,6 @@
 import polars as pl
 import pytest
+
 from wherewolf.execution import DuckDBEngine, SparkEngine
 
 

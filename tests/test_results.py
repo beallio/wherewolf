@@ -1,5 +1,6 @@
 import polars as pl
 from streamlit.testing.v1 import AppTest
+
 from wherewolf.execution import QueryResult
 
 

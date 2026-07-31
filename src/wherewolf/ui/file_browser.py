@@ -1,7 +1,8 @@
 import os
-import streamlit as st
 from pathlib import Path
-from typing import Optional
+
+import streamlit as st
+
 from wherewolf.constants import SUPPORTED_EXTENSIONS
 
 
@@ -49,7 +50,7 @@ class FileBrowser:
             st.session_state[curr_dir_key] = new_path
 
     @staticmethod
-    def render_explorer(show_hidden: bool = False) -> Optional[str]:
+    def render_explorer(show_hidden: bool = False) -> str | None:
         """
         Renders the selectbox-based file explorer.
 
@@ -99,7 +100,8 @@ class FileBrowser:
                 options = [".."] + filtered_items
 
             st.session_state[files_key] = options
-        except Exception as e:
+        # Directory access boundary: any list failure should surface in UI and keep state valid.
+        except Exception as e:  # noqa: BLE001
             st.error(f"Error reading directory {current_path}: {e}")
             st.session_state[files_key] = [".."]
 

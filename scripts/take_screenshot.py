@@ -1,6 +1,7 @@
-import time
-import subprocess
 import os
+import subprocess
+import time
+
 from playwright.sync_api import sync_playwright
 
 
@@ -47,7 +48,9 @@ def take_screenshot(output_path):
                     page.wait_for_selector("text=Wherewolf", timeout=10000)
                     print("App loaded!")
                     break
-                except Exception:
+                # Retry boundary: transient page setup failures are expected
+                # until Streamlit becomes responsive.
+                except Exception:  # noqa: BLE001
                     print(f"Streamlit not ready yet (attempt {i + 1}/30)...")
                 time.sleep(2)
             else:
@@ -62,13 +65,16 @@ def take_screenshot(output_path):
                 # Try to click the button by its label
                 page.click("button:has-text('Run')")
                 print("Clicked Run!")
-            except Exception as e:
+            # UI interaction boundary: fallback click path should handle any primary click failure.
+            except Exception as e:  # noqa: BLE001
                 print(f"Failed to click Run: {e}")
                 # Fallback: try to find any button with Run text
                 try:
                     page.get_by_role("button", name="Run").click()
                     print("Clicked Run (fallback)!")
-                except Exception as e2:
+                # Fallback boundary: any selector/click failure should surface
+                # as a hard failure for diagnostics.
+                except Exception as e2:  # noqa: BLE001
                     print(f"Double failure on Run button: {e2}")
 
             # Wait for results to appear (metric or dataframe)
@@ -76,7 +82,9 @@ def take_screenshot(output_path):
             try:
                 page.wait_for_selector("text=Rows Returned", timeout=30000)
                 print("Results appeared!")
-            except Exception as e:
+            # Result wait boundary: capture pipeline/render failures without
+            # crashing the screenshot job.
+            except Exception as e:  # noqa: BLE001
                 print(f"Results did not appear: {e}")
 
             # Settle UI

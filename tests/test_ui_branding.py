@@ -18,10 +18,13 @@ def test_branding_css_present():
     # Find the markdown element containing our style tag
     style_present = False
     for markdown in at.markdown:
-        if "<style>" in markdown.value and "#MainMenu" in markdown.value:
-            # Also ensure we ARE NOT hiding stToolbar anymore
-            if 'data-testid="stToolbar"' not in markdown.value:
-                style_present = True
-                break
+        # Also ensure we ARE NOT hiding stToolbar anymore
+        if (
+            "<style>" in markdown.value
+            and "#MainMenu" in markdown.value
+            and 'data-testid="stToolbar"' not in markdown.value
+        ):
+            style_present = True
+            break
 
     assert style_present, "Custom branding CSS not found or still hiding toolbar"

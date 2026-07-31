@@ -1,7 +1,8 @@
-import duckdb
 import time
+
+import duckdb
 import polars as pl
-from typing import Optional
+
 from .models import QueryResult
 
 
@@ -54,15 +55,16 @@ class DuckDBEngine:
             return df.select(["column_name", "column_type"]).rename(
                 {"column_name": "Column", "column_type": "Type"}
             )
-        except Exception:
+        # DuckDB schema fallback boundary: any schema-read failure returns a safe empty schema.
+        except Exception:  # noqa: BLE001
             return pl.DataFrame(schema={"Column": pl.Utf8, "Type": pl.Utf8})
 
     def execute(
         self,
         query: str,
         path: str = "",
-        limit: Optional[int] = 1000,
-        catalog: Optional[dict[str, str]] = None,
+        limit: int | None = 1000,
+        catalog: dict[str, str] | None = None,
     ) -> QueryResult:
         """Executes a SQL query against local files using DuckDB.
 
@@ -111,7 +113,8 @@ class DuckDBEngine:
                 success=True,
                 is_truncated=is_truncated,
             )
-        except Exception as e:
+        # Execution boundary: runtime/parsing failures are normalized into QueryResult failures.
+        except Exception as e:  # noqa: BLE001
             return QueryResult(
                 success=False, error_message=str(e), execution_time=time.time() - start_time
             )

@@ -1,7 +1,9 @@
-import pytest
-import polars as pl
 import io
+
+import polars as pl
+import pytest
 from polars.testing import assert_frame_equal
+
 from wherewolf.export import Exporter
 
 

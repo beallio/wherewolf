@@ -1,7 +1,8 @@
 import os
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 import streamlit as st
 
 # Mock Streamlit bits before importing components
@@ -25,38 +26,39 @@ def test_file_browser_handles_broken_symlinks(tmp_path):
     os.symlink(target, broken_link)
 
     # 2. Mock st.session_state
-    with patch("streamlit.session_state", {"explorer_path": str(test_dir)}):
-        # 3. Mock st components to avoid "Missing ScriptRunContext"
-        with (
-            patch("streamlit.sidebar"),
-            patch("streamlit.expander"),
-            patch("streamlit.checkbox", return_value=False),
-            patch("streamlit.write"),
-            patch("streamlit.columns", return_value=(MagicMock(), MagicMock())),
-            patch("streamlit.button", return_value=False),
-            patch("streamlit.rerun"),
-            patch("streamlit.error"),
-            patch("streamlit.warning"),
-            patch("streamlit.code"),
-        ):
-            # This call is expected to raise FileNotFoundError based on user report
-            # if the fix isn't applied inside the component or wrapper.
-            try:
-                FileBrowser.render_explorer(show_hidden=False)
-            except FileNotFoundError:
-                pytest.fail("FileBrowser crashed with FileNotFoundError on broken symlink")
-            except Exception as e:
-                # We want to catch the specific error reported
-                if "No such file or directory" in str(e):
-                    pytest.fail(f"FileBrowser crashed with: {e}")
-                # Other streamlit-related errors are expected in a non-streamlit environment
-                pass
+    # 3. Mock st components to avoid "Missing ScriptRunContext"
+    with (
+        patch("streamlit.session_state", {"explorer_path": str(test_dir)}),
+        patch("streamlit.sidebar"),
+        patch("streamlit.expander"),
+        patch("streamlit.checkbox", return_value=False),
+        patch("streamlit.write"),
+        patch("streamlit.columns", return_value=(MagicMock(), MagicMock())),
+        patch("streamlit.button", return_value=False),
+        patch("streamlit.rerun"),
+        patch("streamlit.error"),
+        patch("streamlit.warning"),
+        patch("streamlit.code"),
+    ):
+        # This call is expected to raise FileNotFoundError based on user report
+        # if the fix isn't applied inside the component or wrapper.
+        try:
+            FileBrowser.render_explorer(show_hidden=False)
+        except FileNotFoundError:
+            pytest.fail("FileBrowser crashed with FileNotFoundError on broken symlink")
+        # Broad catch keeps the regression assertion focused while tolerating
+        # non-FileNotFoundError test-harness failures.
+        except Exception as e:  # noqa: BLE001
+            # We want to catch the specific error reported
+            if "No such file or directory" in str(e):
+                pytest.fail(f"FileBrowser crashed with: {e}")
+            # Other streamlit-related errors are expected in a non-streamlit environment
 
 
 if __name__ == "__main__":
     # Manual run for debugging
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
 
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp)

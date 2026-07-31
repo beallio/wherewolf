@@ -57,8 +57,9 @@ def test_translation_target_options():
     at.session_state.catalog = {"dataset": "/tmp/fake.csv"}
     at.session_state.input_dialect_ui = "DuckDB"
     # We need a query result to show the translation section
-    from wherewolf.execution import QueryResult
     import polars as pl
+
+    from wherewolf.execution import QueryResult
 
     at.session_state.query_result = QueryResult(df=pl.DataFrame({"a": [1]}), success=True)
     at.session_state.executed_input_dialect_key = "duckdb"

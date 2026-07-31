@@ -1,5 +1,6 @@
-import polars as pl
 import io
+
+import polars as pl
 
 
 class Exporter:

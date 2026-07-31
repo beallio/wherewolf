@@ -20,7 +20,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.14
       - name: Install dependencies
         run: ./run.sh uv sync --all-extras --dev
       - name: Lint with ruff
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - name: Install uv

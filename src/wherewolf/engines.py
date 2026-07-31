@@ -1,4 +1,5 @@
 import streamlit as st
+
 from wherewolf.execution import DuckDBEngine, SparkEngine
 
 

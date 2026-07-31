@@ -1,6 +1,7 @@
 import polars as pl
 import pytest
-from wherewolf.execution.spark_engine import SparkEngine, SPARK_AVAILABLE
+
+from wherewolf.execution.spark_engine import SPARK_AVAILABLE, SparkEngine
 
 
 @pytest.fixture

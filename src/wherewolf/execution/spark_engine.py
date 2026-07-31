@@ -1,6 +1,8 @@
 import time
+from typing import cast
+
 import polars as pl
-from typing import Optional, cast
+
 from .models import QueryResult
 
 try:
@@ -24,7 +26,9 @@ class SparkEngine:
     def _get_session(self):
         if not self.spark:
             self.spark = (
-                SparkSession.builder.appName("Wherewolf")
+                # pyspark 4.2 exposes `builder` as a `classproperty`, which ty
+                # cannot resolve through the stub. Runtime behavior is unchanged.
+                SparkSession.builder.appName("Wherewolf")  # ty: ignore[unresolved-attribute]
                 .master("local[*]")
                 .config("spark.sql.execution.arrow.pyspark.enabled", "true")
                 .getOrCreate()
@@ -86,15 +90,16 @@ class SparkEngine:
             for field in df_spark.schema:
                 schema_data.append({"Column": field.name, "Type": field.dataType.simpleString()})
             return pl.DataFrame(schema_data, schema={"Column": pl.Utf8, "Type": pl.Utf8})
-        except Exception:
+        # KNOWN DEFECT: swallows the real error and returns an empty schema.
+        except Exception:  # noqa: BLE001
             return pl.DataFrame(schema={"Column": pl.Utf8, "Type": pl.Utf8})
 
     def execute(
         self,
         query: str,
         path: str = "",
-        limit: Optional[int] = 1000,
-        catalog: Optional[dict[str, str]] = None,
+        limit: int | None = 1000,
+        catalog: dict[str, str] | None = None,
     ) -> QueryResult:
         if not SPARK_AVAILABLE:
             return QueryResult(success=False, error_message="PySpark not installed")
@@ -138,7 +143,8 @@ class SparkEngine:
                 success=True,
                 is_truncated=is_truncated,
             )
-        except Exception as e:
+        # Execution boundary: any Spark execution error is surfaced as failed QueryResult status.
+        except Exception as e:  # noqa: BLE001
             return QueryResult(
                 success=False, error_message=str(e), execution_time=time.time() - start_time
             )

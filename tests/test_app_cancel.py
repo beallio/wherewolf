@@ -1,5 +1,6 @@
-from streamlit.testing.v1 import AppTest
 from unittest.mock import MagicMock, patch
+
+from streamlit.testing.v1 import AppTest
 
 
 def test_app_cancel_logic_mocked():

@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
+
 import pyarrow as pa
+
 from wherewolf.execution import SparkEngine
 
 

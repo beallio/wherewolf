@@ -1,4 +1,5 @@
 from unittest.mock import patch
+
 from wherewolf.ui.file_browser import FileBrowser
 
 

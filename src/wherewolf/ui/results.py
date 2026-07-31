@@ -1,4 +1,5 @@
 import streamlit as st
+
 from wherewolf.constants import DIALECT_MAPPING
 from wherewolf.execution import QueryResult
 from wherewolf.export import Exporter
@@ -23,7 +24,7 @@ def export_base_name() -> str:
     import os
 
     if st.session_state.catalog:
-        first_path = list(st.session_state.catalog.values())[0]
+        first_path = next(iter(st.session_state.catalog.values()))
         orig_filename = os.path.basename(first_path)
         return os.path.splitext(orig_filename)[0] or "wherewolf"
     return "wherewolf"
@@ -64,8 +65,10 @@ class ResultsView:
                 )
                 with st.expander(f"Translated SQL ({selected_target_ui})", expanded=True):
                     st.code(translated_sql, language="sql")
-            except Exception as e:
-                st.warning(f"Translation failed: {str(e)}")
+            # Translation preview boundary: any SQL translation issue warns
+            # without crashing the results UI.
+            except Exception as e:  # noqa: BLE001
+                st.warning(f"Translation failed: {e!s}")
 
             m1, m2 = st.columns(2)
             if result.is_truncated:

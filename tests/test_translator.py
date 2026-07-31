@@ -1,4 +1,5 @@
 import pytest
+
 from wherewolf.translation import Translator
 
 

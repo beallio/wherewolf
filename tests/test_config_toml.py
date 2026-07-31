@@ -1,5 +1,6 @@
-import toml
 from pathlib import Path
+
+import toml
 
 
 def test_config_toml_is_valid():

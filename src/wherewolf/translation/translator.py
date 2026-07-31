@@ -1,10 +1,12 @@
+from typing import ClassVar
+
 import sqlglot
 
 
 class Translator:
     """Handles SQL dialect translation between DuckDB and SparkSQL."""
 
-    VALID_DIALECTS = {"duckdb", "spark", "tsql"}
+    VALID_DIALECTS: ClassVar[set[str]] = {"duckdb", "spark", "tsql"}
 
     def translate(self, query: str, from_dialect: str, to_dialect: str) -> str:
         """Translates a SQL query from one dialect to another.
@@ -32,4 +34,4 @@ class Translator:
         except Exception as e:
             # In a real app, we might want to warn about imperfect translation
             # for now, we'll re-raise or handle gracefully.
-            raise ValueError(f"Translation failed: {str(e)}") from e
+            raise ValueError(f"Translation failed: {e!s}") from e

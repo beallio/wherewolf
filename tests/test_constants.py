@@ -1,4 +1,4 @@
-from wherewolf.constants import SUPPORTED_EXTENSIONS, DIALECT_MAPPING
+from wherewolf.constants import DIALECT_MAPPING, SUPPORTED_EXTENSIONS
 from wherewolf.translation import Translator
 
 

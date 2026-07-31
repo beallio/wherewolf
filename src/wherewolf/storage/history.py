@@ -1,7 +1,6 @@
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
 
 
 class HistoryManager:
@@ -9,7 +8,7 @@ class HistoryManager:
 
     DEFAULT_PATH = Path.home() / ".wherewolf" / "history.json"
 
-    def __init__(self, storage_path: Optional[Path] = None):
+    def __init__(self, storage_path: Path | None = None):
         self.storage_path = storage_path or self.DEFAULT_PATH
         self._ensure_storage()
 
@@ -21,7 +20,7 @@ class HistoryManager:
                 json.dump([], f)
 
     def add_entry(
-        self, engine: str, query: str, path: str = "", catalog: Optional[Dict[str, str]] = None
+        self, engine: str, query: str, path: str = "", catalog: dict[str, str] | None = None
     ):
         """Adds a new query to the history.
 
@@ -36,7 +35,11 @@ class HistoryManager:
 
         history = self.get_all()
         entry = {
-            "timestamp": datetime.now().isoformat(),
+            # Local time with an explicit UTC offset. `astimezone()` keeps the
+            # first 16 characters identical to the previous naive local format,
+            # which app.py slices for history labels, while making the value
+            # unambiguous for the schema-v2 migration.
+            "timestamp": datetime.now().astimezone().isoformat(),
             "engine": engine,
             "query": query,
             "path": path,
@@ -58,7 +61,7 @@ class HistoryManager:
                 os.remove(temp_path)
             raise
 
-    def get_all(self) -> List[Dict]:
+    def get_all(self) -> list[dict]:
         """Returns all history entries.
 
         Returns:
@@ -74,7 +77,7 @@ class HistoryManager:
                     if "catalog" not in entry:
                         entry["catalog"] = {"dataset": entry.get("path", "")}
                 return history
-        except (json.JSONDecodeError, IOError):
+        except (OSError, json.JSONDecodeError):
             # If corrupted, we might want to be more careful, but for now returning empty
             return []
 

@@ -1,5 +1,5 @@
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -17,7 +17,8 @@ def main():
         subprocess.run([sys.executable, "-m", "streamlit", "run", str(app_path)], check=True)
     except KeyboardInterrupt:
         sys.exit(0)
-    except Exception as e:
+    # CLI launch boundary: any process startup error should print and fail fast for callers.
+    except Exception as e:  # noqa: BLE001
         print(f"Error launching Wherewolf: {e}")
         sys.exit(1)
 

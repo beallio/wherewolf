@@ -1,14 +1,16 @@
-import streamlit as st
+import importlib.metadata
 import os
 from concurrent.futures import ThreadPoolExecutor
-from wherewolf.execution import QueryResult
-from wherewolf.translation import Translator
-from wherewolf.storage import HistoryManager
-from wherewolf.ui import FileBrowser, ResultsView
-from wherewolf.constants import DIALECT_MAPPING
-from wherewolf.engines import get_engine, get_duckdb_engine, get_spark_engine  # noqa: F401
+
+import streamlit as st
 from streamlit_ace import st_ace
-import importlib.metadata
+
+from wherewolf.constants import DIALECT_MAPPING
+from wherewolf.engines import get_duckdb_engine, get_engine, get_spark_engine  # noqa: F401
+from wherewolf.execution import QueryResult
+from wherewolf.storage import HistoryManager
+from wherewolf.translation import Translator
+from wherewolf.ui import FileBrowser, ResultsView
 
 # Get version from metadata
 try:
@@ -247,7 +249,7 @@ with st.sidebar:
                 del st.session_state.catalog[alias]
                 if st.session_state.schema_focus == alias:
                     st.session_state.schema_focus = (
-                        list(st.session_state.catalog.keys())[0]
+                        next(iter(st.session_state.catalog.keys()))
                         if st.session_state.catalog
                         else None
                     )
@@ -283,7 +285,9 @@ with st.sidebar:
                 st.session_state.schema = temp_engine.get_schema(focus_path)
                 st.session_state.last_schema_path = focus_path
                 st.session_state.last_schema_engine = engine_name
-            except Exception as e:
+            # Schema discovery boundary: any engine/schema lookup failure falls
+            # back with a sidebar error.
+            except Exception as e:  # noqa: BLE001
                 st.session_state.schema = None
                 st.sidebar.error(f"Failed to fetch schema: {e}")
 
@@ -408,7 +412,9 @@ if run_button and st.session_state.catalog:
             query_to_run = translator.translate(
                 query_text, from_dialect=input_dialect_key, to_dialect=engine_dialect_key
             )
-        except Exception as e:
+        # Translation boundary: any input-to-engine translation error returns
+        # a failed query state.
+        except Exception as e:  # noqa: BLE001
             translation_error = str(e)
 
     if translation_error:
@@ -459,7 +465,9 @@ if st.session_state.query_future and st.session_state.query_future.done():
                 "",  # path is deprecated
                 catalog=st.session_state.catalog,
             )
-    except Exception as e:
+    # Execution boundary: a failure from the worker future or from history
+    # persistence becomes a failed QueryResult rather than crashing the rerun.
+    except Exception as e:  # noqa: BLE001
         st.session_state.query_result = QueryResult(success=False, error_message=str(e))
 
     st.session_state.is_running = False

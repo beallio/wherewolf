@@ -1,7 +1,9 @@
-import pytest
 import os
-from wherewolf.translation import Translator
+
+import pytest
+
 from wherewolf.execution import DuckDBEngine
+from wherewolf.translation import Translator
 
 
 @pytest.fixture

@@ -1,5 +1,6 @@
-from streamlit.testing.v1 import AppTest
 from unittest.mock import patch
+
+from streamlit.testing.v1 import AppTest
 
 
 def test_app_initialization():
