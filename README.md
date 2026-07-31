@@ -1,10 +1,10 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=11" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=12" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=11)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=11)](https://pypi.org/project/wherewolf/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?cacheBuster=11)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=12)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=12)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=12)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
 
@@ -20,7 +20,7 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 - **Export:** Download query results as CSV, Excel, or Parquet. DataFrame handling and exports are Polars-based. When the preview is truncated, use **Prepare full export** to re-run the query without a row limit and download the entire result set.
 - **Execution Metrics:** Tracks row count and execution time.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=11)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=12)
 
 ## Installation
 
@@ -40,10 +40,14 @@ uv sync
 ```
 
 ## Usage
+The default `wherewolf` command continues to start the Streamlit UI.
+The temporary desktop shell is launched with `wherewolf-desktop` and is a work-in-progress;
+it will replace the Streamlit launcher at the final migration cutover.
 
 If running from source:
 ```bash
 uv run streamlit run src/wherewolf/app.py
+wherewolf-desktop
 ```
 
 1. Use the **Manage Dataset Catalog** section in the sidebar to browse and add files.
@@ -75,3 +79,13 @@ ruff format .
 - `polars`
 - `fastexcel`
 - `xlsxwriter`
+
+## License
+
+Wherewolf is transitioning to `GPL-3.0-only` for future releases.
+Releases through `0.5.2` remain available under `MIT`.
+The original MIT text is retained in `LICENSES/MIT-pre-0.6.txt` and those grants remain valid.
+
+## Contributing
+
+Contributions are accepted under `GPL-3.0-only`.
