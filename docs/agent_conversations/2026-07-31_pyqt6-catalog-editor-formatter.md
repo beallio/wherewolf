@@ -63,3 +63,16 @@ Tests added:
 Results:
 - `./run.sh uv run pytest -q tests/test_file_dialog_service.py` -> 5 passed
 
+## Task 3
+
+Files added/updated:
+- src/wherewolf/services/catalog_service.py
+- src/wherewolf/services/__init__.py
+- tests/test_catalog_service.py
+
+Tests added:
+- 11 new assertions in tests/test_catalog_service.py
+
+Results:
+- `./run.sh uv run pytest -q tests/test_catalog_service.py` -> 11 passed
+
