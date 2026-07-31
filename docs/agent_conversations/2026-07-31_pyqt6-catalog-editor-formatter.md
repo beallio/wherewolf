@@ -50,3 +50,16 @@ STATUS: READY
 - Commit at baseline: `4ebbfbf`
 - `git rev-parse HEAD`: `$(git rev-parse HEAD)`
 
+## Task 2
+
+Files added:
+- tests/test_file_dialog_service.py
+- src/wherewolf/desktop/dialogs/__init__.py
+- src/wherewolf/desktop/dialogs/file_dialog_service.py
+
+Tests added:
+- tests/test_file_dialog_service.py (5 tests)
+
+Results:
+- `./run.sh uv run pytest -q tests/test_file_dialog_service.py` -> 5 passed
+
