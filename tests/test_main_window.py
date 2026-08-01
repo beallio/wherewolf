@@ -24,6 +24,7 @@ from wherewolf.domain import (
     SourceFormat,
 )
 from wherewolf.services import SettingsService
+from wherewolf.storage import HistoryManager
 
 
 def _configure_qsettings_path(tmp_path: Path) -> SettingsService:
@@ -143,6 +144,23 @@ def test_main_window_run_empty_editor_shows_status_and_starts_nothing(qtbot) -> 
         or "empty" in window.status_bar.currentMessage().lower()
         or "statement" in window.status_bar.currentMessage().lower()
     )
+
+
+def test_history_record_restore_updates_editor_without_execution_or_catalog(
+    tmp_path: Path, qtbot
+) -> None:
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry("duckdb", "SELECT restored_sql")
+    record = history.get_all()[0]
+    window = MainWindow(history_manager=history)
+    qtbot.addWidget(window)
+    initial_catalog = window._catalog_service.entries
+
+    window.history_dock.record_selected.emit(record)
+
+    assert window.editor.text() == "SELECT restored_sql"
+    assert window.query_controller.status is ExecutionStatus.IDLE
+    assert window._catalog_service.entries == initial_catalog
 
 
 def test_main_window_action_enabled_states_and_status_bar_during_execution(

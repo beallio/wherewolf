@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.query_controller import QueryController
-from wherewolf.desktop.widgets import CatalogDock, SqlEditor
+from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.workers import SchemaWorker
@@ -67,6 +67,7 @@ class MainWindow(QMainWindow):
         self.main_toolbar = self._build_toolbar()
         self._catalog_dock_widget = self._build_catalog_dock()
         self.dataset_catalog_dock = self._catalog_dock_widget
+        self._history_dock_widget = self._build_history_dock()
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -89,6 +90,12 @@ class MainWindow(QMainWindow):
     @property
     def catalog_view(self) -> QDockWidget:
         return self._catalog_dock_widget
+
+    @property
+    def history_dock(self) -> HistoryDock:
+        widget = self._history_dock_widget.widget()
+        assert isinstance(widget, HistoryDock)
+        return widget
 
     @property
     def editor(self) -> SqlEditor:
@@ -116,6 +123,16 @@ class MainWindow(QMainWindow):
         dock.setObjectName("dataset_catalog_dock")
         dock.setWidget(catalog)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        return dock
+
+    def _build_history_dock(self) -> QDockWidget:
+        history_dock = HistoryDock(self.history_manager, self)
+        history_dock.record_selected.connect(self._restore_history_query)
+
+        dock = QDockWidget("History", self)
+        dock.setObjectName("history_dock")
+        dock.setWidget(history_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         return dock
 
     def _connect_actions(self) -> None:
@@ -178,6 +195,7 @@ class MainWindow(QMainWindow):
                 query=request.original_sql,
                 catalog=catalog_dict,
             )
+            self.history_dock.refresh()
 
             trunc_str = " (truncated)" if result.truncated else ""
             msg = (
@@ -270,6 +288,12 @@ class MainWindow(QMainWindow):
 
     def editor_insert_text(self, alias: str) -> None:
         self.editor.insert(alias)
+
+    def _restore_history_query(self, record: dict) -> None:
+        """Place a historical SQL statement in the editor without running it."""
+        query = record.get("query")
+        if isinstance(query, str):
+            self.editor.setText(query)
 
     def _on_apply_query_order(self, column_name: str, direction: str) -> None:
         if not self.result_table_view.has_result():
