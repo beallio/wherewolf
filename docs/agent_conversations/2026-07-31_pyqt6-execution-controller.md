@@ -7,9 +7,12 @@
 
 ## Files Modified
 - `docs/agent_conversations/2026-07-31_pyqt6-execution-controller.md`
+- `src/wherewolf/services/execution_request_builder.py`
+- `src/wherewolf/services/__init__.py`
+- `tests/test_execution_request_builder.py`
 
 ## Tests Added
-- None yet (Task 1 baseline)
+- `tests/test_execution_request_builder.py`: test immutable snapshot capture, timezone awareness, ID uniqueness, and empty SQL validation.
 
 ## Design Decisions
 - Followed 10-task implementation breakdown in `docs/plans/2026-07-31_pyqt6-execution-controller.md`.
@@ -17,3 +20,5 @@
 
 ## Results
 - Task 1 baseline recorded and clean.
+- Task 2 implemented `ExecutionRequestBuilder` with TDD green.
+
