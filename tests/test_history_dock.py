@@ -37,6 +37,9 @@ def test_history_dock_selects_duplicate_labels_by_stable_id(tmp_path, qtbot):
     assert second_item is not None
     assert first_item.text() == second_item.text()
 
+    # The visible list is deliberately stale after a new record arrives. A row-index lookup
+    # would now resolve the first original record, while UUID lookup still resolves this item.
+    dock._history_manager.add_entry("duckdb", "SELECT intervening_record")
     with qtbot.waitSignal(dock.record_selected) as selected:
         dock.history_list.itemActivated.emit(second_item)
 
