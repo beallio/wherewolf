@@ -21,7 +21,7 @@ _DROP_EVENT_MIME_DATA_CACHE: list[QMimeData] = []
 def _drain_schema_workers(qtbot):
     yield
     for widget in QApplication.topLevelWidgets():
-        if isinstance(widget, MainWindow) and hasattr(widget, "_schema_workers"):
+        if isinstance(widget, MainWindow):
             qtbot.waitUntil(
                 lambda target=widget: not any(w.isRunning() for w in target._schema_workers),
                 timeout=3000,

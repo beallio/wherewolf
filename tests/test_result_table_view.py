@@ -18,8 +18,9 @@ def test_result_table_view_selection_and_copy(qtbot):
 
     # Select range (0, 0) to (1, 1)
     sel_model = table_view.selectionModel()
-    idx0 = table_view.model().index(0, 0)
-    idx1 = table_view.model().index(1, 1)
+    assert sel_model is not None
+    idx0 = table_view.proxy_model().index(0, 0)
+    idx1 = table_view.proxy_model().index(1, 1)
     selection = QItemSelection(idx0, idx1)
     sel_model.select(
         selection,
@@ -29,8 +30,9 @@ def test_result_table_view_selection_and_copy(qtbot):
     # Trigger copy
     table_view.copy_selection()
 
-    clipboard_text = QApplication.clipboard().text()
-    assert clipboard_text == "10\tx\n20\ty"
+    cb = QApplication.clipboard()
+    assert cb is not None
+    assert cb.text() == "10\tx\n20\ty"
 
 
 def test_result_table_view_copy_respects_sort(qtbot):
@@ -44,8 +46,9 @@ def test_result_table_view_copy_respects_sort(qtbot):
 
     # Select all rows in column 0
     sel_model = table_view.selectionModel()
-    idx0 = table_view.model().index(0, 0)
-    idx2 = table_view.model().index(2, 0)
+    assert sel_model is not None
+    idx0 = table_view.proxy_model().index(0, 0)
+    idx2 = table_view.proxy_model().index(2, 0)
     selection = QItemSelection(idx0, idx2)
     sel_model.select(
         selection,
@@ -53,7 +56,9 @@ def test_result_table_view_copy_respects_sort(qtbot):
     )
 
     table_view.copy_selection()
-    assert QApplication.clipboard().text() == "1\n2\n10"
+    cb = QApplication.clipboard()
+    assert cb is not None
+    assert cb.text() == "1\n2\n10"
 
 
 def test_result_table_view_header_context_menu_actions(qtbot):
@@ -87,16 +92,19 @@ def test_result_table_view_header_context_menu_actions(qtbot):
     actions["Clear Sort"].trigger()
     assert table_view.proxy_model().sortColumn() == -1
 
+    cb = QApplication.clipboard()
+    assert cb is not None
+
     # Copy Header Name action
     actions["Copy Header Name"].trigger()
-    assert QApplication.clipboard().text() == "col_a"
+    assert cb.text() == "col_a"
 
     # Copy Quoted Header action
     actions["Copy Quoted Header"].trigger()
-    assert QApplication.clipboard().text() == '"col_a"'
+    assert cb.text() == '"col_a"'
 
     # Insert Header into Editor signal
-    inserted = []
+    inserted: list[str] = []
     table_view.insert_header_requested.connect(inserted.append)
     actions["Insert Header into Editor"].trigger()
     assert inserted == ["col_a"]
@@ -110,8 +118,9 @@ def test_result_table_view_body_context_menu_actions(qtbot):
 
     # Select range (0, 0) to (1, 1)
     sel_model = table_view.selectionModel()
-    idx0 = table_view.model().index(0, 0)
-    idx1 = table_view.model().index(1, 1)
+    assert sel_model is not None
+    idx0 = table_view.proxy_model().index(0, 0)
+    idx1 = table_view.proxy_model().index(1, 1)
     selection = QItemSelection(idx0, idx1)
     sel_model.select(
         selection,
@@ -125,14 +134,17 @@ def test_result_table_view_body_context_menu_actions(qtbot):
     assert "Copy with Column Names" in actions
     assert "Copy with Quoted Column Names" in actions
 
+    cb = QApplication.clipboard()
+    assert cb is not None
+
     actions["Copy"].trigger()
-    assert QApplication.clipboard().text() == "10\tx\n20\ty"
+    assert cb.text() == "10\tx\n20\ty"
 
     actions["Copy with Column Names"].trigger()
-    assert QApplication.clipboard().text() == "a\tb\n10\tx\n20\ty"
+    assert cb.text() == "a\tb\n10\tx\n20\ty"
 
     actions["Copy with Quoted Column Names"].trigger()
-    assert QApplication.clipboard().text() == '"a"\t"b"\n10\tx\n20\ty'
+    assert cb.text() == '"a"\t"b"\n10\tx\n20\ty'
 
 
 def test_result_table_view_column_operations(qtbot):
@@ -142,6 +154,7 @@ def test_result_table_view_column_operations(qtbot):
     table_view.set_frame(df)
 
     header = table_view.horizontalHeader()
+    assert header is not None
 
     # Move visual column 0 to visual column 1
     table_view.move_column(0, 1)
@@ -154,15 +167,18 @@ def test_result_table_view_column_operations(qtbot):
 
     # Copy with hidden column: column 1 should be excluded from copy
     sel_model = table_view.selectionModel()
-    idx0 = table_view.model().index(0, 0)
-    idx2 = table_view.model().index(0, 2)
+    assert sel_model is not None
+    idx0 = table_view.proxy_model().index(0, 0)
+    idx2 = table_view.proxy_model().index(0, 2)
     selection = QItemSelection(idx0, idx2)
     sel_model.select(
         selection,
         QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Clear,
     )
     table_view.copy_selection(include_headers=True)
-    assert QApplication.clipboard().text() == "col1\tcol3\n1\t100"
+    cb = QApplication.clipboard()
+    assert cb is not None
+    assert cb.text() == "col1\tcol3\n1\t100"
 
     # Reset columns default: restores order and visibility
     table_view.reset_columns_default()

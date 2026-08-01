@@ -195,7 +195,7 @@ def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Pat
     assert len(window._schema_workers) == 0
 
 
-def test_main_window_close_calls_query_controller_shutdown(qtbot) -> None:
+def test_main_window_close_calls_query_controller_shutdown(qtbot, monkeypatch) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
     shutdown_called = False
@@ -204,7 +204,7 @@ def test_main_window_close_calls_query_controller_shutdown(qtbot) -> None:
         nonlocal shutdown_called
         shutdown_called = True
 
-    window.query_controller.shutdown = spy_shutdown  # type: ignore[method-assign]
+    monkeypatch.setattr(window.query_controller, "shutdown", spy_shutdown)
     window.close()
 
     assert shutdown_called is True
@@ -282,3 +282,54 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     window._on_query_result_ready(res_cancelled, request)
     assert grid.proxy_model().rowCount() == 0
     assert "cancelled" in window._results_text.toPlainText().lower()
+
+
+def test_main_window_result_grid_gui_thread_population(qtbot, monkeypatch) -> None:
+    from PyQt6.QtCore import QThread
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    app = QCoreApplication.instance()
+    assert app is not None
+    gui_thread = app.thread()
+    assert window.thread() == gui_thread
+    assert window.result_table_view.thread() == gui_thread
+    assert window.result_table_view.source_model().thread() == gui_thread
+    assert window.result_table_view.proxy_model().thread() == gui_thread
+
+    # QueryController.result_ready is connected to _on_query_result_ready
+    # Verify execution updates model on GUI thread
+    populated_thread: QThread | None = None
+
+    def spy_set_frame(frame):
+        nonlocal populated_thread
+        populated_thread = QThread.currentThread()
+        type(window.result_table_view).set_frame(window.result_table_view, frame)
+
+    monkeypatch.setattr(window.result_table_view, "set_frame", spy_set_frame)
+
+    now = datetime.now(UTC)
+    request = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=1000,
+        submitted_at=now,
+    )
+    result = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"a": [1]}),
+        execution_seconds=0.01,
+        preview_row_count=1,
+        total_row_count=1,
+        truncated=False,
+        completed_at=now,
+    )
+
+    window._on_query_result_ready(result, request)
+    assert populated_thread == gui_thread

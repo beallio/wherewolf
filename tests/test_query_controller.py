@@ -286,7 +286,7 @@ class _ShutdownWorker(QThread):
     def quit(self) -> None:
         self.quit_called = True
 
-    def wait(self, msecs: int = 4294967295) -> bool:
+    def wait(self, *args, **kwargs) -> bool:
         self.wait_called = True
         return True
 
