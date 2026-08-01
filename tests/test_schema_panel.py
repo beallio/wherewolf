@@ -87,3 +87,65 @@ def test_schema_panel_entry_schema_error(qtbot: QtBot) -> None:
     assert panel.has_error()
     assert not panel.is_pending()
     assert "corrupt parquet file header" in panel.status_text().lower()
+
+
+def test_schema_panel_insert_columns_single(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+
+    columns = (
+        ColumnSchema(name="user_id", data_type="BIGINT"),
+        ColumnSchema(name="first name", data_type="VARCHAR"),
+    )
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="users",
+        path=Path("users.parquet"),
+        source_format=SourceFormat.PARQUET,
+        schema=columns,
+    )
+    panel.set_entry(entry)
+
+    received: list[str] = []
+    panel.insert_columns_requested.connect(received.append)
+
+    # Select second row ("first name")
+    panel._table_widget.selectRow(1)
+    panel.emit_selected_columns_insert()
+
+    assert len(received) == 1
+    assert received[0] == '"first name"'
+
+
+from PyQt6.QtWidgets import QTableWidgetSelectionRange
+
+
+def test_schema_panel_insert_columns_multi_display_order(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+
+    columns = (
+        ColumnSchema(name="user_id", data_type="BIGINT"),
+        ColumnSchema(name="first name", data_type="VARCHAR"),
+        ColumnSchema(name="select", data_type="BOOLEAN"),
+    )
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="users",
+        path=Path("users.parquet"),
+        source_format=SourceFormat.PARQUET,
+        schema=columns,
+    )
+    panel.set_entry(entry)
+
+    received: list[str] = []
+    panel.insert_columns_requested.connect(received.append)
+
+    # Select row 2 and row 0 (multi-selection via ranges)
+    panel._table_widget.setRangeSelected(QTableWidgetSelectionRange(2, 0, 2, 1), True)
+    panel._table_widget.setRangeSelected(QTableWidgetSelectionRange(0, 0, 0, 1), True)
+    panel.emit_selected_columns_insert()
+
+    assert len(received) == 1
+    # Must be in display order (row 0: user_id, row 2: "select")
+    assert received[0] == 'user_id, "select"'
