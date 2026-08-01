@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 
 class HistoryManager:
@@ -35,6 +36,8 @@ class HistoryManager:
 
         history = self.get_all()
         entry = {
+            "schema_version": 2,
+            "id": str(uuid4()),
             # Local time with an explicit UTC offset. `astimezone()` keeps the
             # first 16 characters identical to the previous naive local format,
             # which app.py slices for history labels, while making the value

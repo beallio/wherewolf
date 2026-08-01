@@ -1,3 +1,5 @@
+from uuid import UUID
+
 import pytest
 
 from wherewolf.storage import HistoryManager
@@ -41,3 +43,21 @@ def test_history_manager_clear(storage_dir):
     manager.clear()
 
     assert len(manager.get_all()) == 0
+
+
+def test_new_entries_have_versioned_stable_ids_and_streamlit_keys(storage_dir):
+    history_file = storage_dir / "history.json"
+    manager = HistoryManager(storage_path=history_file)
+
+    manager.add_entry("duckdb", "SELECT * FROM duplicate")
+    manager.add_entry("duckdb", "SELECT * FROM duplicate")
+
+    entries = manager.get_all()
+
+    assert len(entries) == 2
+    assert {entry["schema_version"] for entry in entries} == {2}
+    assert len({entry["id"] for entry in entries}) == 2
+    for entry in entries:
+        assert UUID(entry["id"]).version == 4
+        assert entry["timestamp"][:16]
+        assert entry["query"] == "SELECT * FROM duplicate"
