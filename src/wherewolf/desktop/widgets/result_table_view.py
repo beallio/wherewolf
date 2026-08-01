@@ -31,6 +31,7 @@ class ResultTableView(QTableView):
             self._on_header_context_menu_requested
         )
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._on_body_context_menu_requested)
 
     def proxy_model(self) -> TypedSortProxyModel:
         return self._proxy_model
@@ -82,11 +83,33 @@ class ResultTableView(QTableView):
         )
         return menu
 
+    def create_body_context_menu(self) -> QMenu:
+        menu = QMenu(self)
+        menu.addAction(
+            "Copy",
+            lambda: self.copy_selection(include_headers=False, quote_headers=False),
+        )
+        menu.addAction(
+            "Copy with Column Names",
+            lambda: self.copy_selection(include_headers=True, quote_headers=False),
+        )
+        menu.addAction(
+            "Copy with Quoted Column Names",
+            lambda: self.copy_selection(include_headers=True, quote_headers=True),
+        )
+        return menu
+
     def _on_header_context_menu_requested(self, pos: QPoint) -> None:
         column = self.horizontalHeader().logicalIndexAt(pos)
         if column >= 0:
             menu = self.create_header_context_menu(column)
             menu.exec(self.horizontalHeader().mapToGlobal(pos))
+
+    def _on_body_context_menu_requested(self, pos: QPoint) -> None:
+        idx = self.indexAt(pos)
+        if idx.isValid():
+            menu = self.create_body_context_menu()
+            menu.exec(self.viewport().mapToGlobal(pos))
 
     def keyPressEvent(self, event) -> None:
         if event.matches(QKeySequence.StandardKey.Copy):

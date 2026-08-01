@@ -100,3 +100,36 @@ def test_result_table_view_header_context_menu_actions(qtbot):
     table_view.insert_header_requested.connect(inserted.append)
     actions["Insert Header into Editor"].trigger()
     assert inserted == ["col_a"]
+
+
+def test_result_table_view_body_context_menu_actions(qtbot):
+    df = pl.DataFrame({"a": [10, 20], "b": ["x", "y"]})
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(df)
+
+    # Select range (0, 0) to (1, 1)
+    sel_model = table_view.selectionModel()
+    idx0 = table_view.model().index(0, 0)
+    idx1 = table_view.model().index(1, 1)
+    selection = QItemSelection(idx0, idx1)
+    sel_model.select(
+        selection,
+        QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Clear,
+    )
+
+    menu = table_view.create_body_context_menu()
+    actions = {action.text(): action for action in menu.actions()}
+
+    assert "Copy" in actions
+    assert "Copy with Column Names" in actions
+    assert "Copy with Quoted Column Names" in actions
+
+    actions["Copy"].trigger()
+    assert QApplication.clipboard().text() == "10\tx\n20\ty"
+
+    actions["Copy with Column Names"].trigger()
+    assert QApplication.clipboard().text() == "a\tb\n10\tx\n20\ty"
+
+    actions["Copy with Quoted Column Names"].trigger()
+    assert QApplication.clipboard().text() == '"a"\t"b"\n10\tx\n20\ty'
