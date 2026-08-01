@@ -3,7 +3,14 @@
 from .catalog_service import CatalogService, CatalogServiceReport
 from .completion_service import SqlCompletionService
 from .execution_request_builder import ExecutionRequestBuilder
+from .export_destination import (
+    ExportFormat,
+    export_file_filter,
+    normalise_destination,
+    write_atomically,
+)
 from .formatting_service import FormattingResult, SqlFormattingService
+from .preview_export import write_preview, write_selection
 from .settings_service import SettingsService
 from .statement_service import StatementSelection, StatementService, StatementSpan
 
@@ -11,6 +18,7 @@ __all__ = [
     "CatalogService",
     "CatalogServiceReport",
     "ExecutionRequestBuilder",
+    "ExportFormat",
     "FormattingResult",
     "SettingsService",
     "SqlCompletionService",
@@ -18,4 +26,9 @@ __all__ = [
     "StatementSelection",
     "StatementService",
     "StatementSpan",
+    "export_file_filter",
+    "normalise_destination",
+    "write_atomically",
+    "write_preview",
+    "write_selection",
 ]

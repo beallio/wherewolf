@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
+from wherewolf.desktop.export_controller import ExportController, ExportResult
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
@@ -33,7 +34,12 @@ from wherewolf.domain import (
     SchemaResult,
 )
 from wherewolf.execution.registry import EngineRegistry
-from wherewolf.services import CatalogService, ExecutionRequestBuilder, SettingsService
+from wherewolf.services import (
+    CatalogService,
+    ExecutionRequestBuilder,
+    ExportFormat,
+    SettingsService,
+)
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.storage.history import HistoryManager
 
@@ -50,6 +56,7 @@ class MainWindow(QMainWindow):
         file_dialog_service: FileDialogService | None = None,
         engine_registry: EngineRegistry | None = None,
         query_controller: QueryController | None = None,
+        export_controller: ExportController | None = None,
         history_manager: HistoryManager | None = None,
     ) -> None:
         super().__init__()
@@ -62,6 +69,11 @@ class MainWindow(QMainWindow):
         self.query_controller = query_controller or QueryController(
             engine_registry=self._engine_registry, parent=self
         )
+        self.export_controller = export_controller or ExportController(
+            self._engine_registry, parent=self
+        )
+        self._last_request: ExecutionRequest | None = None
+        self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
         self._schema_workers: list[SchemaWorker] = []
 
@@ -112,6 +124,8 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.desktop_actions.cancel)
         toolbar.addAction(self.desktop_actions.format_sql)
         toolbar.addAction(self.desktop_actions.add_datasets)
+        toolbar.addAction(self.desktop_actions.export_preview)
+        toolbar.addAction(self.desktop_actions.export_full)
         return toolbar
 
     def _build_catalog_dock(self) -> QDockWidget:
@@ -142,9 +156,13 @@ class MainWindow(QMainWindow):
         self.desktop_actions.clear_history.triggered.connect(self._clear_history)
         self.desktop_actions.run.triggered.connect(self._on_run_triggered)
         self.desktop_actions.cancel.triggered.connect(self._on_cancel_triggered)
+        self.desktop_actions.export_preview.triggered.connect(lambda: self._start_export(False))
+        self.desktop_actions.export_full.triggered.connect(lambda: self._start_export(True))
 
         self.query_controller.status_changed.connect(self._on_query_status_changed)
         self.query_controller.result_ready.connect(self._on_query_result_ready)
+        self.export_controller.started.connect(self._on_export_started)
+        self.export_controller.result_ready.connect(self._on_export_result)
 
     def _on_run_triggered(self) -> None:
         sql, _start, _end = self.editor.text_to_run()
@@ -166,7 +184,8 @@ class MainWindow(QMainWindow):
         self.query_controller.execute(request)
 
     def _on_cancel_triggered(self) -> None:
-        self.query_controller.cancel()
+        if not self.export_controller.cancel():
+            self.query_controller.cancel()
 
     def _on_query_status_changed(self, status: ExecutionStatus) -> None:
         if status in (ExecutionStatus.RUNNING, ExecutionStatus.CANCELLATION_REQUESTED):
@@ -181,6 +200,10 @@ class MainWindow(QMainWindow):
             self.desktop_actions.cancel.setEnabled(False)
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
+        self._last_request, self._last_result = request, result
+        can_export = result.status is ExecutionStatus.SUCCEEDED and result.frame is not None
+        self.desktop_actions.export_preview.setEnabled(can_export)
+        self.desktop_actions.export_full.setEnabled(can_export)
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
             self.result_table_view.set_frame(result.frame)
         else:
@@ -206,13 +229,53 @@ class MainWindow(QMainWindow):
                 f"Preview Rows: {result.preview_row_count}{trunc_str}"
             )
             self._show_status(msg, 10000)
-
         elif result.status is ExecutionStatus.FAILED:
-            msg = f"Engine: {engine_name} | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}"
-            self._show_status(msg, 10000)
+            self._show_status(
+                f"Engine: {engine_name} | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}",
+                10000,
+            )
         elif result.status is ExecutionStatus.CANCELLED:
-            msg = f"Engine: {engine_name} | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed"
-            self._show_status(msg, 10000)
+            self._show_status(
+                f"Engine: {engine_name} | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed",
+                10000,
+            )
+
+    def _start_export(self, full_export: bool) -> None:
+        if (
+            self._last_result is None
+            or self._last_result.frame is None
+            or self._last_request is None
+        ):
+            return
+        choose_export_path = getattr(self._file_dialog_service, "choose_export_path", None)
+        if choose_export_path is None:
+            self._show_status("Export dialog is unavailable", 5000)
+            return
+        destination = choose_export_path(None, ExportFormat.CSV, self)
+        if destination is not None:
+            self.export_controller.export(
+                self._last_request,
+                self._last_result.frame,
+                destination,
+                ExportFormat.CSV,
+                full_export,
+            )
+
+    def _on_export_started(self) -> None:
+        self.desktop_actions.cancel.setEnabled(True)
+        self.desktop_actions.export_preview.setEnabled(False)
+        self.desktop_actions.export_full.setEnabled(False)
+        self._show_status("Exporting results...")
+
+    def _on_export_result(self, result: ExportResult) -> None:
+        self.desktop_actions.cancel.setEnabled(False)
+        can_export = self._last_result is not None and self._last_result.frame is not None
+        self.desktop_actions.export_preview.setEnabled(can_export)
+        self.desktop_actions.export_full.setEnabled(can_export)
+        if result.succeeded:
+            self._show_status(f"Exported results to {result.destination}")
+        else:
+            self._show_status(f"Export failed: {result.error_message}")
 
     def _on_add_datasets(self) -> None:
         paths = self._file_dialog_service.choose_dataset_files(
@@ -417,6 +480,7 @@ class MainWindow(QMainWindow):
         self._schema_workers.clear()
 
         self.query_controller.shutdown()
+        self.export_controller.shutdown()
 
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
