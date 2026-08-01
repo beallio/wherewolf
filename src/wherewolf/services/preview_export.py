@@ -7,8 +7,8 @@ from pathlib import Path
 
 import polars as pl
 
-from wherewolf.selection import selected_frame
 from wherewolf.services.export_destination import ExportFormat, write_atomically
+from wherewolf.services.selection import selected_frame
 
 
 def write_preview(frame: pl.DataFrame, destination: Path, export_format: ExportFormat) -> None:
