@@ -154,6 +154,7 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     window = MainWindow()
     qtbot.addWidget(window)
     window._catalog_service.add_paths((csv_file,))
+    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
     window.editor.setText("SELECT * FROM data")
     window.editor.selectAll()
 
@@ -188,14 +189,25 @@ def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Pat
     )
     window._queue_schema_work(binding)
 
-    worker = window._schema_workers[0]
-    with qtbot.waitSignal(worker.result_ready, timeout=3000):
-        pass
-
     assert len(window._schema_workers) == 1
     window.close()
 
     assert len(window._schema_workers) == 0
+
+
+def test_main_window_close_calls_query_controller_shutdown(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    shutdown_called = False
+
+    def spy_shutdown():
+        nonlocal shutdown_called
+        shutdown_called = True
+
+    window.query_controller.shutdown = spy_shutdown  # type: ignore[method-assign]
+    window.close()
+
+    assert shutdown_called is True
 
 
 def test_main_window_result_grid_integration(qtbot) -> None:

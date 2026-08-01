@@ -320,12 +320,7 @@ class MainWindow(QMainWindow):
                 worker.wait()
         self._schema_workers.clear()
 
-        if hasattr(self, "query_controller") and self.query_controller is not None:
-            for w in list(self.query_controller._workers):
-                if w.isRunning():
-                    w.quit()
-                    w.wait()
-            self.query_controller._workers.clear()
+        self.query_controller.shutdown()
 
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
