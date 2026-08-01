@@ -5,6 +5,8 @@ from __future__ import annotations
 import polars as pl
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
+NULL_PLACEHOLDER = "<null>"
+
 
 class PolarsTableModel(QAbstractTableModel):
     """QAbstractTableModel facade over a polars DataFrame."""
@@ -19,6 +21,9 @@ class PolarsTableModel(QAbstractTableModel):
         self.beginResetModel()
         self._frame = frame if frame is not None else pl.DataFrame()
         self.endResetModel()
+
+    def frame(self) -> pl.DataFrame:
+        return self._frame
 
     def rowCount(self, parent: QModelIndex | None = None) -> int:
         if parent is None:
@@ -45,9 +50,12 @@ class PolarsTableModel(QAbstractTableModel):
 
         val = self._frame[row, col]
 
+        if role == Qt.ItemDataRole.UserRole:
+            return val
+
         if role == Qt.ItemDataRole.DisplayRole:
             if val is None:
-                return "null"  # Placeholder, will be refined in Task 3
+                return NULL_PLACEHOLDER
             return str(val)
 
         return None
