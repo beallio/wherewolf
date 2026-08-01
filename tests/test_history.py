@@ -130,3 +130,65 @@ def test_failed_migration_leaves_the_original_v1_file_intact(storage_dir):
         manager.get_all()
 
     assert json.loads(history_file.read_text()) == v1_entries
+
+
+def test_malformed_records_are_isolated_from_valid_history(storage_dir):
+    history_file = storage_dir / "history.json"
+    valid_entries = [
+        {
+            "schema_version": 2,
+            "id": "5bb31a12-165e-4a7d-b4f6-439d78c0d50d",
+            "timestamp": "2026-08-01T12:00:00+00:00",
+            "engine": "duckdb",
+            "query": "SELECT retained_one",
+            "catalog": {},
+        },
+        {
+            "schema_version": 2,
+            "id": "b1c6bb5a-4152-4617-8ec7-dc165d53d5d3",
+            "timestamp": "2026-08-01T12:01:00+00:00",
+            "engine": "duckdb",
+            "query": "SELECT retained_two",
+            "catalog": {},
+        },
+    ]
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps([valid_entries[0], "corrupt record", valid_entries[1]]))
+
+    entries = HistoryManager(storage_path=history_file).get_all()
+
+    assert len(entries) == 2
+    assert [entry["query"] for entry in entries] == [
+        "SELECT retained_one",
+        "SELECT retained_two",
+    ]
+
+
+def test_unparseable_history_returns_empty_without_deleting_the_file(storage_dir):
+    history_file = storage_dir / "history.json"
+    broken_content = "[{not valid JSON]"
+    storage_dir.mkdir()
+    history_file.write_text(broken_content)
+
+    assert HistoryManager(storage_path=history_file).get_all() == []
+    assert history_file.exists()
+    assert history_file.read_text() == broken_content
+
+
+def test_record_missing_required_key_is_skipped(storage_dir):
+    history_file = storage_dir / "history.json"
+    valid_entry = {
+        "schema_version": 2,
+        "id": "5bb31a12-165e-4a7d-b4f6-439d78c0d50d",
+        "timestamp": "2026-08-01T12:00:00+00:00",
+        "engine": "duckdb",
+        "query": "SELECT retained",
+        "catalog": {},
+    }
+    missing_query = {key: value for key, value in valid_entry.items() if key != "query"}
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps([valid_entry, missing_query]))
+
+    entries = HistoryManager(storage_path=history_file).get_all()
+
+    assert entries == [valid_entry]

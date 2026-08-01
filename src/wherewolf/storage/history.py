@@ -3,7 +3,7 @@ import os
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 
 class HistoryManager:
@@ -42,6 +42,35 @@ class HistoryManager:
         migrated["id"] = str(uuid4())
         migrated.setdefault("catalog", {"dataset": migrated.get("path", "")})
         return migrated
+
+    @staticmethod
+    def _has_required_keys(entry: dict) -> bool:
+        return all(
+            isinstance(entry.get(key), str) and entry[key]
+            for key in ("timestamp", "engine", "query")
+        )
+
+    @classmethod
+    def _is_v2_entry(cls, entry: object) -> bool:
+        if not isinstance(entry, dict) or entry.get("schema_version") != 2:
+            return False
+        entry_id = entry.get("id")
+        if not cls._has_required_keys(entry) or not isinstance(entry_id, str):
+            return False
+        try:
+            UUID(entry_id)
+        except ValueError:
+            return False
+        return True
+
+    @classmethod
+    def _is_v1_entry(cls, entry: object) -> bool:
+        return (
+            isinstance(entry, dict)
+            and "schema_version" not in entry
+            and "id" not in entry
+            and cls._has_required_keys(entry)
+        )
 
     def add_entry(
         self, engine: str, query: str, path: str = "", catalog: dict[str, str] | None = None
@@ -91,11 +120,19 @@ class HistoryManager:
 
         if not isinstance(history, list):
             return []
-        if any(entry.get("schema_version") != 2 for entry in history if isinstance(entry, dict)):
-            migrated = [self._migrate_v1_entry(entry) for entry in history]
-            self._write_history(migrated)
-            return migrated
-        return history
+
+        readable_entries: list[dict] = []
+        migrated = False
+        for entry in history:
+            if self._is_v2_entry(entry):
+                readable_entries.append(entry)
+            elif self._is_v1_entry(entry):
+                readable_entries.append(self._migrate_v1_entry(entry))
+                migrated = True
+
+        if migrated:
+            self._write_history(readable_entries)
+        return readable_entries
 
     def clear(self):
         """Clears the query history."""
