@@ -41,23 +41,22 @@ uv sync
 ```
 
 ## Usage
-The default `wherewolf` command continues to start the Streamlit UI.
-The temporary desktop shell is launched with `wherewolf-desktop` and is a work-in-progress;
-it will replace the Streamlit launcher at the final migration cutover.
-Query execution is not yet implemented in this desktop stage.
+The default `wherewolf` command starts the Streamlit UI.
+The native desktop shell is launched with `wherewolf-desktop` and features full multi-file DuckDB query execution off the GUI thread.
 
 If running from source:
 ```bash
-uv run streamlit run src/wherewolf/app.py
-wherewolf-desktop
+uv run wherewolf-desktop
 ```
 
-1. Use the **Dataset Catalog** in the desktop shell to browse and add files via native dialog or drag-and-drop.
-2. Each file is assigned an alias (e.g., `users`, `orders`).
-3. Write SQL in the QScintilla editor with SQL IntelliSense (`Ctrl+Space` for manual autocompletion, automatic suggestion after typing 2 characters, table/CTE alias resolution, qualified column completion, function call tips).
-4. Click **Format SQL** to normalize syntax.
-5. View schema metadata from the catalog.
-6. Query execution is coming in a later phase.
+1. Use the **Dataset Catalog** in the desktop shell to browse and add files via native dialogs or drag-and-drop.
+2. Each file is assigned a table alias (e.g., `users`, `orders`).
+3. Write SQL in the QScintilla editor with SQL IntelliSense (`Ctrl+Space` for completion, table/CTE alias resolution, qualified column completion, function call tips).
+4. Click **Run** or press `Ctrl+Return` to execute queries asynchronously using DuckDB.
+5. Click **Cancel** or press `Ctrl+.` to cancel active query execution.
+6. Execution uses request-scoped isolated DuckDB connections, limit+1 truncation detection, and automatic query history persistence in `~/.wherewolf/history.json`.
+7. Click **Format SQL** (`Ctrl+Shift+F`) to normalize syntax.
+
 
 
 ## Development

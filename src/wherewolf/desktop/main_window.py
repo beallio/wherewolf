@@ -19,11 +19,20 @@ from PyQt6.QtWidgets import (
 
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
+from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.widgets import CatalogDock, SqlEditor
 from wherewolf.desktop.workers import SchemaWorker
-from wherewolf.domain import CatalogBinding, SchemaResult
+from wherewolf.domain import (
+    CatalogBinding,
+    EngineKind,
+    ExecutionRequest,
+    ExecutionStatus,
+    QueryResult,
+    SchemaResult,
+)
 from wherewolf.execution.registry import EngineRegistry
-from wherewolf.services import CatalogService, SettingsService
+from wherewolf.services import CatalogService, ExecutionRequestBuilder, SettingsService
+from wherewolf.storage.history import HistoryManager
 
 
 class MainWindow(QMainWindow):
@@ -37,6 +46,8 @@ class MainWindow(QMainWindow):
         catalog_service: CatalogService | None = None,
         file_dialog_service: FileDialogService | None = None,
         engine_registry: EngineRegistry | None = None,
+        query_controller: QueryController | None = None,
+        history_manager: HistoryManager | None = None,
     ) -> None:
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -45,6 +56,10 @@ class MainWindow(QMainWindow):
         self._file_dialog_service = file_dialog_service or QtFileDialogService()
         self._engine_registry = engine_registry or EngineRegistry()
         self.desktop_actions = actions or build_actions(self)
+        self.query_controller = query_controller or QueryController(
+            engine_registry=self._engine_registry, parent=self
+        )
+        self.history_manager = history_manager or HistoryManager()
         self._schema_workers: list[SchemaWorker] = []
 
         self.main_toolbar = self._build_toolbar()
@@ -103,6 +118,75 @@ class MainWindow(QMainWindow):
 
     def _connect_actions(self) -> None:
         self.desktop_actions.add_datasets.triggered.connect(self._on_add_datasets)
+        self.desktop_actions.run.triggered.connect(self._on_run_triggered)
+        self.desktop_actions.cancel.triggered.connect(self._on_cancel_triggered)
+
+        self.query_controller.status_changed.connect(self._on_query_status_changed)
+        self.query_controller.result_ready.connect(self._on_query_result_ready)
+
+    def _on_run_triggered(self) -> None:
+        sql, _start, _end = self.editor.text_to_run()
+        if not sql or not sql.strip():
+            self._show_status("No SQL statement to run", 5000)
+            return
+
+        try:
+            request = ExecutionRequestBuilder.build(
+                sql=sql,
+                source_dialect="duckdb",
+                engine=EngineKind.DUCKDB,
+                catalog_service=self._catalog_service,
+            )
+        except Exception as exc:  # noqa: BLE001  # Request creation boundary
+            self._show_status(f"Failed to prepare query: {exc}", 5000)
+            return
+
+        self.query_controller.execute(request)
+
+    def _on_cancel_triggered(self) -> None:
+        self.query_controller.cancel()
+
+    def _on_query_status_changed(self, status: ExecutionStatus) -> None:
+        if status in (ExecutionStatus.RUNNING, ExecutionStatus.CANCELLATION_REQUESTED):
+            self.desktop_actions.run.setEnabled(False)
+            self.desktop_actions.cancel.setEnabled(True)
+            if status is ExecutionStatus.CANCELLATION_REQUESTED:
+                self._show_status("Cancellation requested")
+            else:
+                self._show_status("Executing query...")
+        else:
+            self.desktop_actions.run.setEnabled(True)
+            self.desktop_actions.cancel.setEnabled(False)
+
+    def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
+        if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
+            self._results_text.setPlainText(str(result.frame))
+        elif result.status is ExecutionStatus.FAILED:
+            self._results_text.setPlainText(f"Error ({result.error_type}): {result.error_message}")
+        elif result.status is ExecutionStatus.CANCELLED:
+            self._results_text.setPlainText("Query execution cancelled.")
+
+        if result.status is ExecutionStatus.SUCCEEDED:
+            catalog_dict = {b.alias: str(b.path) for b in request.catalog}
+            self.history_manager.add_entry(
+                engine=request.engine.value,
+                query=request.original_sql,
+                catalog=catalog_dict,
+            )
+
+            trunc_str = " (truncated)" if result.truncated else ""
+            msg = (
+                f"Engine: DuckDB | State: Succeeded | Elapsed: {result.execution_seconds:.2f}s | "
+                f"Preview Rows: {result.preview_row_count}{trunc_str}"
+            )
+            self._show_status(msg, 10000)
+
+        elif result.status is ExecutionStatus.FAILED:
+            msg = f"Engine: DuckDB | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}"
+            self._show_status(msg, 10000)
+        elif result.status is ExecutionStatus.CANCELLED:
+            msg = f"Engine: DuckDB | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed"
+            self._show_status(msg, 10000)
 
     def _on_add_datasets(self) -> None:
         paths = self._file_dialog_service.choose_dataset_files(
@@ -164,7 +248,8 @@ class MainWindow(QMainWindow):
 
         results = QTabWidget(self)
         results.setObjectName("results_tabs")
-        results.addTab(QTextEdit("Results pending"), "Results")
+        self._results_text = QTextEdit("Results pending")
+        results.addTab(self._results_text, "Results")
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
@@ -220,6 +305,19 @@ class MainWindow(QMainWindow):
         self.editor.set_font_size(font_size)
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        for worker in list(self._schema_workers):
+            if worker.isRunning():
+                worker.quit()
+                worker.wait()
+        self._schema_workers.clear()
+
+        if hasattr(self, "query_controller") and self.query_controller is not None:
+            for w in list(self.query_controller._workers):
+                if w.isRunning():
+                    w.quit()
+                    w.wait()
+            self.query_controller._workers.clear()
+
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())

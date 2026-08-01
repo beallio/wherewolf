@@ -3,5 +3,6 @@
 from .actions import DesktopActions, build_actions
 from .application import main
 from .main_window import MainWindow
+from .query_controller import QueryController
 
-__all__ = ["DesktopActions", "MainWindow", "build_actions", "main"]
+__all__ = ["DesktopActions", "MainWindow", "QueryController", "build_actions", "main"]

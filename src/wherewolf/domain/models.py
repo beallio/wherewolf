@@ -90,6 +90,11 @@ class QueryResult:
                 raise ValueError("failed QueryResult must not include a frame")
             return
 
+        if self.status is ExecutionStatus.CANCELLED:
+            if self.frame is not None:
+                raise ValueError("cancelled QueryResult must not include a frame")
+            return
+
         if self.frame is None:
             raise ValueError("successful QueryResult requires a frame")
 

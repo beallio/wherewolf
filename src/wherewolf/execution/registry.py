@@ -69,62 +69,189 @@ class _BaseAdapter:
         self._close_fn()
 
 
-class _DuckDBAdapter(_BaseAdapter):
+class _DuckDBAdapter(ExecutionEngine):
     def __init__(self, request_id: UUID):
-        from .duckdb_engine import DuckDBEngine
+        self._request_id = request_id
+        self._con = None
+        self._cancelled = False
 
-        self._engine = DuckDBEngine()
+    def cancellation_handle(self) -> CancellationHandle:
+        return _CancellationHandle(request_id=self._request_id, _cancel=self.interrupt)
 
-        def execute_fn(request: ExecutionRequest) -> QueryResult:
-            catalog = {binding.alias: str(binding.path) for binding in request.catalog}
-            legacy_result = self._engine.execute(
-                request.executable_sql,
-                catalog=catalog,
-                limit=request.preview_limit,
+    def interrupt(self) -> None:
+        self._cancelled = True
+        if self._con is not None:
+            self._con.interrupt()
+
+    def close(self) -> None:
+        self.interrupt()
+
+    def _register_view(self, con, path_str: str, alias: str) -> None:
+        from pathlib import Path
+
+        abs_path = Path(path_str).expanduser().resolve()
+        suffix = abs_path.suffix.lower()
+        if suffix == ".csv":
+            rel_source = con.from_csv_auto(str(abs_path))
+        elif suffix == ".parquet":
+            rel_source = con.from_parquet(str(abs_path))
+        elif suffix == ".json":
+            rel_source = con.sql("SELECT * FROM read_json_auto(?)", params=[str(abs_path)])
+        elif suffix in [".xlsx", ".xls"]:
+            con.execute("INSTALL excel; LOAD excel;")
+            rel_source = con.sql("SELECT * FROM read_xlsx(?)", params=[str(abs_path)])
+        else:
+            rel_source = con.from_csv_auto(str(abs_path))
+
+        rel_source.create_view(alias, replace=True)
+
+    def execute_preview(self, request: ExecutionRequest) -> QueryResult:
+        import time
+
+        import duckdb
+
+        start_time = time.time()
+        if self._cancelled:
+            return QueryResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.CANCELLED,
+                frame=None,
+                execution_seconds=0.0,
+                preview_row_count=0,
+                total_row_count=None,
+                truncated=False,
+                completed_at=datetime.now(UTC),
             )
 
-            if not legacy_result.success:
+        con = duckdb.connect(database=":memory:")
+        self._con = con
+
+        try:
+            if self._cancelled:
+                con.interrupt()
+
+            for binding in request.catalog:
+                self._register_view(con, str(binding.path), binding.alias)
+
+            rel = con.sql(request.executable_sql)
+
+            limit = request.preview_limit
+            df_plus_one = rel.limit(limit + 1).pl()
+            df_preview = df_plus_one.head(limit)
+            row_count = len(df_preview)
+            is_truncated = len(df_plus_one) > limit
+            execution_time = time.time() - start_time
+
+            if self._cancelled:
                 return QueryResult(
                     request_id=request.request_id,
-                    status=ExecutionStatus.FAILED,
+                    status=ExecutionStatus.CANCELLED,
                     frame=None,
-                    execution_seconds=legacy_result.execution_time,
-                    preview_row_count=legacy_result.row_count,
-                    total_row_count=legacy_result.row_count,
-                    truncated=legacy_result.is_truncated,
+                    execution_seconds=execution_time,
+                    preview_row_count=0,
+                    total_row_count=None,
+                    truncated=False,
                     completed_at=datetime.now(UTC),
-                    error_type="execution_failed",
-                    error_message=legacy_result.error_message,
                 )
 
             return QueryResult(
                 request_id=request.request_id,
                 status=ExecutionStatus.SUCCEEDED,
-                frame=legacy_result.df,
-                execution_seconds=legacy_result.execution_time,
-                preview_row_count=legacy_result.row_count,
-                total_row_count=legacy_result.row_count,
-                truncated=legacy_result.is_truncated,
+                frame=df_preview,
+                execution_seconds=execution_time,
+                preview_row_count=row_count,
+                total_row_count=None,
+                truncated=is_truncated,
                 completed_at=datetime.now(UTC),
             )
+        except Exception as e:  # noqa: BLE001  # Execution boundary: normalize runtime errors into failed QueryResult
+            execution_time = time.time() - start_time
+            if (
+                self._cancelled
+                or isinstance(e, duckdb.InterruptException)
+                or "interrupt" in str(e).lower()
+            ):
+                return QueryResult(
+                    request_id=request.request_id,
+                    status=ExecutionStatus.CANCELLED,
+                    frame=None,
+                    execution_seconds=execution_time,
+                    preview_row_count=0,
+                    total_row_count=None,
+                    truncated=False,
+                    completed_at=datetime.now(UTC),
+                )
 
-        def schema_fn(entry: CatalogEntry) -> SchemaResult:
-            schema = self._engine.get_schema(str(entry.path))
+            return QueryResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                frame=None,
+                execution_seconds=execution_time,
+                preview_row_count=0,
+                total_row_count=None,
+                truncated=False,
+                completed_at=datetime.now(UTC),
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+        finally:
+            self._con = None
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001, S110  # Cleanup boundary: ignore errors during connection closure
+                pass
+
+    def inspect_schema(self, entry: CatalogEntry) -> SchemaResult:
+        import duckdb
+
+        if self._cancelled:
             return SchemaResult(
                 entry_id=entry.id,
-                columns=_frame_to_columns(schema),
+                columns=(),
+                error_type="CancelledError",
+                error_message="Schema inspection cancelled",
             )
 
-        super().__init__(
-            request_id=request_id,
-            execute_fn=execute_fn,
-            schema_fn=schema_fn,
-            close_fn=self._engine.interrupt,
-        )
+        con = duckdb.connect(database=":memory:")
+        self._con = con
+        try:
+            if self._cancelled:
+                con.interrupt()
 
-    @property
-    def _cancel(self) -> Callable[[], None]:
-        return self._engine.interrupt
+            temp_alias = "_schema_hud"
+            self._register_view(con, str(entry.path), temp_alias)
+            df = con.sql(f"DESCRIBE {temp_alias}").pl()
+            columns = df.select(["column_name", "column_type"]).rename(
+                {"column_name": "Column", "column_type": "Type"}
+            )
+            return SchemaResult(
+                entry_id=entry.id,
+                columns=_frame_to_columns(columns),
+            )
+        except Exception as e:  # noqa: BLE001  # Schema inspection boundary: return empty schema on error
+            if (
+                self._cancelled
+                or isinstance(e, duckdb.InterruptException)
+                or "interrupt" in str(e).lower()
+            ):
+                return SchemaResult(
+                    entry_id=entry.id,
+                    columns=(),
+                    error_type="CancelledError",
+                    error_message="Schema inspection cancelled",
+                )
+            return SchemaResult(
+                entry_id=entry.id,
+                columns=(),
+                error_type=type(e).__name__,
+                error_message=str(e),
+            )
+        finally:
+            self._con = None
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001, S110  # Cleanup boundary: ignore errors during connection closure
+                pass
 
 
 class _SparkAdapter(_BaseAdapter):

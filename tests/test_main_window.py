@@ -104,3 +104,85 @@ def test_main_window_close_cleans_top_level_widgets(qtbot) -> None:
     assert isinstance(app, QApplication)
     top_levels = [w for w in app.topLevelWidgets() if isinstance(w, QMainWindow)]
     assert not any(widget is window for widget in top_levels)
+
+
+def test_main_window_run_and_cancel_action_objects_are_shared(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    toolbar_run = window.main_toolbar.actions()[0]
+    menu_run = window.query_menu.actions()[0]
+    assert toolbar_run is menu_run is window.desktop_actions.run
+
+    toolbar_cancel = window.main_toolbar.actions()[1]
+    menu_cancel = window.query_menu.actions()[1]
+    assert toolbar_cancel is menu_cancel is window.desktop_actions.cancel
+
+
+def test_main_window_run_empty_editor_shows_status_and_starts_nothing(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setText("   \n\t ")
+
+    window.desktop_actions.run.trigger()
+
+    assert window.query_controller.status.name == "IDLE"
+    assert (
+        "No SQL statement to run" in window.status_bar.currentMessage()
+        or "empty" in window.status_bar.currentMessage().lower()
+        or "statement" in window.status_bar.currentMessage().lower()
+    )
+
+
+def test_main_window_action_enabled_states_and_status_bar_during_execution(
+    tmp_path: Path, qtbot
+) -> None:
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("id,val\n1,100\n2,200\n")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._catalog_service.add_paths((csv_file,))
+    window.editor.setText("SELECT * FROM data")
+    window.editor.selectAll()
+
+    # Initial state
+    assert window.desktop_actions.run.isEnabled()
+    assert not window.desktop_actions.cancel.isEnabled()
+
+    # Trigger Run with a signal spy for result_ready
+    with qtbot.waitSignal(window.query_controller.result_ready, timeout=3000):
+        window.desktop_actions.run.trigger()
+
+    # Re-enabled after terminal state
+    assert window.desktop_actions.run.isEnabled()
+    assert not window.desktop_actions.cancel.isEnabled()
+
+    # Check status bar message formatting §10.3
+    msg = window.status_bar.currentMessage()
+    assert "DuckDB" in msg
+    assert "Succeeded" in msg
+    assert "Preview Rows: 2" in msg
+    # Assert preview_row_count is not presented as total count
+    assert "Total Rows: 2" not in msg
+
+
+def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Path) -> None:
+    from uuid import uuid4
+
+    from wherewolf.domain import CatalogBinding, SourceFormat
+
+    csv_file = tmp_path / "fast.csv"
+    csv_file.write_text("id\n1\n")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    binding = CatalogBinding(
+        entry_id=uuid4(), alias="fast", path=csv_file, source_format=SourceFormat.CSV
+    )
+    window._queue_schema_work(binding)
+
+    assert len(window._schema_workers) == 1
+    window.close()
+
+    assert len(window._schema_workers) == 0
