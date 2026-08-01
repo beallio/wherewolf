@@ -1,8 +1,10 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 import polars as pl
+import pytest
 from PyQt6.QtCore import QCoreApplication, QSettings, Qt
 from PyQt6.QtWidgets import (
     QApplication,
@@ -24,6 +26,7 @@ from wherewolf.domain import (
     SourceFormat,
 )
 from wherewolf.services import SettingsService
+from wherewolf.storage import HistoryManager
 
 
 def _configure_qsettings_path(tmp_path: Path) -> SettingsService:
@@ -57,6 +60,24 @@ def test_main_window_structure(qtbot) -> None:
 
     menu_titles = [action.text() for action in menu_bar.actions()]
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+
+
+def test_bare_main_window_does_not_touch_user_history(qtbot, monkeypatch, tmp_path: Path) -> None:
+    """Default construction must use pytest-isolated persistence, never ~/.wherewolf."""
+    user_history_path = Path.home() / ".wherewolf" / "history.json"
+    ensure_storage = HistoryManager._ensure_storage
+
+    def assert_isolated_storage(manager: HistoryManager) -> None:
+        assert manager.storage_path != user_history_path
+        ensure_storage(manager)
+
+    monkeypatch.setattr(HistoryManager, "_ensure_storage", assert_isolated_storage)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.history_manager.storage_path != user_history_path
+    assert Path(window._settings_service._settings.fileName()).is_relative_to(tmp_path)
 
 
 def test_main_window_query_actions_initial_state_and_shared_instances(qtbot) -> None:
@@ -143,6 +164,136 @@ def test_main_window_run_empty_editor_shows_status_and_starts_nothing(qtbot) -> 
         or "empty" in window.status_bar.currentMessage().lower()
         or "statement" in window.status_bar.currentMessage().lower()
     )
+
+
+def test_history_record_restore_updates_editor_without_execution_or_catalog(
+    tmp_path: Path, qtbot
+) -> None:
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry("duckdb", "SELECT restored_sql")
+    record = history.get_all()[0]
+    window = MainWindow(history_manager=history)
+    qtbot.addWidget(window)
+    initial_catalog = window._catalog_service.entries
+
+    window.history_dock.record_selected.emit(record)
+
+    assert window.editor.text() == "SELECT restored_sql"
+    assert window.query_controller.status is ExecutionStatus.IDLE
+    assert window._catalog_service.entries == initial_catalog
+
+
+def test_history_catalog_restore_loads_available_files_and_reports_missing_ones(
+    tmp_path: Path, qtbot
+) -> None:
+    existing = tmp_path / "available.csv"
+    existing.write_text("id\n1\n")
+    missing = tmp_path / "missing.csv"
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry(
+        "duckdb",
+        "SELECT * FROM available",
+        catalog={"available": str(existing), "missing": str(missing)},
+    )
+    window = MainWindow(history_manager=history)
+    qtbot.addWidget(window)
+
+    window.history_dock.record_selected.emit(history.get_all()[0])
+
+    qtbot.waitUntil(lambda: len(window._catalog_service.entries) == 1)
+    assert window._catalog_service.entries[0].path == existing.resolve()
+    assert str(missing) in window.status_bar.currentMessage()
+
+
+def test_main_window_restores_geometry_dock_layout_and_splitter_state(
+    tmp_path: Path, qtbot
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "restore")
+    original = MainWindow(settings_service=service)
+    qtbot.addWidget(original)
+    original.resize(960, 720)
+    original.show()
+    qtbot.waitUntil(lambda: original._central_splitter.height() > 0)
+    original._central_splitter.setSizes([210, 390])
+    original.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, original._history_dock_widget)
+    service.save_window_geometry(original.saveGeometry().data())
+    service.save_window_state(original.saveState().data())
+    service.save_splitter_sizes(original._central_splitter.sizes())
+
+    restored = MainWindow(settings_service=service)
+    qtbot.addWidget(restored)
+    restored.show()
+    qtbot.waitUntil(lambda: restored._central_splitter.height() > 0)
+
+    assert (
+        restored.dockWidgetArea(restored._history_dock_widget)
+        is Qt.DockWidgetArea.BottomDockWidgetArea
+    )
+    original_sizes = original._central_splitter.sizes()
+    restored_sizes = restored._central_splitter.sizes()
+    assert restored_sizes[0] / sum(restored_sizes) == pytest.approx(
+        original_sizes[0] / sum(original_sizes), abs=0.001
+    )
+
+
+def test_main_window_without_stored_settings_has_a_sane_default_layout(
+    tmp_path: Path, qtbot
+) -> None:
+    window = MainWindow(settings_service=_configure_qsettings_path(tmp_path / "first-run"))
+    qtbot.addWidget(window)
+    window.resize(800, 600)
+    window.show()
+    qtbot.waitUntil(lambda: window._central_splitter.height() > 0)
+
+    assert (
+        window.dockWidgetArea(window._history_dock_widget) is Qt.DockWidgetArea.RightDockWidgetArea
+    )
+    assert len(window._central_splitter.sizes()) == 2
+    assert all(size > 0 for size in window._central_splitter.sizes())
+
+
+def test_reset_layout_restores_and_persists_default_docks_and_splitter(
+    tmp_path: Path, qtbot
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "reset-layout")
+    window = MainWindow(settings_service=service)
+    qtbot.addWidget(window)
+    window.resize(800, 600)
+    window.show()
+    qtbot.waitUntil(lambda: window._central_splitter.height() > 0)
+    window.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, window._history_dock_widget)
+    window._central_splitter.setSizes([300, 100])
+
+    window.desktop_actions.reset_layout.trigger()
+
+    assert (
+        window.dockWidgetArea(window._catalog_dock_widget) is Qt.DockWidgetArea.LeftDockWidgetArea
+    )
+    assert (
+        window.dockWidgetArea(window._history_dock_widget) is Qt.DockWidgetArea.RightDockWidgetArea
+    )
+    assert service.restore_splitter_sizes() == tuple(window._central_splitter.sizes())
+    restored = MainWindow(settings_service=service)
+    qtbot.addWidget(restored)
+    assert (
+        restored.dockWidgetArea(restored._history_dock_widget)
+        is Qt.DockWidgetArea.RightDockWidgetArea
+    )
+
+
+def test_clear_history_action_empties_store_and_history_dock(tmp_path: Path, qtbot) -> None:
+    history_path = tmp_path / "history.json"
+    history = HistoryManager(storage_path=history_path)
+    history.add_entry("duckdb", "SELECT to_clear")
+    window = MainWindow(history_manager=history)
+    qtbot.addWidget(window)
+    assert window.history_dock.history_list.count() == 1
+
+    window.desktop_actions.clear_history.trigger()
+
+    assert history.get_all() == []
+    assert window.history_dock.history_list.count() == 0
+    assert json.loads(history_path.read_text()) == []
 
 
 def test_main_window_action_enabled_states_and_status_bar_during_execution(

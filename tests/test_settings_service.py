@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import pytest
 from PyQt6.QtCore import QSettings
 
 from wherewolf.services import SettingsService
@@ -100,3 +101,55 @@ def test_settings_service_completion_threshold_and_enabled_round_trip(tmp_path: 
 
     assert service.restore_completion_threshold() == 3
     assert service.restore_completion_enabled() is False
+
+
+def test_settings_service_round_trips_every_persistent_setting(tmp_path: Path) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "all-round-trips"))
+
+    service.save_window_geometry(b"geometry")
+    service.save_window_state(b"window-state")
+    service.save_splitter_sizes((240, 360))
+    service.save_editor_font_size(15)
+    service.save_last_dataset_directory(Path("/tmp/wherewolf-dataset"))
+    service.save_completion_threshold(4)
+    service.save_completion_enabled(False)
+
+    assert service.restore_window_geometry() == b"geometry"
+    assert service.restore_window_state() == b"window-state"
+    assert service.restore_splitter_sizes() == (240, 360)
+    assert service.restore_editor_font_size() == 15
+    assert service.restore_last_dataset_directory() == Path("/tmp/wherewolf-dataset")
+    assert service.restore_completion_threshold() == 4
+    assert service.restore_completion_enabled() is False
+
+
+@pytest.mark.parametrize(
+    ("key_name", "corrupt_value", "restore_name", "expected_default"),
+    [
+        ("window_geometry_key", "not-bytes", "restore_window_geometry", b""),
+        ("window_state_key", ["not", "bytes"], "restore_window_state", b""),
+        ("splitter_sizes_key", ["not", "sizes"], "restore_splitter_sizes", (1, 1)),
+        ("editor_font_size_key", "twelve", "restore_editor_font_size", 12),
+        (
+            "last_dataset_directory_key",
+            42,
+            "restore_last_dataset_directory",
+            SettingsService.DEFAULT_DATASET_DIRECTORY,
+        ),
+        ("completion_threshold_key", True, "restore_completion_threshold", 2),
+        ("completion_enabled_key", "false", "restore_completion_enabled", True),
+    ],
+)
+def test_settings_service_each_corrupt_value_falls_back_to_its_default(
+    tmp_path: Path,
+    key_name: str,
+    corrupt_value: object,
+    restore_name: str,
+    expected_default: object,
+) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / key_name))
+    service._settings.setValue(getattr(service, key_name), corrupt_value)
+
+    restored = getattr(service, restore_name)()
+
+    assert restored == expected_default

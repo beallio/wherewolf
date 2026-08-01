@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
@@ -19,7 +20,7 @@ from PyQt6.QtWidgets import (
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.query_controller import QueryController
-from wherewolf.desktop.widgets import CatalogDock, SqlEditor
+from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.workers import SchemaWorker
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         self.main_toolbar = self._build_toolbar()
         self._catalog_dock_widget = self._build_catalog_dock()
         self.dataset_catalog_dock = self._catalog_dock_widget
+        self._history_dock_widget = self._build_history_dock()
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -89,6 +91,12 @@ class MainWindow(QMainWindow):
     @property
     def catalog_view(self) -> QDockWidget:
         return self._catalog_dock_widget
+
+    @property
+    def history_dock(self) -> HistoryDock:
+        widget = self._history_dock_widget.widget()
+        assert isinstance(widget, HistoryDock)
+        return widget
 
     @property
     def editor(self) -> SqlEditor:
@@ -118,8 +126,20 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
         return dock
 
+    def _build_history_dock(self) -> QDockWidget:
+        history_dock = HistoryDock(self.history_manager, self)
+        history_dock.record_selected.connect(self._restore_history_query)
+
+        dock = QDockWidget("History", self)
+        dock.setObjectName("history_dock")
+        dock.setWidget(history_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        return dock
+
     def _connect_actions(self) -> None:
         self.desktop_actions.add_datasets.triggered.connect(self._on_add_datasets)
+        self.desktop_actions.reset_layout.triggered.connect(self._reset_layout)
+        self.desktop_actions.clear_history.triggered.connect(self._clear_history)
         self.desktop_actions.run.triggered.connect(self._on_run_triggered)
         self.desktop_actions.cancel.triggered.connect(self._on_cancel_triggered)
 
@@ -178,6 +198,7 @@ class MainWindow(QMainWindow):
                 query=request.original_sql,
                 catalog=catalog_dict,
             )
+            self.history_dock.refresh()
 
             trunc_str = " (truncated)" if result.truncated else ""
             msg = (
@@ -271,6 +292,49 @@ class MainWindow(QMainWindow):
     def editor_insert_text(self, alias: str) -> None:
         self.editor.insert(alias)
 
+    def _restore_history_query(self, record: dict) -> None:
+        """Place a historical SQL statement in the editor without running it."""
+        query = record.get("query")
+        if isinstance(query, str):
+            self.editor.setText(query)
+        self._restore_history_catalog(record)
+
+    def _restore_history_catalog(self, record: dict) -> None:
+        """Restore available historical datasets and make unavailable paths visible."""
+        catalog = record.get("catalog")
+        if not isinstance(catalog, dict):
+            return
+
+        available_paths: list[Path] = []
+        missing_paths: list[Path] = []
+        for raw_path in catalog.values():
+            if not isinstance(raw_path, str) or not raw_path:
+                continue
+            path = Path(raw_path)
+            if path.exists():
+                available_paths.append(path)
+            else:
+                missing_paths.append(path)
+
+        if available_paths:
+            result = self._catalog_service.add_paths(tuple(available_paths))
+            for entry in result.added:
+                self._queue_schema_work(
+                    CatalogBinding(
+                        entry_id=entry.id,
+                        alias=entry.alias,
+                        path=entry.path,
+                        source_format=entry.source_format,
+                    )
+                )
+            self.editor.set_catalog(self._catalog_service.entries)
+
+        if missing_paths:
+            self._show_status(
+                "Missing history dataset(s): " + ", ".join(str(path) for path in missing_paths),
+                10000,
+            )
+
     def _on_apply_query_order(self, column_name: str, direction: str) -> None:
         if not self.result_table_view.has_result():
             return
@@ -286,6 +350,7 @@ class MainWindow(QMainWindow):
         assert menu_bar is not None
         file_menu = cast(QMenu, menu_bar.addMenu("File"))
         file_menu.setObjectName("file_menu")
+        file_menu.addAction(self.desktop_actions.clear_history)
 
         edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
         edit_menu.setObjectName("edit_menu")
@@ -299,6 +364,7 @@ class MainWindow(QMainWindow):
 
         view_menu = cast(QMenu, menu_bar.addMenu("View"))
         view_menu.setObjectName("view_menu")
+        view_menu.addAction(self.desktop_actions.reset_layout)
 
         help_menu = cast(QMenu, menu_bar.addMenu("Help"))
         help_menu.setObjectName("help_menu")
@@ -324,6 +390,24 @@ class MainWindow(QMainWindow):
 
         font_size = self._settings_service.restore_editor_font_size()
         self.editor.set_font_size(font_size)
+
+    def _reset_layout(self) -> None:
+        """Return persistent docks and the central splitter to their default arrangement."""
+        for dock, area in (
+            (self._catalog_dock_widget, Qt.DockWidgetArea.LeftDockWidgetArea),
+            (self._history_dock_widget, Qt.DockWidgetArea.RightDockWidgetArea),
+        ):
+            dock.setFloating(False)
+            self.addDockWidget(area, dock)
+            dock.show()
+        self._central_splitter.setSizes(list(self._settings_service.DEFAULT_SPLITTER_SIZES))
+        self._settings_service.save_window_state(self.saveState().data())
+        self._settings_service.save_splitter_sizes(self._central_splitter.sizes())
+
+    def _clear_history(self) -> None:
+        """Atomically clear persisted history and synchronize the dock immediately."""
+        self.history_manager.clear()
+        self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
         for worker in list(self._schema_workers):

@@ -1,10 +1,10 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=16" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=17" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=16)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=16)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=16)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=17)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=17)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=17)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
 
@@ -19,11 +19,15 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 - **💬 Messages Panel:** Structured execution results, detailed metrics (duration, preview row counts), and formatted error tracebacks replacing raw text placeholders.
 - **🔀 Full-Query Ordering:** Context menu actions for applying ascending or descending `ORDER BY` clauses to full queries without disturbing local table proxy sorting.
 - **Safe Preview:** Scrollable results limited to 1000 rows.
-- **Query History:** Persists past queries in `~/.wherewolf/history.json`.
+- **Versioned Query History:** Persists the newest 100 queries in `~/.wherewolf/history.json`,
+  automatically migrates prior history safely, and keeps each record's stable ID for unambiguous
+  desktop selection.
+- **Persistent Desktop Preferences:** Window geometry, dock layout, splitter proportions, editor
+  font size, recent dataset directory, and completion preferences survive desktop restarts.
 - **Export:** Download query results as CSV, Excel, or Parquet. DataFrame handling and exports are Polars-based. When the preview is truncated, use **Prepare full export** to re-run the query without a row limit and download the entire result set.
 - **Execution Metrics:** Tracks row count, status, and execution time in the status bar and Messages panel.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=16)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=17)
 
 ## Installation
 
@@ -57,6 +61,10 @@ uv run wherewolf-desktop
 4. Click **Run** or press `Ctrl+Return` to execute queries asynchronously using DuckDB.
 5. Click **Cancel** or press `Ctrl+.` to cancel active query execution.
 6. Execution uses request-scoped isolated DuckDB connections, limit+1 truncation detection, and automatic query history persistence in `~/.wherewolf/history.json`.
+7. In the desktop shell, activate a History entry to restore its SQL without executing it. Available
+   historical dataset files are restored; unavailable paths are reported in the status bar.
+8. Use **View → Reset Layout** to restore the default dock arrangement, or **File → Clear History**
+   to empty the persisted history safely.
 7. Click **Format SQL** (`Ctrl+Shift+F`) to normalize syntax.
 
 
