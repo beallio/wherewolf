@@ -57,8 +57,12 @@ class TypedSortProxyModel(QSortFilterProxyModel):
         return False
 
     def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
-        left_val = self.sourceModel().data(left, Qt.ItemDataRole.UserRole)
-        right_val = self.sourceModel().data(right, Qt.ItemDataRole.UserRole)
+        model = self.sourceModel()
+        if model is None:
+            return False
+
+        left_val = model.data(left, Qt.ItemDataRole.UserRole)
+        right_val = model.data(right, Qt.ItemDataRole.UserRole)
 
         if left_val is None and right_val is None:
             return False

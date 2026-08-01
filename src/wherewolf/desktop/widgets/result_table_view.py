@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
-from PyQt6.QtGui import QKeySequence
+from PyQt6.QtGui import QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import QApplication, QMenu, QTableView
 
 from wherewolf.desktop.clipboard_serializers import format_cell_value, format_header_name
@@ -25,11 +25,11 @@ class ResultTableView(QTableView):
 
         self.setModel(self._proxy_model)
         self.setSortingEnabled(True)
-        self.horizontalHeader().setSectionsMovable(True)
-        self.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.horizontalHeader().customContextMenuRequested.connect(
-            self._on_header_context_menu_requested
-        )
+        header = self.horizontalHeader()
+        if header is not None:
+            header.setSectionsMovable(True)
+            header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            header.customContextMenuRequested.connect(self._on_header_context_menu_requested)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_body_context_menu_requested)
 
@@ -47,7 +47,9 @@ class ResultTableView(QTableView):
         return self._source_model.frame()
 
     def move_column(self, from_visual: int, to_visual: int) -> None:
-        self.horizontalHeader().moveSection(from_visual, to_visual)
+        header = self.horizontalHeader()
+        if header is not None:
+            header.moveSection(from_visual, to_visual)
 
     def hide_column(self, column: int) -> None:
         self.setColumnHidden(column, True)
@@ -64,12 +66,19 @@ class ResultTableView(QTableView):
 
     def reset_columns_default(self) -> None:
         header = self.horizontalHeader()
+        if header is None:
+            return
         num_cols = self._proxy_model.columnCount()
         for c in range(num_cols):
             self.setColumnHidden(c, False)
             v_idx = header.visualIndex(c)
             if v_idx != c:
                 header.moveSection(v_idx, c)
+
+    def _set_clipboard_text(self, text: str) -> None:
+        cb = QApplication.clipboard()
+        if cb is not None:
+            cb.setText(text)
 
     def create_header_context_menu(self, column: int) -> QMenu:
         menu = QMenu(self)
@@ -95,11 +104,11 @@ class ResultTableView(QTableView):
         menu.addSeparator()
         menu.addAction(
             "Copy Header Name",
-            lambda: QApplication.clipboard().setText(h_name),
+            lambda: self._set_clipboard_text(h_name),
         )
         menu.addAction(
             "Copy Quoted Header",
-            lambda: QApplication.clipboard().setText(format_header_name(h_name, quote=True)),
+            lambda: self._set_clipboard_text(format_header_name(h_name, quote=True)),
         )
         menu.addSeparator()
         menu.addAction(
@@ -130,30 +139,37 @@ class ResultTableView(QTableView):
         return menu
 
     def _on_header_context_menu_requested(self, pos: QPoint) -> None:
-        column = self.horizontalHeader().logicalIndexAt(pos)
+        header = self.horizontalHeader()
+        if header is None:
+            return
+        column = header.logicalIndexAt(pos)
         if column >= 0:
             menu = self.create_header_context_menu(column)
-            menu.exec(self.horizontalHeader().mapToGlobal(pos))
+            menu.exec(p=header.mapToGlobal(pos))
 
     def _on_body_context_menu_requested(self, pos: QPoint) -> None:
         idx = self.indexAt(pos)
-        if idx.isValid():
+        viewport = self.viewport()
+        if idx.isValid() and viewport is not None:
             menu = self.create_body_context_menu()
-            menu.exec(self.viewport().mapToGlobal(pos))
+            menu.exec(p=viewport.mapToGlobal(pos))
 
-    def keyPressEvent(self, event) -> None:
-        if event.matches(QKeySequence.StandardKey.Copy):
+    def keyPressEvent(self, e: QKeyEvent | None) -> None:
+        if e is not None and e.matches(QKeySequence.StandardKey.Copy):
             self.copy_selection()
-            event.accept()
+            e.accept()
         else:
-            super().keyPressEvent(event)
+            super().keyPressEvent(e)
 
     def copy_selection(self, include_headers: bool = False, quote_headers: bool = False) -> None:
-        selected_indexes = self.selectionModel().selectedIndexes()
-        if not selected_indexes or self._proxy_model.rowCount() == 0:
+        sel_model = self.selectionModel()
+        header = self.horizontalHeader()
+        if sel_model is None or header is None or self._proxy_model.rowCount() == 0:
             return
 
-        header = self.horizontalHeader()
+        selected_indexes = sel_model.selectedIndexes()
+        if not selected_indexes:
+            return
 
         selected_cells: list[tuple[int, int]] = []
         for idx in selected_indexes:
@@ -209,4 +225,4 @@ class ResultTableView(QTableView):
 
         tsv_text = "\n".join(lines)
         if tsv_text:
-            QApplication.clipboard().setText(tsv_text)
+            self._set_clipboard_text(tsv_text)
