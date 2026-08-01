@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QTabWidget,
-    QTextEdit,
     QToolBar,
 )
 
@@ -21,6 +20,7 @@ from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.widgets import CatalogDock, SqlEditor
+from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.workers import SchemaWorker
 from wherewolf.domain import (
@@ -33,6 +33,7 @@ from wherewolf.domain import (
 )
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import CatalogService, ExecutionRequestBuilder, SettingsService
+from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.storage.history import HistoryManager
 
 
@@ -162,14 +163,14 @@ class MainWindow(QMainWindow):
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
             self.result_table_view.set_frame(result.frame)
-            self._results_text.setPlainText("")
-        elif result.status is ExecutionStatus.FAILED:
+        else:
             self.result_table_view.set_frame(None)
-            self._results_text.setPlainText(f"Error ({result.error_type}): {result.error_message}")
-        elif result.status is ExecutionStatus.CANCELLED:
-            self.result_table_view.set_frame(None)
-            self._results_text.setPlainText("Query execution cancelled.")
 
+        self.messages_panel.show_query_result(result)
+
+        engine_name = (
+            "DuckDB" if request.engine is EngineKind.DUCKDB else request.engine.value.title()
+        )
         if result.status is ExecutionStatus.SUCCEEDED:
             catalog_dict = {b.alias: str(b.path) for b in request.catalog}
             self.history_manager.add_entry(
@@ -180,16 +181,16 @@ class MainWindow(QMainWindow):
 
             trunc_str = " (truncated)" if result.truncated else ""
             msg = (
-                f"Engine: DuckDB | State: Succeeded | Elapsed: {result.execution_seconds:.2f}s | "
+                f"Engine: {engine_name} | State: Succeeded | Elapsed: {result.execution_seconds:.2f}s | "
                 f"Preview Rows: {result.preview_row_count}{trunc_str}"
             )
             self._show_status(msg, 10000)
 
         elif result.status is ExecutionStatus.FAILED:
-            msg = f"Engine: DuckDB | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}"
+            msg = f"Engine: {engine_name} | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}"
             self._show_status(msg, 10000)
         elif result.status is ExecutionStatus.CANCELLED:
-            msg = f"Engine: DuckDB | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed"
+            msg = f"Engine: {engine_name} | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed"
             self._show_status(msg, 10000)
 
     def _on_add_datasets(self) -> None:
@@ -255,10 +256,11 @@ class MainWindow(QMainWindow):
         self.result_table_view = ResultTableView(self)
         self.result_table_view.setObjectName("result_table_view")
         self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
-        self._results_text = QTextEdit("Results pending")
-        self._results_text.setObjectName("results_text")
+        self.result_table_view.apply_query_order_requested.connect(self._on_apply_query_order)
         results.addTab(self.result_table_view, "Results")
-        results.addTab(self._results_text, "Messages")
+        self.messages_panel = MessagesPanel(self)
+        self.messages_panel.setObjectName("messages_panel")
+        results.addTab(self.messages_panel, "Messages")
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
@@ -268,6 +270,16 @@ class MainWindow(QMainWindow):
 
     def editor_insert_text(self, alias: str) -> None:
         self.editor.insert(alias)
+
+    def _on_apply_query_order(self, column_name: str, direction: str) -> None:
+        if not self.result_table_view.has_result():
+            return
+        current_sql = self.editor.text()
+        if not current_sql.strip():
+            return
+        ordered_sql = build_order_by_sql(current_sql, column_name, direction)
+        self.editor.setText(ordered_sql)
+        self._on_run_triggered()
 
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()

@@ -14,13 +14,14 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 - **🧰 Desktop SQL Editor:** QScintilla-based editor with line numbers, brace matching, SQL formatting, function call tips, and intelligent SQL completion (`Ctrl+Space` shortcut and configurable auto-trigger threshold).
 - **🔢 PyQt6 Result Grid:** High-performance tabular results view powered by Polars, with strict type preservation (`UserRole`), typed sorting (`TypedSortProxyModel`), case-insensitive multi-column search filtering, visual column reordering and hiding, and TSV clipboard serialization (`Ctrl+C`, custom context menus).
 - **🔗 Multi-Table Queries:** Perform JOINs, unions, and subqueries across different file formats in a single session.
-- **📊 Schema & Metadata HUD:** Instant visibility of column names and data types for any dataset in your catalog.
-- **SQL Translation:** Real-time translation between DuckDB and SparkSQL dialects using SQLGlot.
-- **Modern UI:** Distraction-free interface with a hidden toolbar, reduced whitespace, and clear visual hierarchy.
+- **📊 Schema Panel HUD:** Dedicated dock widget displaying columns, data types, pending schema inspection states, error details, and double-click column identifier insertion.
+- **🌐 Translation Panel:** Multi-statement SQL dialect translation (DuckDB <-> SparkSQL) with diagnostic message views.
+- **💬 Messages Panel:** Structured execution results, detailed metrics (duration, preview row counts), and formatted error tracebacks replacing raw text placeholders.
+- **🔀 Full-Query Ordering:** Context menu actions for applying ascending or descending `ORDER BY` clauses to full queries without disturbing local table proxy sorting.
 - **Safe Preview:** Scrollable results limited to 1000 rows.
 - **Query History:** Persists past queries in `~/.wherewolf/history.json`.
 - **Export:** Download query results as CSV, Excel, or Parquet. DataFrame handling and exports are Polars-based. When the preview is truncated, use **Prepare full export** to re-run the query without a row limit and download the entire result set.
-- **Execution Metrics:** Tracks row count and execution time.
+- **Execution Metrics:** Tracks row count, status, and execution time in the status bar and Messages panel.
 
 ![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=16)
 

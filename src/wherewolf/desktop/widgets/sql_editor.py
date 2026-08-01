@@ -208,7 +208,10 @@ class SqlEditor(QsciScintilla):
 
         cursor_line, cursor_column = self.getCursorPosition()
         cursor = self.positionFromLineIndex(cursor_line, cursor_column)
-        selection = self._statement_service.find_statement(self.text(), cursor)
+        text = self.text()
+        if cursor > 0 and cursor >= len(text):
+            cursor = len(text) - 1
+        selection = self._statement_service.find_statement(text, cursor)
         if selection.text is None:
             self._update_status(selection.reason)
             return "", -1, -1

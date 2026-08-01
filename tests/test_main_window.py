@@ -266,7 +266,9 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
-    assert "Error (SyntaxError): near SELECT" in window._results_text.toPlainText()
+    msg, severity = window.messages_panel.message_at(0)
+    assert "Error (SyntaxError): near SELECT" in msg
+    assert severity == "error"
 
     # 3. Cancelled result: grid cleared
     res_cancelled = QueryResult(
@@ -281,7 +283,95 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_cancelled, request)
     assert grid.proxy_model().rowCount() == 0
-    assert "cancelled" in window._results_text.toPlainText().lower()
+    msg, severity = window.messages_panel.message_at(0)
+    assert "cancelled" in msg.lower()
+    assert severity == "warning"
+
+
+def test_main_window_apply_order_to_query(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.editor.setText("SELECT * FROM users")
+
+    executed_sqls: list[str] = []
+
+    def mock_submit(request):
+        executed_sqls.append(request.original_sql)
+        return True
+
+    monkeypatch.setattr(window.query_controller, "execute", mock_submit)
+
+    # 1. No result present: apply order should be disabled/no-op
+    window._on_apply_query_order("id", "ASC")
+    assert len(executed_sqls) == 0
+
+    # 2. Result present: apply order updates editor text and submits exactly 1 new execution
+    df = pl.DataFrame({"id": [1, 2], "name": ["a", "b"]})
+    window.result_table_view.set_frame(df)
+
+    window._on_apply_query_order("id", "ASC")
+    assert window.editor.text() == "SELECT * FROM users ORDER BY id ASC"
+    assert len(executed_sqls) == 1
+    assert executed_sqls[0] == "SELECT * FROM users ORDER BY id ASC"
+
+
+def test_main_window_query_result_details_and_metrics(qtbot) -> None:
+    from datetime import datetime
+    from uuid import uuid4
+
+    from wherewolf.domain import EngineKind, ExecutionRequest, ExecutionStatus, QueryResult
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    req = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.SPARK,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=1000,
+        submitted_at=datetime.now(UTC),
+    )
+
+    # 1. Success result
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    res_success = QueryResult(
+        request_id=req.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=df,
+        execution_seconds=0.42,
+        preview_row_count=3,
+        total_row_count=3,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(res_success, req)
+    status_bar = window.statusBar()
+    assert status_bar is not None
+    assert "spark" in status_bar.currentMessage().lower()
+    assert "0.42s" in status_bar.currentMessage()
+    assert "3" in status_bar.currentMessage()
+
+    # 2. Failed result
+    res_failed = QueryResult(
+        request_id=req.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.15,
+        preview_row_count=0,
+        total_row_count=0,
+        truncated=False,
+        error_type="ExecutionError",
+        error_message="Table not found",
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(res_failed, req)
+    assert "spark" in status_bar.currentMessage().lower()
+    assert "0.15s" in status_bar.currentMessage()
+    assert "Table not found" in status_bar.currentMessage()
 
 
 def test_main_window_result_grid_gui_thread_population(qtbot, monkeypatch) -> None:
