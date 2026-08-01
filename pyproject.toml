@@ -5,7 +5,7 @@ description = "A production-grade, local SQL workbench for querying files (CSV, 
 license = "GPL-3.0-only"
 license-files = ["LICENSE", "LICENSES/*"]
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 dependencies = [
     "duckdb>=1.5.4",
     "fastexcel>=0.20.2",

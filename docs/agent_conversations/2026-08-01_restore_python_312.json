@@ -1,0 +1,25 @@
+{
+  "date": "2026-08-01",
+  "task_objective": "Restore Python 3.12 support in wherewolf on branch fix/restore-python-312.",
+  "files_modified": [
+    "pyproject.toml",
+    "uv.lock",
+    "README.md",
+    ".github/workflows/ci.yml",
+    "src/wherewolf/storage/history.py",
+    "src/wherewolf/services/settings_service.py",
+    "src/wherewolf/domain/enums.py",
+    "src/wherewolf/domain/models.py",
+    "docs/plans/2026-08-01_restore-python-312.md"
+  ],
+  "tests_added": [],
+  "design_decisions": [
+    "Lowered requires-python to >=3.12 in pyproject.toml.",
+    "Parenthesized exception tuples in history.py and settings_service.py for Python 3.12 compatibility.",
+    "Added from __future__ import annotations in enums.py and models.py for forward reference support in Python 3.12.",
+    "Restored Python 3.12 to .github/workflows/ci.yml matrix alongside Python 3.14.",
+    "Bumped README.md cacheBuster to 15 and updated minimum Python version requirement to 3.12+.",
+    "Maintained .python-version at 3.14 for local development."
+  ],
+  "results": "Python 3.12 support fully restored. Quality gates passed. Pytest passed on Python 3.12 (254 passed, 1 skipped) and Python 3.14 (254 passed, 1 skipped). check_flake.sh 25 passed with 0 native crashes."
+}

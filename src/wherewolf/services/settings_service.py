@@ -158,7 +158,7 @@ class SettingsService:
             return default
         try:
             converted = tuple(int(item) for item in value)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             return default
         if len(converted) != 2:
             return default
