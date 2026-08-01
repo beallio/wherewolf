@@ -2,6 +2,9 @@ name: Flake Probe
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/ci-qt-flake-312
 
 jobs:
   probe:
