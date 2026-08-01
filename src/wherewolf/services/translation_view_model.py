@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 
-from wherewolf.domain.errors import TranslationError
 from wherewolf.domain.models import SqlDiagnostic
 from wherewolf.translation.translator import Translator
 
@@ -41,7 +40,7 @@ def translate_sql_view(query: str, from_dialect: str, to_dialect: str) -> Transl
         )
         translated_text = ";\n\n".join(statements)
         return TranslationResult(translated_sql=translated_text, diagnostics=())
-    except (TranslationError, ValueError, Exception) as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 - display translation failures instead of raising.
         diagnostic = SqlDiagnostic(
             message=str(exc),
             severity="error",
