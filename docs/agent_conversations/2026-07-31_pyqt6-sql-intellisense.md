@@ -58,13 +58,11 @@
 - Flake check: 25 consecutive runs with 0 native crashes.
 - TDD check: `scripts/check_tdd.sh` verified flat test structure for all new modules.
 
-
-
-
-
-
-
-
-
-
-
+## Review Round 1 Resolution (2026-07-31)
+- **Finding B1 (Completion threshold test gap)**: Added comprehensive tests in `tests/test_sql_editor.py` that spy on `SqlCompletionService.complete()`:
+  1. Prefix shorter than threshold (1 char when threshold is 2) does not request completion (`spy.calls == 0`).
+  2. Prefix at or above threshold (2 chars) requests completion (`spy.calls == 1`).
+  3. `completion_enabled = False` prevents unforced completion requests but allows forced (`Ctrl+Space`) requests.
+  4. Custom threshold (set to 3 via `SettingsService`) updates the trigger point so 2-char prefix no longer triggers, but 3-char prefix does.
+- **Mutation Verification**: Verified that substituting `if False:` for the threshold check in `sql_editor.py:94` causes the new tests to fail (RED).
+- **Observation N1**: Noted that `src/wherewolf/services/__init__.py` eagerly imports `settings_service` (which imports `PyQt6.QtCore`), transitively loading PyQt6 when importing completion service. Preserved without changes for this phase as PyQt6 is a required dependency.

@@ -1,7 +1,17 @@
 from PyQt6.Qsci import QsciLexerSQL
 
 from wherewolf.desktop.widgets import SqlEditor
-from wherewolf.services import StatementSelection, StatementService
+from wherewolf.services import SqlCompletionService, StatementSelection, StatementService
+
+
+class _SpyCompletionService(SqlCompletionService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def complete(self, context):
+        self.calls += 1
+        return super().complete(context)
 
 
 class _SpyStatementService(StatementService):
@@ -158,18 +168,81 @@ def test_sql_editor_completion_threshold_and_ctrl_space(qtbot, tmp_path) -> None
     settings = QSettings(str(tmp_path / "test.ini"), QSettings.Format.IniFormat)
     settings_service = SettingsService(settings)
 
-    editor = SqlEditor(settings_service=settings_service)
+    spy_service = _SpyCompletionService()
+    editor = SqlEditor(settings_service=settings_service, completion_service=spy_service)
     qtbot.addWidget(editor)
 
     assert editor.show_completion_action is not None
     assert editor.show_completion_action.isEnabled()
-
-    # Default threshold is 2
     assert editor.completion_threshold == 2
     assert editor.completion_enabled is True
-
-    # Ctrl+Space shortcut action exists and works
     assert editor.show_completion_action.shortcut().toString() == "Ctrl+Space"
+
+    # 1. Prefix shorter than default threshold (2) does NOT request completion
+    editor.setText("S")
+    editor.setCursorPosition(0, 1)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 0
+
+    # 2. Prefix at or above threshold (2) DOES request completion
+    editor.setText("SE")
+    editor.setCursorPosition(0, 2)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 1
+
+
+def test_sql_editor_completion_disabled_unforced_vs_forced(qtbot, tmp_path) -> None:
+    from PyQt6.QtCore import QSettings
+
+    from wherewolf.services import SettingsService
+
+    settings = QSettings(str(tmp_path / "test.ini"), QSettings.Format.IniFormat)
+    settings_service = SettingsService(settings)
+    settings_service.save_completion_enabled(False)
+
+    spy_service = _SpyCompletionService()
+    editor = SqlEditor(settings_service=settings_service, completion_service=spy_service)
+    qtbot.addWidget(editor)
+
+    assert editor.completion_enabled is False
+
+    # 3. With completion_enabled=False, unforced typing does NOT request completion
+    editor.setText("SELECT")
+    editor.setCursorPosition(0, 6)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 0
+
+    # Forced request (Ctrl+Space) STILL requests completion
+    editor.request_completion(forced=True)
+    assert spy_service.calls == 1
+
+
+def test_sql_editor_completion_custom_threshold(qtbot, tmp_path) -> None:
+    from PyQt6.QtCore import QSettings
+
+    from wherewolf.services import SettingsService
+
+    settings = QSettings(str(tmp_path / "test.ini"), QSettings.Format.IniFormat)
+    settings_service = SettingsService(settings)
+    settings_service.save_completion_threshold(3)
+
+    spy_service = _SpyCompletionService()
+    editor = SqlEditor(settings_service=settings_service, completion_service=spy_service)
+    qtbot.addWidget(editor)
+
+    assert editor.completion_threshold == 3
+
+    # 4. Set to 3: 2-character prefix no longer triggers
+    editor.setText("SE")
+    editor.setCursorPosition(0, 2)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 0
+
+    # 3-character prefix DOES trigger
+    editor.setText("SEL")
+    editor.setCursorPosition(0, 3)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 1
 
 
 def test_main_window_show_completion_action_is_same_object_in_query_menu_and_editor(qtbot) -> None:
