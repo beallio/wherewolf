@@ -76,4 +76,16 @@ jobs:
               ;;
           esac
 
+          if [ "${PROBE_MODE}" = "timid-false" ]; then
+            ./run.sh uv run --python "${{ matrix.python-version }}" python -c \
+              "import coverage; c=coverage.Coverage(config_file='/tmp/wherewolf/coverage-no-timid.ini'); c._init(); print('EFFECTIVE timid =', c.config.timid)"
+          else
+            ./run.sh uv run --python "${{ matrix.python-version }}" python -c \
+              "import coverage; c=coverage.Coverage(); c._init(); print('EFFECTIVE timid =', c.config.timid)"
+          fi
+
+          echo -n "PYTEST ARGV: "
+          printf '%q ' ./run.sh uv run --python "${{ matrix.python-version }}" pytest "${args[@]}"
+          echo ""
+
           ./run.sh uv run --python "${{ matrix.python-version }}" pytest "${args[@]}"
