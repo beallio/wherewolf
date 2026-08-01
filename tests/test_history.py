@@ -226,3 +226,33 @@ def test_record_cap_evicts_the_oldest_v1_record_after_migration(storage_dir):
     assert entries[0]["query"] == "SELECT newest"
     assert entries[-1]["query"] == "SELECT legacy_98"
     assert "SELECT legacy_99" not in [entry["query"] for entry in entries]
+
+
+@pytest.mark.parametrize("migrated", [False, True])
+def test_history_records_keep_the_exact_streamlit_read_shape(storage_dir, migrated):
+    history_file = storage_dir / "history.json"
+    if migrated:
+        storage_dir.mkdir()
+        history_file.write_text(
+            json.dumps(
+                [
+                    {
+                        "timestamp": "2026-08-01T12:00:00+00:00",
+                        "engine": "duckdb",
+                        "query": "SELECT migrated_sql",
+                    }
+                ]
+            )
+        )
+    manager = HistoryManager(storage_path=history_file)
+    if not migrated:
+        manager.add_entry("duckdb", "SELECT fresh_sql")
+
+    records = manager.get_all()
+    labels = [f"{record['timestamp'][:16]} - {record['query'][:30]}..." for record in records]
+
+    assert len(records[0]["timestamp"][:16]) == 16
+    assert labels == [
+        f"{records[0]['timestamp'][:16]} - SELECT {'migrated' if migrated else 'fresh'}_sql..."
+    ]
+    assert records[0]["query"] == f"SELECT {'migrated' if migrated else 'fresh'}_sql"
