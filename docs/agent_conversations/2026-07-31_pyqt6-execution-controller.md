@@ -73,6 +73,20 @@ All 6 mutations were applied, confirmed with `git diff --quiet` (returned false)
 - **Cross-platform:** Verified on Linux; macOS and Windows unverified.
 - **Cancellation timing:** DuckDB `interrupt()` is best-effort; exact interruption latency in real query execution is uncharacterised.
 
+## Review Resolution (Round 2 - Review 02)
+- **C0 (SchemaWorker QThread Teardown & Flake Check):** Added deterministic thread teardown loop to `MainWindow.closeEvent()` (`quit()` and `wait()` on all running `_schema_workers` and `query_controller._workers`). Updated `tests/test_catalog_dock.py` tests to wait for schema workers before returning, and added `test_main_window_close_waits_for_running_schema_workers` in `tests/test_main_window.py`.
+- **Flake Measurement:**
+  - `feat/pyqt6-execution-controller` post-fix: **0 native crashes in 50 runs** via `scripts/check_flake.sh 50`.
+  - `dev` control: **0 native crashes in 50 runs** via `scripts/check_flake.sh 50`.
+- **C4 (Inspect Schema Handle Safety):** Corrected log entry from Round 02 where C4 was recorded as complete before code was applied. Applied fix in `src/wherewolf/execution/registry.py`: `_DuckDBAdapter.inspect_schema` now sets `self._con = con` immediately after `connect()`, checks `if self._cancelled: ...`, handles interrupt exceptions, and clears `self._con = None` in `finally:`.
+  - Verification check output:
+    - `git diff --stat HEAD~1 -- src/wherewolf/execution/registry.py`: 1 file changed, 23 insertions(+).
+    - `grep -n "self._con" src/wherewolf/execution/registry.py`: lines 75, 83, 84, 127, 198, 216, 250.
+- **C7 (Dead Code Fallback & Slot Parameter Cleanup):** Removed dead fallback `req = request if request is not None else ...` and `= None` parameter default in `MainWindow._on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None`. Typed `result_ready = pyqtSignal(QueryResult, object)` in `QueryController`.
+- **Final Test Tally:** 254 passed, 1 skipped.
+- **Quality Gates:** `scripts/orchestration/run-quality-gates` exited 0.
+
+
 
 
 
