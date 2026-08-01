@@ -147,14 +147,17 @@ class MainWindow(QMainWindow):
 
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
+        self.editor.set_catalog(self._catalog_service.entries)
 
     def _build_central_area(self) -> QSplitter:
         editor = SqlEditor(
             settings_service=self._settings_service,
             format_action=self.desktop_actions.format_sql,
+            show_completion_action=self.desktop_actions.show_completion,
             parent=self,
         )
         editor.setObjectName("query_editor")
+        editor.set_catalog(self._catalog_service.entries)
         editor.diagnostics_reported.connect(
             lambda payload: self._show_status(payload[0].message if payload else "", 5000)
         )
@@ -186,6 +189,7 @@ class MainWindow(QMainWindow):
         query_menu.addAction(self.desktop_actions.run)
         query_menu.addAction(self.desktop_actions.cancel)
         query_menu.addAction(self.desktop_actions.format_sql)
+        query_menu.addAction(self.desktop_actions.show_completion)
 
         view_menu = cast(QMenu, menu_bar.addMenu("View"))
         view_menu.setObjectName("view_menu")

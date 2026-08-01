@@ -13,6 +13,10 @@
 - `src/wherewolf/services/sql_metadata.py` (dialect keyword and function metadata)
 - `src/wherewolf/services/completion_service.py` (added call_tip for function call tips)
 - `src/wherewolf/desktop/widgets/completion_adapter.py` (QScintilla presentation adapter)
+- `src/wherewolf/desktop/actions.py` (added show_completion QAction)
+- `src/wherewolf/services/settings_service.py` (completion threshold & enabled persistence)
+- `src/wherewolf/desktop/widgets/sql_editor.py` (wired completion adapter & threshold/Ctrl+Space)
+- `src/wherewolf/desktop/main_window.py` (wired show_completion to Query menu and synced catalog)
 
 ## Tests Added
 - `tests/test_completion_models.py`
@@ -32,6 +36,8 @@
 - Implemented 6 ranking tiers, deterministic sorting, dialect identifier quoting (`"name"`), and function parens (`NAME(`).
 - Implemented `call_tip()` finding unclosed function parens and reporting innermost function signature.
 - Implemented `CompletionAdapter` mapping `CompletionItem` tuples to QScintilla `showUserList`, type icon markers, and replacing typed prefix on activation.
+- Wired `show_completion` action into `DesktopActions`, `MainWindow` Query menu, and `SqlEditor` context menu (same QAction instance).
+- Implemented completion threshold (default 2), toggle settings, `Ctrl+Space` override, and non-blocking schema None handling.
 
 ## Results
 - Task 1 baseline: 179 passed, 1 skipped.
@@ -44,6 +50,8 @@
 - Task 8 complete: `tests/test_completion_service.py` passing (20 tests total).
 - Task 9 complete: `tests/test_completion_service.py` passing (24 tests total).
 - Task 10 complete: `tests/test_completion_adapter.py` passing (3 tests).
+- Task 11 complete: `tests/test_sql_editor.py` & `tests/test_settings_service.py` passing.
+
 
 
 
