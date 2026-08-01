@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -76,3 +77,144 @@ def test_registry_create_duckdb_returns_request_scoped_instances() -> None:
     first = reg.create(EngineKind.DUCKDB, uuid4())
     second = reg.create(EngineKind.DUCKDB, uuid4())
     assert first is not second
+
+
+def test_duckdb_adapter_fresh_connection_per_request(tmp_path: Path) -> None:
+    csv_file = tmp_path / "events.csv"
+    csv_file.write_text("id,val\n1,100\n2,200\n")
+
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    reg = EngineRegistry()
+
+    req_id1 = uuid4()
+    adapter1 = reg.create(EngineKind.DUCKDB, req_id1)
+
+    catalog_service1 = CatalogService()
+    catalog_service1.add_paths((csv_file,))
+    req1 = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM events",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog_service1,
+    )
+
+    res1 = adapter1.execute_preview(req1)
+    assert res1.status.name == "SUCCEEDED"
+    assert res1.frame is not None
+    assert res1.frame.height == 2
+
+    # Request 2 omits the catalog binding; duckdb connection must be fresh and not retain 'events'
+    req_id2 = uuid4()
+    adapter2 = reg.create(EngineKind.DUCKDB, req_id2)
+    empty_catalog_service = CatalogService()
+    req2 = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM events",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=empty_catalog_service,
+    )
+
+    res2 = adapter2.execute_preview(req2)
+    assert res2.status.name == "FAILED"
+    assert res2.frame is None
+    assert res2.error_message is not None
+    assert (
+        "events" in res2.error_message.lower()
+        or "catalog" in res2.error_message.lower()
+        or "table" in res2.error_message.lower()
+    )
+
+
+def test_duckdb_adapter_truncation_limit_plus_one(tmp_path: Path) -> None:
+    csv_file = tmp_path / "rows.csv"
+    csv_file.write_text("id\n1\n2\n3\n4\n5\n")
+
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    cs = CatalogService()
+    cs.add_paths((csv_file,))
+
+    reg = EngineRegistry()
+    adapter = reg.create(EngineKind.DUCKDB, uuid4())
+
+    # Limit 2 over 5 rows -> preview_row_count 2, truncated True, total_row_count None
+    req_truncated = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM rows",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=cs,
+        preview_limit=2,
+    )
+    res_truncated = adapter.execute_preview(req_truncated)
+    assert res_truncated.status.name == "SUCCEEDED"
+    assert res_truncated.preview_row_count == 2
+    assert res_truncated.total_row_count is None
+    assert res_truncated.truncated is True
+    assert res_truncated.frame is not None and res_truncated.frame.height == 2
+
+    # Limit 5 over 5 rows -> preview_row_count 5, truncated False, total_row_count None
+    req_exact = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM rows",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=cs,
+        preview_limit=5,
+    )
+    res_exact = adapter.execute_preview(req_exact)
+    assert res_exact.status.name == "SUCCEEDED"
+    assert res_exact.preview_row_count == 5
+    assert res_exact.total_row_count is None
+    assert res_exact.truncated is False
+    assert res_exact.frame is not None and res_exact.frame.height == 5
+
+
+def test_duckdb_adapter_sql_error_handling() -> None:
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    cs = CatalogService()
+    reg = EngineRegistry()
+    adapter = reg.create(EngineKind.DUCKDB, uuid4())
+
+    req = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM non_existent_table_9999",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=cs,
+    )
+    res = adapter.execute_preview(req)
+    assert res.status.name == "FAILED"
+    assert res.frame is None
+    assert res.error_type is not None
+    assert res.error_message is not None
+
+
+def test_duckdb_adapter_missing_file_handling(tmp_path: Path) -> None:
+    from wherewolf.domain import CatalogEntry, SourceFormat
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    missing_path = tmp_path / "does_not_exist.csv"
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="missing",
+        path=missing_path,
+        source_format=SourceFormat.CSV,
+    )
+    cs = CatalogService(initial_entries=(entry,))
+    reg = EngineRegistry()
+    adapter = reg.create(EngineKind.DUCKDB, uuid4())
+
+    req = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM missing",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=cs,
+    )
+    res = adapter.execute_preview(req)
+    assert res.status.name == "FAILED"
+    assert res.frame is None
+    assert res.error_message is not None
