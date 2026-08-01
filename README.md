@@ -11,7 +11,7 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 ## Features
 - **Multi-Engine Support:** Execute SQL via DuckDB (local) or Spark (local[*]). Native support for CSV, Parquet, JSON, and Excel (`.xlsx`, `.xls`).
 - **📁 Dataset Catalog:** Improved catalog in the desktop shell with native dialogs and drag-and-drop file intake.
-- **🧰 Desktop SQL Editor:** QScintilla-based editor with line numbers, brace matching, and SQL formatting.
+- **🧰 Desktop SQL Editor:** QScintilla-based editor with line numbers, brace matching, SQL formatting, function call tips, and intelligent SQL completion (`Ctrl+Space` shortcut and configurable auto-trigger threshold).
 - **🔗 Multi-Table Queries:** Perform JOINs, unions, and subqueries across different file formats in a single session.
 - **📊 Schema & Metadata HUD:** Instant visibility of column names and data types for any dataset in your catalog.
 - **SQL Translation:** Real-time translation between DuckDB and SparkSQL dialects using SQLGlot.
@@ -54,10 +54,11 @@ wherewolf-desktop
 
 1. Use the **Dataset Catalog** in the desktop shell to browse and add files via native dialog or drag-and-drop.
 2. Each file is assigned an alias (e.g., `users`, `orders`).
-3. Write SQL in the QScintilla editor.
+3. Write SQL in the QScintilla editor with SQL IntelliSense (`Ctrl+Space` for manual autocompletion, automatic suggestion after typing 2 characters, table/CTE alias resolution, qualified column completion, function call tips).
 4. Click **Format SQL** to normalize syntax.
 5. View schema metadata from the catalog.
 6. Query execution is coming in a later phase.
+
 
 ## Development
 

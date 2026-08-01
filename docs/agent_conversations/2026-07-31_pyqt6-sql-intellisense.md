@@ -51,6 +51,13 @@
 - Task 9 complete: `tests/test_completion_service.py` passing (24 tests total).
 - Task 10 complete: `tests/test_completion_adapter.py` passing (3 tests).
 - Task 11 complete: `tests/test_sql_editor.py` & `tests/test_settings_service.py` passing.
+- Task 12 complete: `README.md` updated, full test suite and 25-run flake check passed cleanly with 0 crashes.
+
+## Verification
+- Quality gates: `ruff check`, `ruff format`, `ty check`, `pytest` (222 passed, 1 skipped).
+- Flake check: 25 consecutive runs with 0 native crashes.
+- TDD check: `scripts/check_tdd.sh` verified flat test structure for all new modules.
+
 
 
 
