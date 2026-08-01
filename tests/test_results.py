@@ -1,4 +1,5 @@
 import polars as pl
+from conftest import APPTEST_TIMEOUT
 from streamlit.testing.v1 import AppTest
 
 from wherewolf.execution import QueryResult
@@ -6,7 +7,7 @@ from wherewolf.execution import QueryResult
 
 def test_results_rendering_success():
     """Verify ResultsView renders properly on success."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
     at.run()
 
     at.session_state.catalog = {"dataset": "/tmp/fake.csv"}
@@ -26,7 +27,7 @@ def test_results_rendering_success():
 
 def test_results_rendering_failure():
     """Verify ResultsView renders properly on failure."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
     at.run()
 
     at.session_state.catalog = {"dataset": "/tmp/fake.csv"}

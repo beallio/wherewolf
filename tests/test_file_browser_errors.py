@@ -1,3 +1,4 @@
+from conftest import APPTEST_TIMEOUT
 from streamlit.testing.v1 import AppTest
 
 
@@ -9,7 +10,7 @@ def test_file_browser_filters_invalid_extension(tmp_path):
     invalid_file = tmp_path / "data.txt"
     invalid_file.write_text("not data")
 
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
 
     # 2. Set the directory in session state
     at.session_state["wherewolf_fs_curr_dir"] = str(tmp_path)

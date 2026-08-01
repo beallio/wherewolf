@@ -1,0 +1,25 @@
+{
+  "date": "2026-08-01",
+  "task_objective": "Eliminate the transient Streamlit AppTest CI timeout flake across every AppTest.from_file call site.",
+  "files_modified": [
+    "tests/conftest.py",
+    "tests/test_app.py",
+    "tests/test_app_flow.py",
+    "tests/test_results.py",
+    "tests/test_ui_branding.py",
+    "tests/test_app_cancel.py",
+    "tests/test_file_browser_errors.py",
+    "tests/reproduce_issue_symlink_v2.py",
+    "docs/plans/apptest_timeout_flake.md"
+  ],
+  "tests_added": [],
+  "design_decisions": [
+    "Defined APPTEST_TIMEOUT once in tests/conftest.py and passed it explicitly to all 13 AppTest.from_file call sites.",
+    "Selected 30 seconds: ten times Streamlit's three-second default, providing ample CI-runner headroom without adding time to successful runs."
+  ],
+  "results": {
+    "python_3_14": "307 passed, 1 skipped",
+    "python_3_12_no_cov": "307 passed, 1 skipped",
+    "interpreter_restored": "Python 3.14.6"
+  }
+}
