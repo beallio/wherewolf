@@ -12,12 +12,14 @@
 - `src/wherewolf/services/completion_context.py` (lexical cursor context detector)
 - `src/wherewolf/services/sql_metadata.py` (dialect keyword and function metadata)
 - `src/wherewolf/services/completion_service.py` (added call_tip for function call tips)
+- `src/wherewolf/desktop/widgets/completion_adapter.py` (QScintilla presentation adapter)
 
 ## Tests Added
 - `tests/test_completion_models.py`
 - `tests/test_completion_context.py`
 - `tests/test_sql_metadata.py`
 - `tests/test_completion_service.py`
+- `tests/test_completion_adapter.py`
 
 ## Design Decisions
 - Followed 12-task plan incrementally.
@@ -29,6 +31,7 @@
 - Implemented CTE discovery and derivable column resolution, including catalog table shadowing by CTEs.
 - Implemented 6 ranking tiers, deterministic sorting, dialect identifier quoting (`"name"`), and function parens (`NAME(`).
 - Implemented `call_tip()` finding unclosed function parens and reporting innermost function signature.
+- Implemented `CompletionAdapter` mapping `CompletionItem` tuples to QScintilla `showUserList`, type icon markers, and replacing typed prefix on activation.
 
 ## Results
 - Task 1 baseline: 179 passed, 1 skipped.
@@ -40,6 +43,8 @@
 - Task 7 complete: `tests/test_completion_service.py` passing (17 tests total).
 - Task 8 complete: `tests/test_completion_service.py` passing (20 tests total).
 - Task 9 complete: `tests/test_completion_service.py` passing (24 tests total).
+- Task 10 complete: `tests/test_completion_adapter.py` passing (3 tests).
+
 
 
 
