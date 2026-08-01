@@ -11,7 +11,7 @@
 - `src/wherewolf/domain/models.py` (added CompletionContext, CompletionItem)
 - `src/wherewolf/services/completion_context.py` (lexical cursor context detector)
 - `src/wherewolf/services/sql_metadata.py` (dialect keyword and function metadata)
-- `src/wherewolf/services/completion_service.py` (ranking tiers, identifier quoting, keywords, functions)
+- `src/wherewolf/services/completion_service.py` (added call_tip for function call tips)
 
 ## Tests Added
 - `tests/test_completion_models.py`
@@ -28,6 +28,7 @@
 - Implemented `alias.` column resolution with SQLGlot AST and lexical fallback on parse error.
 - Implemented CTE discovery and derivable column resolution, including catalog table shadowing by CTEs.
 - Implemented 6 ranking tiers, deterministic sorting, dialect identifier quoting (`"name"`), and function parens (`NAME(`).
+- Implemented `call_tip()` finding unclosed function parens and reporting innermost function signature.
 
 ## Results
 - Task 1 baseline: 179 passed, 1 skipped.
@@ -38,6 +39,8 @@
 - Task 6 complete: `tests/test_completion_service.py` passing (13 tests total).
 - Task 7 complete: `tests/test_completion_service.py` passing (17 tests total).
 - Task 8 complete: `tests/test_completion_service.py` passing (20 tests total).
+- Task 9 complete: `tests/test_completion_service.py` passing (24 tests total).
+
 
 
 

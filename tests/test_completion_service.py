@@ -279,3 +279,47 @@ def test_ranking_determinism() -> None:
     items = service.complete(ctx)
     labels = [item.label for item in items if item.kind == CompletionKind.TABLE]
     assert labels == ["a_tbl", "b_tbl"]
+
+
+def test_call_tip_known_function() -> None:
+    service = SqlCompletionService()
+    sql = "SELECT COALESCE("
+    ctx = CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=())
+    tip = service.call_tip(ctx)
+    assert tip is not None
+    assert "COALESCE(" in tip
+
+
+def test_call_tip_nested_function_returns_innermost() -> None:
+    service = SqlCompletionService()
+    sql = "SELECT COALESCE(COUNT("
+    ctx = CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=())
+    tip = service.call_tip(ctx)
+    assert tip is not None
+    assert "COUNT(" in tip
+
+
+def test_call_tip_outside_or_unknown_returns_none() -> None:
+    service = SqlCompletionService()
+    sql_outside = "SELECT * FROM orders"
+    ctx_outside = CompletionContext(
+        sql=sql_outside, cursor_offset=len(sql_outside), dialect="duckdb", catalog=()
+    )
+    assert service.call_tip(ctx_outside) is None
+
+    sql_unknown = "SELECT UNKNOWN_FUNCTION("
+    ctx_unknown = CompletionContext(
+        sql=sql_unknown, cursor_offset=len(sql_unknown), dialect="duckdb", catalog=()
+    )
+    assert service.call_tip(ctx_unknown) is None
+
+
+def test_call_tip_inside_string_or_comment_returns_none() -> None:
+    service = SqlCompletionService()
+    sql_str = "SELECT 'COALESCE('"
+    ctx_str = CompletionContext(sql=sql_str, cursor_offset=17, dialect="duckdb", catalog=())
+    assert service.call_tip(ctx_str) is None
+
+    sql_cmt = "SELECT -- COALESCE("
+    ctx_cmt = CompletionContext(sql=sql_cmt, cursor_offset=18, dialect="duckdb", catalog=())
+    assert service.call_tip(ctx_cmt) is None

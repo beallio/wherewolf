@@ -11,7 +11,11 @@ from sqlglot import expressions as exp
 from wherewolf.domain.enums import CompletionKind
 from wherewolf.domain.models import CatalogEntry, ColumnSchema, CompletionContext, CompletionItem
 from wherewolf.services.completion_context import CursorContextKind, detect_context
-from wherewolf.services.sql_metadata import get_dialect_functions, get_dialect_keywords
+from wherewolf.services.sql_metadata import (
+    get_dialect_functions,
+    get_dialect_keywords,
+    lookup_function_info,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,6 +340,35 @@ class SqlCompletionService:
         for entry in catalog:
             if entry.alias.lower() == target:
                 return entry
+        return None
+
+    def call_tip(self, context: CompletionContext) -> str | None:
+        cursor_ctx = detect_context(context.sql, context.cursor_offset)
+        if cursor_ctx.kind == CursorContextKind.SUPPRESSED:
+            return None
+
+        sql_before = context.sql[: context.cursor_offset]
+        depth = 0
+        idx = len(sql_before) - 1
+
+        while idx >= 0:
+            ch = sql_before[idx]
+            if ch == ")":
+                depth += 1
+            elif ch == "(":
+                if depth > 0:
+                    depth -= 1
+                else:
+                    prefix_before_paren = sql_before[:idx].rstrip()
+                    match = re.search(r"([a-zA-Z0-9_]+)$", prefix_before_paren)
+                    if match:
+                        fn_name = match.group(1)
+                        info = lookup_function_info(context.dialect, fn_name)
+                        if info is not None:
+                            return info.signature
+                    return None
+            idx -= 1
+
         return None
 
 
