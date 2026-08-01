@@ -10,19 +10,24 @@
 - `docs/agent_conversations/2026-07-31_pyqt6-sql-intellisense.md` (session log)
 - `src/wherewolf/domain/models.py` (added CompletionContext, CompletionItem)
 - `src/wherewolf/services/completion_context.py` (lexical cursor context detector)
+- `src/wherewolf/services/sql_metadata.py` (dialect keyword and function metadata)
 
 ## Tests Added
 - `tests/test_completion_models.py`
 - `tests/test_completion_context.py`
+- `tests/test_sql_metadata.py`
 
 ## Design Decisions
 - Followed 12-task plan incrementally.
 - Added dataclasses `CompletionContext` and `CompletionItem` with `__post_init__` empty label check.
 - Built pure lexer `detect_context()` without SQLGlot for string/comment suppression and cursor classification.
+- Implemented `sql_metadata.py` providing keywords and call-tip signatures for DuckDB and Spark.
 
 ## Results
 - Task 1 baseline: 179 passed, 1 skipped.
 - Task 2 complete: `tests/test_completion_models.py` passing (3 tests).
 - Task 3 complete: `tests/test_completion_context.py` passing (6 tests).
+- Task 4 complete: `tests/test_sql_metadata.py` passing (3 tests).
+
 
 
