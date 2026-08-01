@@ -7,6 +7,7 @@
 
 ## Files Modified
 - `docs/agent_conversations/2026-07-31_pyqt6-execution-controller.md`
+- `README.md`
 - `src/wherewolf/services/execution_request_builder.py`
 - `src/wherewolf/services/__init__.py`
 - `src/wherewolf/domain/models.py`
@@ -45,6 +46,8 @@
 - Task 7 implemented `QueryController` state machine and signal routing with TDD green.
 - Task 8 wired Run and Cancel actions to `QueryController` in `MainWindow` with TDD green.
 - Task 9 added end-to-end integration tests in `tests/test_desktop_duckdb_flow.py` with history append, green.
+- Task 10 updated documentation in `README.md` and finalized session log.
+
 
 
 
