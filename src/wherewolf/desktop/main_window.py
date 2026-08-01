@@ -21,6 +21,7 @@ from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.widgets import CatalogDock, SqlEditor
+from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.workers import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
@@ -160,10 +161,13 @@ class MainWindow(QMainWindow):
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
-            self._results_text.setPlainText(str(result.frame))
+            self.result_table_view.set_frame(result.frame)
+            self._results_text.setPlainText("")
         elif result.status is ExecutionStatus.FAILED:
+            self.result_table_view.set_frame(None)
             self._results_text.setPlainText(f"Error ({result.error_type}): {result.error_message}")
         elif result.status is ExecutionStatus.CANCELLED:
+            self.result_table_view.set_frame(None)
             self._results_text.setPlainText("Query execution cancelled.")
 
         if result.status is ExecutionStatus.SUCCEEDED:
@@ -248,8 +252,13 @@ class MainWindow(QMainWindow):
 
         results = QTabWidget(self)
         results.setObjectName("results_tabs")
+        self.result_table_view = ResultTableView(self)
+        self.result_table_view.setObjectName("result_table_view")
+        self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
         self._results_text = QTextEdit("Results pending")
-        results.addTab(self._results_text, "Results")
+        self._results_text.setObjectName("results_text")
+        results.addTab(self.result_table_view, "Results")
+        results.addTab(self._results_text, "Messages")
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
@@ -311,12 +320,7 @@ class MainWindow(QMainWindow):
                 worker.wait()
         self._schema_workers.clear()
 
-        if hasattr(self, "query_controller") and self.query_controller is not None:
-            for w in list(self.query_controller._workers):
-                if w.isRunning():
-                    w.quit()
-                    w.wait()
-            self.query_controller._workers.clear()
+        self.query_controller.shutdown()
 
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())

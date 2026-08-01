@@ -1,6 +1,9 @@
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
-from PyQt6.QtCore import QCoreApplication, QSettings
+import polars as pl
+from PyQt6.QtCore import QCoreApplication, QSettings, Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -12,6 +15,14 @@ from PyQt6.QtWidgets import (
 )
 
 from wherewolf.desktop.main_window import MainWindow
+from wherewolf.domain import (
+    CatalogBinding,
+    EngineKind,
+    ExecutionRequest,
+    ExecutionStatus,
+    QueryResult,
+    SourceFormat,
+)
 from wherewolf.services import SettingsService
 
 
@@ -143,6 +154,7 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     window = MainWindow()
     qtbot.addWidget(window)
     window._catalog_service.add_paths((csv_file,))
+    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
     window.editor.setText("SELECT * FROM data")
     window.editor.selectAll()
 
@@ -163,15 +175,10 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     assert "DuckDB" in msg
     assert "Succeeded" in msg
     assert "Preview Rows: 2" in msg
-    # Assert preview_row_count is not presented as total count
     assert "Total Rows: 2" not in msg
 
 
 def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Path) -> None:
-    from uuid import uuid4
-
-    from wherewolf.domain import CatalogBinding, SourceFormat
-
     csv_file = tmp_path / "fast.csv"
     csv_file.write_text("id\n1\n")
 
@@ -186,3 +193,143 @@ def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Pat
     window.close()
 
     assert len(window._schema_workers) == 0
+
+
+def test_main_window_close_calls_query_controller_shutdown(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    shutdown_called = False
+
+    def spy_shutdown():
+        nonlocal shutdown_called
+        shutdown_called = True
+
+    monkeypatch.setattr(window.query_controller, "shutdown", spy_shutdown)
+    window.close()
+
+    assert shutdown_called is True
+
+
+def test_main_window_result_grid_integration(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    df = pl.DataFrame({"x": [100, 200], "y": ["alpha", "beta"]})
+
+    req_id = uuid4()
+    now = datetime.now(UTC)
+    request = ExecutionRequest(
+        request_id=req_id,
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT * FROM test",
+        executable_sql="SELECT * FROM test",
+        catalog=(),
+        preview_limit=1000,
+        submitted_at=now,
+    )
+
+    # 1. Succeeded result
+    res_success = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=df,
+        execution_seconds=0.12,
+        preview_row_count=2,
+        total_row_count=2,
+        truncated=False,
+        completed_at=now,
+    )
+    window._on_query_result_ready(res_success, request)
+
+    grid = window.result_table_view
+    assert grid.proxy_model().rowCount() == 2
+    assert grid.proxy_model().columnCount() == 2
+    assert grid.proxy_model().data(grid.proxy_model().index(0, 0), Qt.ItemDataRole.UserRole) == 100
+    assert (
+        grid.proxy_model().data(grid.proxy_model().index(1, 1), Qt.ItemDataRole.UserRole) == "beta"
+    )
+    assert "Preview Rows: 2" in window.status_bar.currentMessage()
+
+    # 2. Failed result: grid cleared, error message shown
+    res_failed = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.05,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=now,
+        error_type="SyntaxError",
+        error_message="near SELECT",
+    )
+    window._on_query_result_ready(res_failed, request)
+    assert grid.proxy_model().rowCount() == 0
+    assert "Error (SyntaxError): near SELECT" in window._results_text.toPlainText()
+
+    # 3. Cancelled result: grid cleared
+    res_cancelled = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.CANCELLED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=now,
+    )
+    window._on_query_result_ready(res_cancelled, request)
+    assert grid.proxy_model().rowCount() == 0
+    assert "cancelled" in window._results_text.toPlainText().lower()
+
+
+def test_main_window_result_grid_gui_thread_population(qtbot, monkeypatch) -> None:
+    from PyQt6.QtCore import QThread
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    app = QCoreApplication.instance()
+    assert app is not None
+    gui_thread = app.thread()
+    assert window.thread() == gui_thread
+    assert window.result_table_view.thread() == gui_thread
+    assert window.result_table_view.source_model().thread() == gui_thread
+    assert window.result_table_view.proxy_model().thread() == gui_thread
+
+    # QueryController.result_ready is connected to _on_query_result_ready
+    # Verify execution updates model on GUI thread
+    populated_thread: QThread | None = None
+
+    def spy_set_frame(frame):
+        nonlocal populated_thread
+        populated_thread = QThread.currentThread()
+        type(window.result_table_view).set_frame(window.result_table_view, frame)
+
+    monkeypatch.setattr(window.result_table_view, "set_frame", spy_set_frame)
+
+    now = datetime.now(UTC)
+    request = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=1000,
+        submitted_at=now,
+    )
+    result = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"a": [1]}),
+        execution_seconds=0.01,
+        preview_row_count=1,
+        total_row_count=1,
+        truncated=False,
+        completed_at=now,
+    )
+
+    window._on_query_result_ready(result, request)
+    assert populated_thread == gui_thread

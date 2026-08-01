@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, QThread, pyqtSignal
 from PyQt6.QtTest import QSignalSpy
 
 from wherewolf.desktop.query_controller import QueryController
@@ -272,3 +272,32 @@ def test_query_controller_ignores_stale_worker_signal(qtbot):
     assert controller.status is ExecutionStatus.RUNNING
     assert controller.active_request == req1
     assert len(result_spy) == 0
+
+
+class _ShutdownWorker(QThread):
+    def __init__(self):
+        super().__init__()
+        self.quit_called = False
+        self.wait_called = False
+
+    def isRunning(self) -> bool:
+        return True
+
+    def quit(self) -> None:
+        self.quit_called = True
+
+    def wait(self, *args, **kwargs) -> bool:
+        self.wait_called = True
+        return True
+
+
+def test_query_controller_shutdown():
+    controller = QueryController(engine_registry=None)
+    worker = _ShutdownWorker()
+    controller._workers.append(worker)
+
+    controller.shutdown()
+
+    assert worker.quit_called is True
+    assert worker.wait_called is True
+    assert len(controller._workers) == 0

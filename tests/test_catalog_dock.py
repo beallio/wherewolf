@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import cast
 from unittest.mock import Mock
 
+import pytest
 from PyQt6.QtCore import QMimeData, QPointF, Qt, QUrl
 from PyQt6.QtGui import QDropEvent
 from PyQt6.QtTest import QSignalSpy
@@ -14,6 +15,17 @@ from wherewolf.domain import ColumnSchema, SchemaResult
 from wherewolf.services import CatalogService
 
 _DROP_EVENT_MIME_DATA_CACHE: list[QMimeData] = []
+
+
+@pytest.fixture(autouse=True)
+def _drain_schema_workers(qtbot):
+    yield
+    for widget in QApplication.topLevelWidgets():
+        if isinstance(widget, MainWindow):
+            qtbot.waitUntil(
+                lambda target=widget: not any(w.isRunning() for w in target._schema_workers),
+                timeout=3000,
+            )
 
 
 def _drop_event(urls: list[Path]) -> QDropEvent:
@@ -56,7 +68,6 @@ def test_catalog_dock_drag_and_drop_adds_supported_files(qtbot, tmp_path: Path) 
 
     assert len(service.snapshot()) == 2
     assert event.isAccepted()
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
 
 def test_catalog_dock_drag_and_drop_rejects_directories(qtbot, tmp_path: Path) -> None:
@@ -96,7 +107,6 @@ def test_catalog_dock_drag_drop_unsupported_files_are_single_warning_and_still_a
     assert len(service.snapshot()) == 1
     assert len(messages) == 1
     assert "Unsupported source format" in messages[0]
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
 
 def test_catalog_dock_drag_drop_ignores_no_local_files(qtbot) -> None:
@@ -136,7 +146,6 @@ def test_catalog_dock_and_dialog_share_add_paths_service_call(
     assert calls[0][0] == (first,)
     window.catalog.add_paths((first,))
     assert len(calls) == 2
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
 
 def test_catalog_dock_drag_and_drop_deduplicates_resolved_paths(qtbot, tmp_path: Path) -> None:
@@ -152,7 +161,6 @@ def test_catalog_dock_drag_and_drop_deduplicates_resolved_paths(qtbot, tmp_path:
     window.catalog.dropEvent(_drop_event([source, duplicate]))
 
     assert len(service.snapshot()) == 1
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
 
 def test_main_window_drag_and_drop_is_forwarded_to_catalog(
@@ -185,7 +193,6 @@ def test_catalog_context_menu_copy_and_remove_actions(qtbot, tmp_path: Path) -> 
     qtbot.addWidget(window)
     window.catalog.add_paths((file_path,))
     qtbot.waitUntil(lambda: window.catalog.model.rowCount() == 1)
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
     window.catalog.view.selectRow(0)
     dock = window.catalog
@@ -200,7 +207,6 @@ def test_catalog_context_menu_copy_and_remove_actions(qtbot, tmp_path: Path) -> 
 
     dock._remove_action.trigger()
     assert len(service.snapshot()) == 0
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
 
 def test_catalog_context_menu_rename_error_message(qtbot, tmp_path: Path, monkeypatch) -> None:
@@ -212,7 +218,6 @@ def test_catalog_context_menu_rename_error_message(qtbot, tmp_path: Path, monkey
 
     window.catalog.add_paths((path,))
     qtbot.waitUntil(lambda: window.catalog.model.rowCount() == 1)
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
     window.catalog.view.selectRow(0)
 
     monkeypatch.setattr(
@@ -230,7 +235,6 @@ def test_catalog_context_menu_rename_error_message(qtbot, tmp_path: Path, monkey
 
     assert messages
     assert "must be a SQL identifier" in messages[0]
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
 
 def test_catalog_context_menu_refresh_schema_emits_binding(qtbot, tmp_path: Path) -> None:
@@ -243,7 +247,6 @@ def test_catalog_context_menu_refresh_schema_emits_binding(qtbot, tmp_path: Path
     qtbot.addWidget(window)
     window.catalog.add_paths((path,))
     qtbot.waitUntil(lambda: window.catalog.model.rowCount() == 1)
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
     window.catalog.view.selectRow(0)
 
     spy = []
@@ -252,7 +255,6 @@ def test_catalog_context_menu_refresh_schema_emits_binding(qtbot, tmp_path: Path
 
     assert len(spy) == 1
     assert spy[0].alias == "a"
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
 
 def test_catalog_dock_refresh_schema_updates_service_path(qtbot, tmp_path: Path) -> None:
@@ -264,7 +266,6 @@ def test_catalog_dock_refresh_schema_updates_service_path(qtbot, tmp_path: Path)
 
     window.catalog.add_paths((file_path,))
     qtbot.waitUntil(lambda: window.catalog.model.rowCount() == 1)
-    qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
 
     service.update_schema(
         SchemaResult(
