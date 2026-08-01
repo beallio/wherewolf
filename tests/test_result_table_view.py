@@ -243,13 +243,14 @@ def test_local_sort_does_not_rerun_query(qtbot, monkeypatch) -> None:
     # Populate grid
     df = pl.DataFrame({"a": [3, 1, 2], "b": ["z", "x", "y"]})
     window.result_table_view.set_frame(df)
+    window.editor.setText("SELECT * FROM preview")
 
     assert executed_count == 0
 
-    # Perform local sorting operations on ResultTableView proxy model
-    window.result_table_view.proxy_model().sort(0, Qt.SortOrder.AscendingOrder)
-    window.result_table_view.proxy_model().sort(0, Qt.SortOrder.DescendingOrder)
-    window.result_table_view.proxy_model().sort(-1, Qt.SortOrder.AscendingOrder)
+    # Drive sorting through the view so a future header signal connection is exercised.
+    window.result_table_view.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+    window.result_table_view.sortByColumn(0, Qt.SortOrder.DescendingOrder)
+    window.result_table_view.sortByColumn(-1, Qt.SortOrder.AscendingOrder)
 
     # Local sort must NOT submit any new executions through QueryController
     assert executed_count == 0
