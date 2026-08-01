@@ -3,6 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import polars as pl
+import pytest
 from PyQt6.QtCore import QCoreApplication, QSettings, Qt
 from PyQt6.QtWidgets import (
     QApplication,
@@ -183,6 +184,53 @@ def test_history_catalog_restore_loads_available_files_and_reports_missing_ones(
     qtbot.waitUntil(lambda: len(window._catalog_service.entries) == 1)
     assert window._catalog_service.entries[0].path == existing.resolve()
     assert str(missing) in window.status_bar.currentMessage()
+
+
+def test_main_window_restores_geometry_dock_layout_and_splitter_state(
+    tmp_path: Path, qtbot
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "restore")
+    original = MainWindow(settings_service=service)
+    qtbot.addWidget(original)
+    original.resize(960, 720)
+    original.show()
+    qtbot.waitUntil(lambda: original._central_splitter.height() > 0)
+    original._central_splitter.setSizes([210, 390])
+    original.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, original._history_dock_widget)
+    service.save_window_geometry(original.saveGeometry().data())
+    service.save_window_state(original.saveState().data())
+    service.save_splitter_sizes(original._central_splitter.sizes())
+
+    restored = MainWindow(settings_service=service)
+    qtbot.addWidget(restored)
+    restored.show()
+    qtbot.waitUntil(lambda: restored._central_splitter.height() > 0)
+
+    assert (
+        restored.dockWidgetArea(restored._history_dock_widget)
+        is Qt.DockWidgetArea.BottomDockWidgetArea
+    )
+    original_sizes = original._central_splitter.sizes()
+    restored_sizes = restored._central_splitter.sizes()
+    assert restored_sizes[0] / sum(restored_sizes) == pytest.approx(
+        original_sizes[0] / sum(original_sizes), abs=0.001
+    )
+
+
+def test_main_window_without_stored_settings_has_a_sane_default_layout(
+    tmp_path: Path, qtbot
+) -> None:
+    window = MainWindow(settings_service=_configure_qsettings_path(tmp_path / "first-run"))
+    qtbot.addWidget(window)
+    window.resize(800, 600)
+    window.show()
+    qtbot.waitUntil(lambda: window._central_splitter.height() > 0)
+
+    assert (
+        window.dockWidgetArea(window._history_dock_widget) is Qt.DockWidgetArea.RightDockWidgetArea
+    )
+    assert len(window._central_splitter.sizes()) == 2
+    assert all(size > 0 for size in window._central_splitter.sizes())
 
 
 def test_main_window_action_enabled_states_and_status_bar_during_execution(
