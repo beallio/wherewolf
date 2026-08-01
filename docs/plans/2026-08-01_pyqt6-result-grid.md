@@ -65,6 +65,28 @@ not outlive its parent.** V8 exists to catch a regression here and it is a hard 
 
 `timid = true` in `pyproject.toml` is load-bearing on 3.14. **Do not remove it.**
 
+### Python floor: 3.12, not 3.14
+
+`requires-python = ">=3.12"` was **restored** immediately before this phase, after the segfault
+that caused the 3.12 deprecation was root-caused and fixed (see
+`docs/review/crash-b-probe-finding.md`). CI tests **both** `3.12` and `3.14`.
+
+Everything you write must run on **Python 3.12**:
+
+- **No PEP 758 unparenthesized `except`.** `except OSError, ValueError:` is a SyntaxError on
+  3.12. Write `except (OSError, ValueError):`.
+- No 3.13+/3.14-only typing constructs or stdlib APIs.
+- `ruff` targets the declared floor, so `ruff check --fix` and `ruff format` will keep you
+  honest automatically — **let the tools drive rather than hand-writing modern syntax.**
+
+**Verify on both interpreters before marking a round complete** (see V1). A 3.14-only construct
+will pass every local check and then fail the 3.12 CI leg.
+
+Practical warning: `./run.sh uv run --python 3.12 ...` re-syncs the **shared**
+`UV_PROJECT_ENVIRONMENT` at `/tmp/wherewolf/.venv` to 3.12. After testing the 3.12 leg, run
+`./run.sh uv sync --all-extras --dev --python 3.14` to restore the dev interpreter, or your
+subsequent runs silently measure the wrong thing.
+
 ### Hard constraint: Streamlit must keep working
 
 `wherewolf` (Streamlit) and `wherewolf-desktop` (Qt) both ship until Phase 14. Do not modify
@@ -304,11 +326,17 @@ The round is not complete unless:
 State sample sizes and decision rules **before** measuring. Record measured outcomes, not
 "green".
 
-### V1 — Suite and gates
+### V1 — Suite and gates, on BOTH interpreters
 ```bash
-./run.sh uv run pytest -q                       # record the tally
+./run.sh uv run pytest -q                        # 3.14 — record the tally
 scripts/orchestration/run-quality-gates          # must exit 0
+
+./run.sh uv run --python 3.12 pytest -q --no-cov # 3.12 — record the tally
+./run.sh uv sync --all-extras --dev --python 3.14 # restore the dev interpreter
 ```
+Record **both** tallies. **Failure looks like:** running only 3.14 and discovering a
+3.14-only construct when CI runs the 3.12 leg. A SyntaxError on 3.12 does not fail
+gracefully — the suite cannot even import.
 
 ### V2 — Streamlit path behaviourally untouched
 ```bash
