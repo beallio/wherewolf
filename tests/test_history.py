@@ -1,3 +1,5 @@
+import json
+from unittest.mock import patch
 from uuid import UUID
 
 import pytest
@@ -61,3 +63,70 @@ def test_new_entries_have_versioned_stable_ids_and_streamlit_keys(storage_dir):
         assert UUID(entry["id"]).version == 4
         assert entry["timestamp"][:16]
         assert entry["query"] == "SELECT * FROM duplicate"
+
+
+def test_v1_history_migrates_all_records_in_order_and_only_once(storage_dir):
+    history_file = storage_dir / "history.json"
+    v1_entries = [
+        {
+            "timestamp": f"2026-08-01T12:{index:02d}:00+00:00",
+            "engine": "duckdb",
+            "query": f"SELECT {index}",
+            "path": "",
+        }
+        for index in range(100)
+    ]
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps(v1_entries))
+
+    manager = HistoryManager(storage_path=history_file)
+    migrated = manager.get_all()
+
+    assert [entry["query"] for entry in migrated] == [entry["query"] for entry in v1_entries]
+    assert len(migrated) == 100
+    assert all(entry["schema_version"] == 2 for entry in migrated)
+    assert len({entry["id"] for entry in migrated}) == 100
+
+    first_persisted_content = history_file.read_text()
+    assert manager.get_all() == migrated
+    assert history_file.read_text() == first_persisted_content
+
+
+def test_existing_v2_history_is_not_rewritten(storage_dir):
+    history_file = storage_dir / "history.json"
+    v2_entries = [
+        {
+            "schema_version": 2,
+            "id": "5bb31a12-165e-4a7d-b4f6-439d78c0d50d",
+            "timestamp": "2026-08-01T12:00:00+00:00",
+            "engine": "duckdb",
+            "query": "SELECT 1",
+            "path": "",
+            "catalog": {},
+        }
+    ]
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps(v2_entries))
+
+    manager = HistoryManager(storage_path=history_file)
+
+    assert manager.get_all() == v2_entries
+    assert json.loads(history_file.read_text()) == v2_entries
+
+
+def test_failed_migration_leaves_the_original_v1_file_intact(storage_dir):
+    history_file = storage_dir / "history.json"
+    v1_entries = [
+        {"timestamp": "2026-08-01T12:00:00+00:00", "engine": "duckdb", "query": "SELECT 1"}
+    ]
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps(v1_entries))
+
+    manager = HistoryManager(storage_path=history_file)
+    with (
+        patch.object(manager, "_write_history", side_effect=OSError("Disk full")),
+        pytest.raises(OSError, match="Disk full"),
+    ):
+        manager.get_all()
+
+    assert json.loads(history_file.read_text()) == v1_entries

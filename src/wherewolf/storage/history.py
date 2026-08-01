@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
@@ -20,6 +22,27 @@ class HistoryManager:
             with open(self.storage_path, "w") as f:
                 json.dump([], f)
 
+    def _write_history(self, history: list[dict]) -> None:
+        """Atomically persist the complete history without replacing a good file on failure."""
+        temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path.parent, text=True)
+        try:
+            with os.fdopen(temp_fd, "w") as f:
+                json.dump(history, f, indent=2)
+            os.replace(temp_path, self.storage_path)
+        except Exception:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            raise
+
+    @staticmethod
+    def _migrate_v1_entry(entry: dict) -> dict:
+        """Return the v2 representation of one legacy history entry."""
+        migrated = dict(entry)
+        migrated["schema_version"] = 2
+        migrated["id"] = str(uuid4())
+        migrated.setdefault("catalog", {"dataset": migrated.get("path", "")})
+        return migrated
+
     def add_entry(
         self, engine: str, query: str, path: str = "", catalog: dict[str, str] | None = None
     ):
@@ -31,9 +54,6 @@ class HistoryManager:
             path: The dataset path used (legacy).
             catalog: A mapping of aliases to filesystem paths.
         """
-        import os
-        import tempfile
-
         history = self.get_all()
         entry = {
             "schema_version": 2,
@@ -53,16 +73,7 @@ class HistoryManager:
         # Limit history to 100 entries
         history = history[:100]
 
-        # Atomic write using a temporary file
-        temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path.parent, text=True)
-        try:
-            with os.fdopen(temp_fd, "w") as f:
-                json.dump(history, f, indent=2)
-            os.replace(temp_path, self.storage_path)
-        except Exception:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            raise
+        self._write_history(history)
 
     def get_all(self) -> list[dict]:
         """Returns all history entries.
@@ -75,26 +86,17 @@ class HistoryManager:
                 return []
             with open(self.storage_path, "r") as f:
                 history = json.load(f)
-                # Backward compatibility layer: Ensure every entry has a catalog
-                for entry in history:
-                    if "catalog" not in entry:
-                        entry["catalog"] = {"dataset": entry.get("path", "")}
-                return history
         except (OSError, json.JSONDecodeError):
-            # If corrupted, we might want to be more careful, but for now returning empty
             return []
+
+        if not isinstance(history, list):
+            return []
+        if any(entry.get("schema_version") != 2 for entry in history if isinstance(entry, dict)):
+            migrated = [self._migrate_v1_entry(entry) for entry in history]
+            self._write_history(migrated)
+            return migrated
+        return history
 
     def clear(self):
         """Clears the query history."""
-        import os
-        import tempfile
-
-        temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path.parent, text=True)
-        try:
-            with os.fdopen(temp_fd, "w") as f:
-                json.dump([], f)
-            os.replace(temp_path, self.storage_path)
-        except Exception:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            raise
+        self._write_history([])
