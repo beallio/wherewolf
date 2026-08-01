@@ -4,7 +4,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from wherewolf.domain.enums import EngineKind
-from wherewolf.domain.models import ExecutionRequest
+from wherewolf.domain.models import ExecutionRequest, SourceSnapshot
 from wherewolf.services.catalog_service import CatalogService
 from wherewolf.translation.translator import Translator
 
@@ -46,7 +46,22 @@ class ExecutionRequestBuilder:
             catalog=catalog_snapshot,
             preview_limit=preview_limit,
             submitted_at=submitted_at,
+            source_snapshots=tuple(
+                SourceSnapshot(
+                    path=binding.path,
+                    size=_stat_or_none(binding.path, "st_size"),
+                    mtime_ns=_stat_or_none(binding.path, "st_mtime_ns"),
+                )
+                for binding in catalog_snapshot
+            ),
         )
+
+
+def _stat_or_none(path, field: str) -> int | None:
+    try:
+        return int(getattr(path.stat(), field))
+    except OSError:
+        return None
 
 
 __all__ = ["ExecutionRequestBuilder"]

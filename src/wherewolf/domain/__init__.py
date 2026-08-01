@@ -13,6 +13,7 @@ from .models import (
     ExecutionRequest,
     QueryResult,
     SchemaResult,
+    SourceSnapshot,
     SqlDiagnostic,
 )
 
@@ -29,6 +30,7 @@ __all__ = [
     "SQLGLot_DIALECT_BY_ENGINE",
     "SchemaResult",
     "SourceFormat",
+    "SourceSnapshot",
     "SqlDiagnostic",
     "TranslationError",
     "UnsupportedFormatError",

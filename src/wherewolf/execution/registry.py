@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import util
+from pathlib import Path
 from uuid import UUID
 
 import polars as pl
@@ -19,6 +20,9 @@ from wherewolf.domain import (
     SchemaResult,
 )
 from wherewolf.execution.base import CancellationHandle, ExecutionEngine
+from wherewolf.services.export_destination import ExportFormat, write_atomically
+
+FULL_XLSX_ROW_LIMIT = 100_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +205,54 @@ class _DuckDBAdapter(ExecutionEngine):
             except Exception:  # noqa: BLE001, S110  # Cleanup boundary: ignore errors during connection closure
                 pass
 
+    def export_full(
+        self, request: ExecutionRequest, destination: Path, export_format: str
+    ) -> tuple[str, ...]:
+        """Re-execute request SQL and stream CSV/Parquet directly through COPY."""
+        import duckdb
+
+        warnings = _source_warnings(request)
+        if self._cancelled:
+            raise RuntimeError("Export cancelled")
+        con = duckdb.connect(database=":memory:")
+        self._con = con
+        try:
+            for binding in request.catalog:
+                self._register_view(con, str(binding.path), binding.alias)
+            fmt = ExportFormat(export_format)
+            if fmt is ExportFormat.XLSX:
+                row = con.sql(f"SELECT count(*) FROM ({request.executable_sql})").fetchone()
+                assert row is not None
+                count = row[0]
+                if count > FULL_XLSX_ROW_LIMIT:
+                    raise ValueError(
+                        f"Full XLSX export is limited to {FULL_XLSX_ROW_LIMIT:,} rows; use CSV or Parquet."
+                    )
+
+                def write_xlsx(path: Path) -> None:
+                    con.sql(request.executable_sql).pl().write_excel(path)
+
+                write_atomically(destination, write_xlsx)
+            else:
+                format_sql = "CSV" if fmt is ExportFormat.CSV else "PARQUET"
+
+                def copy_to(path: Path) -> None:
+                    escaped_temp = str(path).replace("'", "''")
+                    con.execute(
+                        f"COPY ({request.executable_sql}) TO '{escaped_temp}' (FORMAT {format_sql})"
+                    )
+
+                write_atomically(destination, copy_to)
+            if self._cancelled:
+                raise RuntimeError("Export cancelled")
+            return warnings
+        finally:
+            self._con = None
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001, S110
+                pass
+
     def inspect_schema(self, entry: CatalogEntry) -> SchemaResult:
         import duckdb
 
@@ -311,6 +363,11 @@ class _SparkAdapter(_BaseAdapter):
     def _cancel(self) -> Callable[[], None]:
         return self._engine.interrupt
 
+    def export_full(
+        self, request: ExecutionRequest, destination: Path, export_format: str
+    ) -> tuple[str, ...]:
+        raise ValueError("Full export is currently available only for DuckDB")
+
 
 class EngineRegistry:
     def available_engines(self) -> tuple[EngineDescriptor, ...]:
@@ -365,6 +422,20 @@ def _frame_to_columns(frame: pl.DataFrame) -> tuple[ColumnSchema, ...] | None:
             )
         )
     return tuple(columns)
+
+
+def _source_warnings(request: ExecutionRequest) -> tuple[str, ...]:
+    """Report source mutation without blocking an explicit export request."""
+    warnings: list[str] = []
+    for snapshot in request.source_snapshots:
+        try:
+            stat = snapshot.path.stat()
+        except OSError:
+            warnings.append(f"Source changed or is unavailable: {snapshot.path}")
+            continue
+        if stat.st_size != snapshot.size or stat.st_mtime_ns != snapshot.mtime_ns:
+            warnings.append(f"Source changed since query ran: {snapshot.path}")
+    return tuple(warnings)
 
 
 __all__ = ["EngineDescriptor", "EngineRegistry", "EngineUnavailableError"]

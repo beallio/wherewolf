@@ -19,6 +19,8 @@ class DesktopActions:
     show_completion: QAction
     reset_layout: QAction
     clear_history: QAction
+    export_preview: QAction
+    export_full: QAction
 
 
 def build_actions(parent: QWidget | None = None) -> DesktopActions:
@@ -50,6 +52,11 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     clear_history = QAction("Clear History", parent)
     clear_history.setEnabled(True)
 
+    export_preview = QAction("Export Preview…", parent)
+    export_preview.setEnabled(False)
+    export_full = QAction("Export Full Results…", parent)
+    export_full.setEnabled(False)
+
     return DesktopActions(
         run=run,
         cancel=cancel,
@@ -58,4 +65,6 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
         show_completion=show_completion,
         reset_layout=reset_layout,
         clear_history=clear_history,
+        export_preview=export_preview,
+        export_full=export_full,
     )

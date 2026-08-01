@@ -6,6 +6,12 @@ from collections.abc import Iterable
 
 import polars as pl
 
+from wherewolf.services.selection import (
+    ordered_selected_cells,
+    selected_rows,
+    selected_visual_columns,
+)
+
 NULL_PLACEHOLDER = "<null>"
 
 
@@ -47,15 +53,9 @@ def serialize_to_tsv(
     if column_order is None:
         column_order = list(range(frame.width))
 
-    sorted_cells = sorted(set(selected_list), key=lambda x: (x[0], x[1]))
-
-    rows_dict: dict[int, list[int]] = {}
-    for r, v_col in sorted_cells:
-        if r not in rows_dict:
-            rows_dict[r] = []
-        rows_dict[r].append(v_col)
-
-    used_visual_cols = sorted({v_col for _, v_col in sorted_cells})
+    sorted_cells = ordered_selected_cells(selected_list)
+    rows = selected_rows(sorted_cells)
+    used_visual_cols = selected_visual_columns(sorted_cells)
 
     lines = []
     if include_headers:
@@ -66,8 +66,8 @@ def serialize_to_tsv(
             header_parts.append(format_header_name(h_name, quote=quote_headers))
         lines.append("\t".join(header_parts))
 
-    for r in sorted(rows_dict.keys()):
-        v_cols = rows_dict[r]
+    for r in rows:
+        v_cols = tuple(v_col for cell_row, v_col in sorted_cells if cell_row == r)
         row_parts = []
         for v_col in v_cols:
             m_col = column_order[v_col]

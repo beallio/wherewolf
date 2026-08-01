@@ -9,6 +9,7 @@ from wherewolf.desktop.dialogs.file_dialog_service import (
     QtFileDialogService,
 )
 from wherewolf.domain.enums import SourceFormat
+from wherewolf.services.export_destination import ExportFormat
 
 
 class FakeFileDialogService:
@@ -63,3 +64,18 @@ def test_qt_file_dialog_service_cancellation_is_empty_tuple(
 
     service = QtFileDialogService()
     assert service.choose_dataset_files(default_directory) == ()
+
+
+def test_qt_export_dialog_cancellation_returns_none_without_creating_destination(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    destination = tmp_path / "cancelled.csv"
+    monkeypatch.setattr(
+        "wherewolf.desktop.dialogs.file_dialog_service.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: ("", ""),
+    )
+
+    service = QtFileDialogService()
+
+    assert service.choose_export_path(tmp_path, ExportFormat.CSV) is None
+    assert not destination.exists()

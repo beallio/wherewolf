@@ -57,6 +57,13 @@ class CatalogBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class SourceSnapshot:
+    path: Path
+    size: int | None
+    mtime_ns: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionRequest:
     request_id: UUID
     engine: EngineKind
@@ -66,6 +73,7 @@ class ExecutionRequest:
     catalog: tuple[CatalogBinding, ...]
     preview_limit: int
     submitted_at: datetime
+    source_snapshots: tuple[SourceSnapshot, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
