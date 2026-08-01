@@ -43,8 +43,11 @@ cache-dir = "/tmp/wherewolf/.ruff_cache"
 extend-exclude = ["docs"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=src --cov-report=term"
+addopts = "--cov=src --cov-report=term -m 'not spark'"
 cache_dir = "/tmp/wherewolf/.pytest_cache"
+markers = [
+    "spark: requires the optional Spark extra and a working Java runtime",
+]
 
 [tool.coverage.run]
 data_file = "/tmp/wherewolf/.coverage"

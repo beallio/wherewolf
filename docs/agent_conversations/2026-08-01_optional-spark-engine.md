@@ -40,4 +40,16 @@ job groups; and the protected Streamlit paths must remain unchanged.
 
 ## Results
 
-Implementation pending.
+### Task 2 — opt-in, memory-bounded Spark test tier
+
+- Added the `spark` pytest marker and default `-m 'not spark'` selection.
+- The one session-scoped fixture stores Spark local work in
+  `/tmp/wherewolf/spark-local`, which resolves through the cache symlink to
+  `/home/beallio/.local/state/wherewolf-cache`, rather than bare `/tmp`.
+- Fixture settings: `local[1]`, `spark.driver.memory=512m`, disabled Spark UI,
+  and one shuffle partition. These serialize local execution, explicitly cap
+  the driver, avoid the UI process, and avoid the default 200 shuffle tasks.
+- Focused default-tier proof: `2 passed, 2 deselected in 0.09s` for the tier
+  configuration and Spark-engine module tests.
+- Focused Spark-tier proof: `2 passed, 1 deselected, 1 warning in 5.52s` for
+  the real schema and fixture-configuration tests.
