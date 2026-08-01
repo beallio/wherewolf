@@ -76,8 +76,9 @@ def test_main_window_query_actions_initial_state_and_shared_instances(qtbot) -> 
     assert editor_context is not None
 
 
-def test_format_action_is_shared_with_editor_context_action(window=None) -> None:
+def test_format_action_is_shared_with_editor_context_action(qtbot) -> None:
     window = MainWindow()
+    qtbot.addWidget(window)
     assert window.editor._format_action is window.desktop_actions.format_sql
 
 
@@ -91,8 +92,9 @@ def test_main_window_recoverable_from_corrupt_settings(qtbot, tmp_path: Path) ->
     assert isinstance(window, QMainWindow)
 
 
-def test_main_window_close_cleans_top_level_widgets() -> None:
+def test_main_window_close_cleans_top_level_widgets(qtbot) -> None:
     window = MainWindow()
+    qtbot.addWidget(window)
     window.show()
 
     window.close()

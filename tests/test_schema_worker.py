@@ -53,6 +53,12 @@ def test_schema_worker_emits_schema_result_and_closes_adapter(qtbot) -> None:
     with qtbot.waitSignal(worker.result_ready, timeout=2000):
         worker.start()
 
+    # result_ready is emitted from inside run(), before its finally block completes.
+    # Without waiting for the thread to finish, the worker can be garbage collected
+    # while still running, which makes Qt abort the interpreter. Waiting also makes
+    # the adapter-closed assertion deterministic rather than racy.
+    assert worker.wait(5000)
+
     assert len(spy) == 1
     emitted = spy[0][0]
     assert emitted == result
@@ -76,6 +82,12 @@ def test_schema_worker_emits_error_result_on_exception_and_still_closes_adapter(
 
     with qtbot.waitSignal(worker.result_ready, timeout=2000):
         worker.start()
+
+    # result_ready is emitted from inside run(), before its finally block completes.
+    # Without waiting for the thread to finish, the worker can be garbage collected
+    # while still running, which makes Qt abort the interpreter. Waiting also makes
+    # the adapter-closed assertion deterministic rather than racy.
+    assert worker.wait(5000)
 
     assert len(spy) == 1
     emitted = spy[0][0]
