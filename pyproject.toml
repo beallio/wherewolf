@@ -48,6 +48,7 @@ cache_dir = "/tmp/wherewolf/.pytest_cache"
 
 [tool.coverage.run]
 data_file = "/tmp/wherewolf/.coverage"
+timid = true
 
 [dependency-groups]
 dev = [
