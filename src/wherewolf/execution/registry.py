@@ -204,8 +204,20 @@ class _DuckDBAdapter(ExecutionEngine):
     def inspect_schema(self, entry: CatalogEntry) -> SchemaResult:
         import duckdb
 
+        if self._cancelled:
+            return SchemaResult(
+                entry_id=entry.id,
+                columns=(),
+                error_type="CancelledError",
+                error_message="Schema inspection cancelled",
+            )
+
         con = duckdb.connect(database=":memory:")
+        self._con = con
         try:
+            if self._cancelled:
+                con.interrupt()
+
             temp_alias = "_schema_hud"
             self._register_view(con, str(entry.path), temp_alias)
             df = con.sql(f"DESCRIBE {temp_alias}").pl()
@@ -217,6 +229,17 @@ class _DuckDBAdapter(ExecutionEngine):
                 columns=_frame_to_columns(columns),
             )
         except Exception as e:  # noqa: BLE001  # Schema inspection boundary: return empty schema on error
+            if (
+                self._cancelled
+                or isinstance(e, duckdb.InterruptException)
+                or "interrupt" in str(e).lower()
+            ):
+                return SchemaResult(
+                    entry_id=entry.id,
+                    columns=(),
+                    error_type="CancelledError",
+                    error_message="Schema inspection cancelled",
+                )
             return SchemaResult(
                 entry_id=entry.id,
                 columns=(),

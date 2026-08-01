@@ -21,7 +21,7 @@ class QueryController(QObject):
     """Manages query execution state machine transitions and background workers."""
 
     status_changed = pyqtSignal(ExecutionStatus)
-    result_ready = pyqtSignal(object, object)
+    result_ready = pyqtSignal(QueryResult, object)
     handle_published = pyqtSignal(object)
 
     def __init__(

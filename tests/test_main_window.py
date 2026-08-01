@@ -165,3 +165,24 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     assert "Preview Rows: 2" in msg
     # Assert preview_row_count is not presented as total count
     assert "Total Rows: 2" not in msg
+
+
+def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Path) -> None:
+    from uuid import uuid4
+
+    from wherewolf.domain import CatalogBinding, SourceFormat
+
+    csv_file = tmp_path / "fast.csv"
+    csv_file.write_text("id\n1\n")
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    binding = CatalogBinding(
+        entry_id=uuid4(), alias="fast", path=csv_file, source_format=SourceFormat.CSV
+    )
+    window._queue_schema_work(binding)
+
+    assert len(window._schema_workers) == 1
+    window.close()
+
+    assert len(window._schema_workers) == 0

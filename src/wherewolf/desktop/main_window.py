@@ -158,9 +158,7 @@ class MainWindow(QMainWindow):
             self.desktop_actions.run.setEnabled(True)
             self.desktop_actions.cancel.setEnabled(False)
 
-    def _on_query_result_ready(
-        self, result: QueryResult, request: ExecutionRequest | None = None
-    ) -> None:
+    def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
             self._results_text.setPlainText(str(result.frame))
         elif result.status is ExecutionStatus.FAILED:
@@ -169,14 +167,12 @@ class MainWindow(QMainWindow):
             self._results_text.setPlainText("Query execution cancelled.")
 
         if result.status is ExecutionStatus.SUCCEEDED:
-            req = request if request is not None else self.query_controller.active_request
-            if req is not None:
-                catalog_dict = {b.alias: str(b.path) for b in req.catalog}
-                self.history_manager.add_entry(
-                    engine=req.engine.value,
-                    query=req.original_sql,
-                    catalog=catalog_dict,
-                )
+            catalog_dict = {b.alias: str(b.path) for b in request.catalog}
+            self.history_manager.add_entry(
+                engine=request.engine.value,
+                query=request.original_sql,
+                catalog=catalog_dict,
+            )
 
             trunc_str = " (truncated)" if result.truncated else ""
             msg = (
@@ -309,6 +305,19 @@ class MainWindow(QMainWindow):
         self.editor.set_font_size(font_size)
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        for worker in list(self._schema_workers):
+            if worker.isRunning():
+                worker.quit()
+                worker.wait()
+        self._schema_workers.clear()
+
+        if hasattr(self, "query_controller") and self.query_controller is not None:
+            for w in list(self.query_controller._workers):
+                if w.isRunning():
+                    w.quit()
+                    w.wait()
+            self.query_controller._workers.clear()
+
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())
