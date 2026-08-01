@@ -2,6 +2,17 @@ name: Flake Probe
 
 on:
   workflow_dispatch:
+    inputs:
+      probe_mode:
+        description: "Probe mode to run on the branch probe matrix"
+        required: false
+        default: baseline
+        type: choice
+        options:
+          - baseline
+          - no-cov
+          - deselect
+          - timid-false
   push:
     branches:
       - feat/ci-qt-flake-312
@@ -13,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12", "3.14"]
+        python-version: ["3.12"]
         probe: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@v6
@@ -36,4 +47,30 @@ jobs:
       - name: Install dependencies
         run: ./run.sh uv sync --all-extras --dev --python ${{ matrix.python-version }}
       - name: Run tests
-        run: ./run.sh uv run --python ${{ matrix.python-version }} pytest
+        env:
+          PROBE_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.probe_mode || 'baseline' }}
+        run: |
+          args=()
+          case "${PROBE_MODE}" in
+            baseline)
+              ;;
+            no-cov)
+              args+=(--no-cov --override-ini addopts=)
+              ;;
+            deselect)
+              args+=(--deselect tests/test_actions.py --deselect tests/test_main_window.py --deselect tests/test_catalog_dock.py --deselect tests/test_sql_editor.py)
+              ;;
+            timid-false)
+              cat > /tmp/wherewolf/coverage-no-timid.ini <<'EOF'
+          [run]
+          timid = false
+          EOF
+              args+=(--cov-config=/tmp/wherewolf/coverage-no-timid.ini)
+              ;;
+            *)
+              echo "Unknown PROBE_MODE=${PROBE_MODE}"
+              exit 1
+              ;;
+          esac
+
+          ./run.sh uv run --python "${{ matrix.python-version }}" pytest "${args[@]}"
