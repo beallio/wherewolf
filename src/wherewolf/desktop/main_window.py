@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
@@ -294,6 +295,43 @@ class MainWindow(QMainWindow):
         query = record.get("query")
         if isinstance(query, str):
             self.editor.setText(query)
+        self._restore_history_catalog(record)
+
+    def _restore_history_catalog(self, record: dict) -> None:
+        """Restore available historical datasets and make unavailable paths visible."""
+        catalog = record.get("catalog")
+        if not isinstance(catalog, dict):
+            return
+
+        available_paths: list[Path] = []
+        missing_paths: list[Path] = []
+        for raw_path in catalog.values():
+            if not isinstance(raw_path, str) or not raw_path:
+                continue
+            path = Path(raw_path)
+            if path.exists():
+                available_paths.append(path)
+            else:
+                missing_paths.append(path)
+
+        if available_paths:
+            result = self._catalog_service.add_paths(tuple(available_paths))
+            for entry in result.added:
+                self._queue_schema_work(
+                    CatalogBinding(
+                        entry_id=entry.id,
+                        alias=entry.alias,
+                        path=entry.path,
+                        source_format=entry.source_format,
+                    )
+                )
+            self.editor.set_catalog(self._catalog_service.entries)
+
+        if missing_paths:
+            self._show_status(
+                "Missing history dataset(s): " + ", ".join(str(path) for path in missing_paths),
+                10000,
+            )
 
     def _on_apply_query_order(self, column_name: str, direction: str) -> None:
         if not self.result_table_view.has_result():
