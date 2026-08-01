@@ -21,6 +21,7 @@
 - `tests/test_execution_worker.py`
 - `tests/test_query_controller.py`
 - `tests/test_main_window.py`
+- `tests/test_desktop_duckdb_flow.py`
 
 ## Tests Added
 - `tests/test_execution_request_builder.py`: test immutable snapshot capture, timezone awareness, ID uniqueness, and empty SQL validation.
@@ -28,6 +29,7 @@
 - `tests/test_execution_worker.py`: test worker background execution, handle publishing before execution, terminal result emission, exception handling, and adapter cleanup.
 - `tests/test_query_controller.py`: test state machine transitions (IDLE, RUNNING, CANCELLATION_REQUESTED, SUCCEEDED, CANCELLED, FAILED), active query concurrency guard, and stale signal rejection.
 - `tests/test_main_window.py`: test Run and Cancel action sharing between toolbar and menu, action enablement state transitions during execution, empty SQL validation, and status bar message formatting (§10.3).
+- `tests/test_desktop_duckdb_flow.py`: end-to-end integration test querying multi-format datasets (CSV + Parquet) in PyQt shell via DuckDB, verifying status bar formatting and history append.
 
 ## Design Decisions
 - Followed 10-task implementation breakdown in `docs/plans/2026-07-31_pyqt6-execution-controller.md`.
@@ -42,6 +44,8 @@
 - Task 6 implemented `ExecutionWorker` running SQL query execution off the GUI thread with TDD green.
 - Task 7 implemented `QueryController` state machine and signal routing with TDD green.
 - Task 8 wired Run and Cancel actions to `QueryController` in `MainWindow` with TDD green.
+- Task 9 added end-to-end integration tests in `tests/test_desktop_duckdb_flow.py` with history append, green.
+
 
 
 

@@ -25,6 +25,7 @@ from wherewolf.desktop.workers import SchemaWorker
 from wherewolf.domain import CatalogBinding, EngineKind, ExecutionStatus, QueryResult, SchemaResult
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import CatalogService, ExecutionRequestBuilder, SettingsService
+from wherewolf.storage.history import HistoryManager
 
 
 class MainWindow(QMainWindow):
@@ -39,6 +40,7 @@ class MainWindow(QMainWindow):
         file_dialog_service: FileDialogService | None = None,
         engine_registry: EngineRegistry | None = None,
         query_controller: QueryController | None = None,
+        history_manager: HistoryManager | None = None,
     ) -> None:
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -50,6 +52,7 @@ class MainWindow(QMainWindow):
         self.query_controller = query_controller or QueryController(
             engine_registry=self._engine_registry, parent=self
         )
+        self.history_manager = history_manager or HistoryManager()
         self._schema_workers: list[SchemaWorker] = []
 
         self.main_toolbar = self._build_toolbar()
@@ -161,12 +164,22 @@ class MainWindow(QMainWindow):
                 self._results_text.setPlainText("Query execution cancelled.")
 
         if result.status is ExecutionStatus.SUCCEEDED:
+            active_req = self.query_controller.active_request
+            if active_req is not None:
+                catalog_dict = {b.alias: str(b.path) for b in active_req.catalog}
+                self.history_manager.add_entry(
+                    engine=active_req.engine.value,
+                    query=active_req.original_sql,
+                    catalog=catalog_dict,
+                )
+
             trunc_str = " (truncated)" if result.truncated else ""
             msg = (
                 f"Engine: DuckDB | State: Succeeded | Elapsed: {result.execution_seconds:.2f}s | "
                 f"Preview Rows: {result.preview_row_count}{trunc_str}"
             )
             self._show_status(msg, 10000)
+
         elif result.status is ExecutionStatus.FAILED:
             msg = f"Engine: DuckDB | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}"
             self._show_status(msg, 10000)
