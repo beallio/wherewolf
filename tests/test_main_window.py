@@ -1,6 +1,9 @@
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
-from PyQt6.QtCore import QCoreApplication, QSettings
+import polars as pl
+from PyQt6.QtCore import QCoreApplication, QSettings, Qt
 from PyQt6.QtWidgets import (
     QApplication,
     QDockWidget,
@@ -12,6 +15,14 @@ from PyQt6.QtWidgets import (
 )
 
 from wherewolf.desktop.main_window import MainWindow
+from wherewolf.domain import (
+    CatalogBinding,
+    EngineKind,
+    ExecutionRequest,
+    ExecutionStatus,
+    QueryResult,
+    SourceFormat,
+)
 from wherewolf.services import SettingsService
 
 
@@ -163,15 +174,10 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     assert "DuckDB" in msg
     assert "Succeeded" in msg
     assert "Preview Rows: 2" in msg
-    # Assert preview_row_count is not presented as total count
     assert "Total Rows: 2" not in msg
 
 
 def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Path) -> None:
-    from uuid import uuid4
-
-    from wherewolf.domain import CatalogBinding, SourceFormat
-
     csv_file = tmp_path / "fast.csv"
     csv_file.write_text("id\n1\n")
 
@@ -182,7 +188,85 @@ def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Pat
     )
     window._queue_schema_work(binding)
 
+    worker = window._schema_workers[0]
+    with qtbot.waitSignal(worker.result_ready, timeout=3000):
+        pass
+
     assert len(window._schema_workers) == 1
     window.close()
 
     assert len(window._schema_workers) == 0
+
+
+def test_main_window_result_grid_integration(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    df = pl.DataFrame({"x": [100, 200], "y": ["alpha", "beta"]})
+
+    req_id = uuid4()
+    now = datetime.now(UTC)
+    request = ExecutionRequest(
+        request_id=req_id,
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT * FROM test",
+        executable_sql="SELECT * FROM test",
+        catalog=(),
+        preview_limit=1000,
+        submitted_at=now,
+    )
+
+    # 1. Succeeded result
+    res_success = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=df,
+        execution_seconds=0.12,
+        preview_row_count=2,
+        total_row_count=2,
+        truncated=False,
+        completed_at=now,
+    )
+    window._on_query_result_ready(res_success, request)
+
+    grid = window.result_table_view
+    assert grid.proxy_model().rowCount() == 2
+    assert grid.proxy_model().columnCount() == 2
+    assert grid.proxy_model().data(grid.proxy_model().index(0, 0), Qt.ItemDataRole.UserRole) == 100
+    assert (
+        grid.proxy_model().data(grid.proxy_model().index(1, 1), Qt.ItemDataRole.UserRole) == "beta"
+    )
+    assert "Preview Rows: 2" in window.status_bar.currentMessage()
+
+    # 2. Failed result: grid cleared, error message shown
+    res_failed = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.05,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=now,
+        error_type="SyntaxError",
+        error_message="near SELECT",
+    )
+    window._on_query_result_ready(res_failed, request)
+    assert grid.proxy_model().rowCount() == 0
+    assert "Error (SyntaxError): near SELECT" in window._results_text.toPlainText()
+
+    # 3. Cancelled result: grid cleared
+    res_cancelled = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.CANCELLED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=now,
+    )
+    window._on_query_result_ready(res_cancelled, request)
+    assert grid.proxy_model().rowCount() == 0
+    assert "cancelled" in window._results_text.toPlainText().lower()
