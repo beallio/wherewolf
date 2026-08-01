@@ -62,6 +62,24 @@ def test_main_window_structure(qtbot) -> None:
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
 
 
+def test_bare_main_window_does_not_touch_user_history(qtbot, monkeypatch, tmp_path: Path) -> None:
+    """Default construction must use pytest-isolated persistence, never ~/.wherewolf."""
+    user_history_path = Path.home() / ".wherewolf" / "history.json"
+    ensure_storage = HistoryManager._ensure_storage
+
+    def assert_isolated_storage(manager: HistoryManager) -> None:
+        assert manager.storage_path != user_history_path
+        ensure_storage(manager)
+
+    monkeypatch.setattr(HistoryManager, "_ensure_storage", assert_isolated_storage)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.history_manager.storage_path != user_history_path
+    assert Path(window._settings_service._settings.fileName()).is_relative_to(tmp_path)
+
+
 def test_main_window_query_actions_initial_state_and_shared_instances(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
