@@ -32,11 +32,15 @@ def test_completion_context_and_item_frozen_and_slotted() -> None:
     with pytest.raises(FrozenInstanceError):
         setattr(item, "label", "customers")  # noqa: B010
 
-    with pytest.raises(AttributeError):
+    # Python 3.12 raises TypeError and 3.14 raises FrozenInstanceError for undeclared
+    # attributes on a frozen+slotted dataclass; both mean "rejected".
+    with pytest.raises((AttributeError, TypeError)):
         setattr(ctx, "custom_attr", 123)  # noqa: B010
+    assert not hasattr(ctx, "custom_attr")
 
-    with pytest.raises(AttributeError):
+    with pytest.raises((AttributeError, TypeError)):
         setattr(item, "custom_attr", 123)  # noqa: B010
+    assert not hasattr(item, "custom_attr")
 
 
 def test_completion_items_with_different_kinds_are_distinct() -> None:
