@@ -46,9 +46,12 @@ jobs:
           java-version: '21'
       - name: Install dependencies
         run: ./run.sh uv sync --all-extras --dev --python ${{ matrix.python-version }}
+      - name: Resolve probe mode
+        id: mode
+        run: echo "value=$(tr -d '[:space:]' < .github/probe-mode)" >> "$GITHUB_OUTPUT"
       - name: Run tests
         env:
-          PROBE_MODE: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.probe_mode || 'baseline' }}
+          PROBE_MODE: ${{ steps.mode.outputs.value }}
         run: |
           args=()
           case "${PROBE_MODE}" in
