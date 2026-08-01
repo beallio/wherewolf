@@ -16,6 +16,7 @@ class ResultTableView(QTableView):
     """QTableView configured for polars query results with type-aware sorting and copy."""
 
     insert_header_requested = pyqtSignal(str)
+    apply_query_order_requested = pyqtSignal(str, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -45,6 +46,10 @@ class ResultTableView(QTableView):
 
     def frame(self) -> pl.DataFrame:
         return self._source_model.frame()
+
+    def has_result(self) -> bool:
+        df = self._source_model.frame()
+        return bool(df is not None and not df.is_empty())
 
     def move_column(self, from_visual: int, to_visual: int) -> None:
         header = self.horizontalHeader()
@@ -101,6 +106,21 @@ class ResultTableView(QTableView):
             "Clear Sort",
             lambda: self.proxy_model().sort(-1, Qt.SortOrder.AscendingOrder),
         )
+        menu.addSeparator()
+
+        has_frame = self.has_result()
+        act_asc = menu.addAction(
+            "Apply Ascending Order to Query",
+            lambda: self.apply_query_order_requested.emit(h_name, "ASC"),
+        )
+        if act_asc is not None:
+            act_asc.setEnabled(has_frame)
+        act_desc = menu.addAction(
+            "Apply Descending Order to Query",
+            lambda: self.apply_query_order_requested.emit(h_name, "DESC"),
+        )
+        if act_desc is not None:
+            act_desc.setEnabled(has_frame)
         menu.addSeparator()
         menu.addAction(
             "Copy Header Name",

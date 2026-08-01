@@ -33,6 +33,7 @@ from wherewolf.domain import (
 )
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import CatalogService, ExecutionRequestBuilder, SettingsService
+from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.storage.history import HistoryManager
 
 
@@ -252,6 +253,7 @@ class MainWindow(QMainWindow):
         self.result_table_view = ResultTableView(self)
         self.result_table_view.setObjectName("result_table_view")
         self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
+        self.result_table_view.apply_query_order_requested.connect(self._on_apply_query_order)
         results.addTab(self.result_table_view, "Results")
         self.messages_panel = MessagesPanel(self)
         self.messages_panel.setObjectName("messages_panel")
@@ -265,6 +267,16 @@ class MainWindow(QMainWindow):
 
     def editor_insert_text(self, alias: str) -> None:
         self.editor.insert(alias)
+
+    def _on_apply_query_order(self, column_name: str, direction: str) -> None:
+        if not self.result_table_view.has_result():
+            return
+        current_sql = self.editor.text()
+        if not current_sql.strip():
+            return
+        ordered_sql = build_order_by_sql(current_sql, column_name, direction)
+        self.editor.setText(ordered_sql)
+        self._on_run_triggered()
 
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()

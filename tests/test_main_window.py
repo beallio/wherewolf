@@ -288,6 +288,34 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     assert severity == "warning"
 
 
+def test_main_window_apply_order_to_query(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.editor.setText("SELECT * FROM users")
+
+    executed_sqls: list[str] = []
+
+    def mock_submit(request):
+        executed_sqls.append(request.original_sql)
+        return True
+
+    monkeypatch.setattr(window.query_controller, "execute", mock_submit)
+
+    # 1. No result present: apply order should be disabled/no-op
+    window._on_apply_query_order("id", "ASC")
+    assert len(executed_sqls) == 0
+
+    # 2. Result present: apply order updates editor text and submits exactly 1 new execution
+    df = pl.DataFrame({"id": [1, 2], "name": ["a", "b"]})
+    window.result_table_view.set_frame(df)
+
+    window._on_apply_query_order("id", "ASC")
+    assert window.editor.text() == "SELECT * FROM users ORDER BY id ASC"
+    assert len(executed_sqls) == 1
+    assert executed_sqls[0] == "SELECT * FROM users ORDER BY id ASC"
+
+
 def test_main_window_result_grid_gui_thread_population(qtbot, monkeypatch) -> None:
     from PyQt6.QtCore import QThread
 

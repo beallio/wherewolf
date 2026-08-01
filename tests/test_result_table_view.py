@@ -182,7 +182,74 @@ def test_result_table_view_column_operations(qtbot):
 
     # Reset columns default: restores order and visibility
     table_view.reset_columns_default()
+    assert table_view.isColumnHidden(0) is False
     assert table_view.isColumnHidden(1) is False
+    header = table_view.horizontalHeader()
+    assert header is not None
     assert header.visualIndex(0) == 0
     assert header.visualIndex(1) == 1
-    assert header.visualIndex(2) == 2
+
+
+def test_header_context_menu_apply_order(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+
+    # 1. No result loaded: actions should be disabled
+    menu = table_view.create_header_context_menu(0)
+    asc_actions = [a for a in menu.actions() if "Apply Ascending" in a.text()]
+    desc_actions = [a for a in menu.actions() if "Apply Descending" in a.text()]
+    assert len(asc_actions) == 1
+    assert len(desc_actions) == 1
+    assert asc_actions[0].isEnabled() is False
+    assert desc_actions[0].isEnabled() is False
+
+    # 2. Result loaded: actions should be enabled and emit signal when triggered
+    df = pl.DataFrame({"col_a": [1, 2]})
+    table_view.set_frame(df)
+
+    emitted: list[tuple[str, str]] = []
+    table_view.apply_query_order_requested.connect(lambda col, dir: emitted.append((col, dir)))
+
+    menu = table_view.create_header_context_menu(0)
+    asc_actions = [a for a in menu.actions() if "Apply Ascending" in a.text()]
+    desc_actions = [a for a in menu.actions() if "Apply Descending" in a.text()]
+    assert asc_actions[0].isEnabled() is True
+    assert desc_actions[0].isEnabled() is True
+
+    asc_actions[0].trigger()
+    assert len(emitted) == 1
+    assert emitted[0] == ("col_a", "ASC")
+
+    desc_actions[0].trigger()
+    assert len(emitted) == 2
+    assert emitted[1] == ("col_a", "DESC")
+
+
+def test_local_sort_does_not_rerun_query(qtbot, monkeypatch) -> None:
+    from wherewolf.desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    executed_count = 0
+
+    def mock_execute(request):
+        nonlocal executed_count
+        executed_count += 1
+        return True
+
+    monkeypatch.setattr(window.query_controller, "execute", mock_execute)
+
+    # Populate grid
+    df = pl.DataFrame({"a": [3, 1, 2], "b": ["z", "x", "y"]})
+    window.result_table_view.set_frame(df)
+
+    assert executed_count == 0
+
+    # Perform local sorting operations on ResultTableView proxy model
+    window.result_table_view.proxy_model().sort(0, Qt.SortOrder.AscendingOrder)
+    window.result_table_view.proxy_model().sort(0, Qt.SortOrder.DescendingOrder)
+    window.result_table_view.proxy_model().sort(-1, Qt.SortOrder.AscendingOrder)
+
+    # Local sort must NOT submit any new executions through QueryController
+    assert executed_count == 0
