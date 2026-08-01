@@ -13,14 +13,18 @@
 - `src/wherewolf/execution/registry.py`
 - `src/wherewolf/desktop/workers/execution_worker.py`
 - `src/wherewolf/desktop/workers/__init__.py`
+- `src/wherewolf/desktop/query_controller.py`
+- `src/wherewolf/desktop/__init__.py`
 - `tests/test_execution_request_builder.py`
 - `tests/test_registry.py`
 - `tests/test_execution_worker.py`
+- `tests/test_query_controller.py`
 
 ## Tests Added
 - `tests/test_execution_request_builder.py`: test immutable snapshot capture, timezone awareness, ID uniqueness, and empty SQL validation.
 - `tests/test_registry.py`: test request-scoped DuckDB connection isolation, limit-plus-one truncation, SQL error handling, missing file failure normalization, and request-specific cancellation.
 - `tests/test_execution_worker.py`: test worker background execution, handle publishing before execution, terminal result emission, exception handling, and adapter cleanup.
+- `tests/test_query_controller.py`: test state machine transitions (IDLE, RUNNING, CANCELLATION_REQUESTED, SUCCEEDED, CANCELLED, FAILED), active query concurrency guard, and stale signal rejection.
 
 ## Design Decisions
 - Followed 10-task implementation breakdown in `docs/plans/2026-07-31_pyqt6-execution-controller.md`.
@@ -33,6 +37,8 @@
 - Task 4 implemented request-scoped DuckDB execution via `_DuckDBAdapter` with TDD green.
 - Task 5 implemented request-specific cancellation returning `CANCELLED` status with TDD green.
 - Task 6 implemented `ExecutionWorker` running SQL query execution off the GUI thread with TDD green.
+- Task 7 implemented `QueryController` state machine and signal routing with TDD green.
+
 
 
 
