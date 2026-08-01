@@ -54,3 +54,49 @@ def test_result_table_view_copy_respects_sort(qtbot):
 
     table_view.copy_selection()
     assert QApplication.clipboard().text() == "1\n2\n10"
+
+
+def test_result_table_view_header_context_menu_actions(qtbot):
+    df = pl.DataFrame({"col_a": [2, 10, 1], "col_b": ["x", "y", "z"]})
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(df)
+
+    # Build header context menu for column 0
+    menu = table_view.create_header_context_menu(0)
+    actions = {action.text(): action for action in menu.actions()}
+
+    assert "Sort Ascending" in actions
+    assert "Sort Descending" in actions
+    assert "Clear Sort" in actions
+    assert "Copy Header Name" in actions
+    assert "Copy Quoted Header" in actions
+    assert "Insert Header into Editor" in actions
+
+    # Sort Ascending action
+    actions["Sort Ascending"].trigger()
+    assert table_view.proxy_model().sortColumn() == 0
+    assert table_view.proxy_model().sortOrder() == Qt.SortOrder.AscendingOrder
+
+    # Sort Descending action
+    actions["Sort Descending"].trigger()
+    assert table_view.proxy_model().sortColumn() == 0
+    assert table_view.proxy_model().sortOrder() == Qt.SortOrder.DescendingOrder
+
+    # Clear Sort action
+    actions["Clear Sort"].trigger()
+    assert table_view.proxy_model().sortColumn() == -1
+
+    # Copy Header Name action
+    actions["Copy Header Name"].trigger()
+    assert QApplication.clipboard().text() == "col_a"
+
+    # Copy Quoted Header action
+    actions["Copy Quoted Header"].trigger()
+    assert QApplication.clipboard().text() == '"col_a"'
+
+    # Insert Header into Editor signal
+    inserted = []
+    table_view.insert_header_requested.connect(inserted.append)
+    actions["Insert Header into Editor"].trigger()
+    assert inserted == ["col_a"]

@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import polars as pl
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtGui import QKeySequence
-from PyQt6.QtWidgets import QApplication, QTableView
+from PyQt6.QtWidgets import QApplication, QMenu, QTableView
 
 from wherewolf.desktop.clipboard_serializers import format_cell_value, format_header_name
 from wherewolf.desktop.models.polars_table_model import PolarsTableModel
@@ -14,6 +14,8 @@ from wherewolf.desktop.models.typed_sort_proxy_model import TypedSortProxyModel
 
 class ResultTableView(QTableView):
     """QTableView configured for polars query results with type-aware sorting and copy."""
+
+    insert_header_requested = pyqtSignal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -25,6 +27,9 @@ class ResultTableView(QTableView):
         self.setSortingEnabled(True)
         self.horizontalHeader().setSectionsMovable(True)
         self.horizontalHeader().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.horizontalHeader().customContextMenuRequested.connect(
+            self._on_header_context_menu_requested
+        )
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def proxy_model(self) -> TypedSortProxyModel:
@@ -39,6 +44,49 @@ class ResultTableView(QTableView):
 
     def frame(self) -> pl.DataFrame:
         return self._source_model.frame()
+
+    def create_header_context_menu(self, column: int) -> QMenu:
+        menu = QMenu(self)
+        h_name = str(
+            self._proxy_model.headerData(
+                column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole
+            )
+            or ""
+        )
+
+        menu.addAction(
+            "Sort Ascending",
+            lambda: self.proxy_model().sort(column, Qt.SortOrder.AscendingOrder),
+        )
+        menu.addAction(
+            "Sort Descending",
+            lambda: self.proxy_model().sort(column, Qt.SortOrder.DescendingOrder),
+        )
+        menu.addAction(
+            "Clear Sort",
+            lambda: self.proxy_model().sort(-1, Qt.SortOrder.AscendingOrder),
+        )
+        menu.addSeparator()
+        menu.addAction(
+            "Copy Header Name",
+            lambda: QApplication.clipboard().setText(h_name),
+        )
+        menu.addAction(
+            "Copy Quoted Header",
+            lambda: QApplication.clipboard().setText(format_header_name(h_name, quote=True)),
+        )
+        menu.addSeparator()
+        menu.addAction(
+            "Insert Header into Editor",
+            lambda: self.insert_header_requested.emit(h_name),
+        )
+        return menu
+
+    def _on_header_context_menu_requested(self, pos: QPoint) -> None:
+        column = self.horizontalHeader().logicalIndexAt(pos)
+        if column >= 0:
+            menu = self.create_header_context_menu(column)
+            menu.exec(self.horizontalHeader().mapToGlobal(pos))
 
     def keyPressEvent(self, event) -> None:
         if event.matches(QKeySequence.StandardKey.Copy):
