@@ -273,3 +273,40 @@ def test_duckdb_adapter_cancel_one_adapter_does_not_affect_another(tmp_path: Pat
 
     assert res1.status is ExecutionStatus.CANCELLED
     assert res2.status is ExecutionStatus.SUCCEEDED
+
+
+def test_duckdb_adapter_closes_connection(tmp_path: Path, monkeypatch) -> None:
+    import duckdb
+
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    cs = CatalogService()
+    reg = EngineRegistry()
+    adapter = reg.create(EngineKind.DUCKDB, uuid4())
+
+    real_connect = duckdb.connect
+    closed = False
+
+    class _ConWrapper:
+        def __init__(self, con):
+            self._con = con
+
+        def __getattr__(self, item):
+            return getattr(self._con, item)
+
+        def close(self):
+            nonlocal closed
+            closed = True
+            return self._con.close()
+
+    monkeypatch.setattr("duckdb.connect", lambda **kwargs: _ConWrapper(real_connect(**kwargs)))
+
+    req = ExecutionRequestBuilder.build(
+        sql="SELECT 1",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=cs,
+    )
+    adapter.execute_preview(req)
+    assert closed is True

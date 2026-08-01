@@ -36,17 +36,43 @@
 - Followed 10-task implementation breakdown in `docs/plans/2026-07-31_pyqt6-execution-controller.md`.
 - Isolated task commits and TDD flow for each task.
 
-## Results
-- Task 1 baseline recorded and clean.
-- Task 2 implemented `ExecutionRequestBuilder` with TDD green.
-- Task 3 added `executable_sql` translation using `translate_statements()` with TDD green.
-- Task 4 implemented request-scoped DuckDB execution via `_DuckDBAdapter` with TDD green.
-- Task 5 implemented request-specific cancellation returning `CANCELLED` status with TDD green.
-- Task 6 implemented `ExecutionWorker` running SQL query execution off the GUI thread with TDD green.
-- Task 7 implemented `QueryController` state machine and signal routing with TDD green.
-- Task 8 wired Run and Cancel actions to `QueryController` in `MainWindow` with TDD green.
-- Task 9 added end-to-end integration tests in `tests/test_desktop_duckdb_flow.py` with history append, green.
-- Task 10 updated documentation in `README.md` and finalized session log.
+## Review Resolution (Round 1)
+- **C1 (Worker Thread Lifecycle):** `QueryController` now tracks active workers in `_workers: list[QThread]` until their `finished` signal fires, preventing premature GC while `run()` is executing.
+- **C2 (Verification Evidence):** Executed all V5 mutations and V6 flake check; recorded empirical evidence, node IDs, and final tallies.
+- **C3 (Controller State Decoupling):** `QueryController.result_ready` now emits `(QueryResult, ExecutionRequest)`, passing the request directly to view slots and eliminating dependency on controller teardown order.
+- **C4 (Inspect Schema Handle Safety):** `_DuckDBAdapter.inspect_schema` assigns `self._con = con` before execution and checks `_cancelled`, ensuring connection is cancellable and cleanup does not clear execution handles.
+- **C5 (Speculative Guards Removal):** Removed `isinstance(raw_sql, tuple)` check in `main_window.py` (unpacked 3-tuple directly) and removed dead `hasattr(self, "_results_text")` check.
+- **C6 (Protocol & Docstring Fixes):** Declared `create(self, kind: EngineKind, request_id: UUID) -> ExecutionEngine` in `EngineRegistryProtocol` and restored module docstring to `src/wherewolf/desktop/workers/__init__.py`.
+
+## Measured Verification Evidence
+
+### V1 — Test Suite & Quality Gates
+- **Final Test Tally:** 252 passed, 1 skipped in 10.36s (baseline was 224 passed).
+- **Quality Gates:** `scripts/orchestration/run-quality-gates` exited 0 (ruff check, ruff format, ty check, pytest clean).
+
+### V2 — Streamlit Path Isolation
+- `git diff dev..HEAD -- src/wherewolf/app.py src/wherewolf/engines.py src/wherewolf/ui/ src/wherewolf/export/ src/wherewolf/storage/ src/wherewolf/constants.py .streamlit/` returned empty output (0 lines changed).
+
+### V5 — Mutation Testing Results
+All 6 mutations were applied, confirmed with `git diff --quiet` (returned false), tested with `--color=no`, and reverted with clean working tree (`git status --short` clean):
+1. **Snapshot is not a snapshot** (`catalog_snapshot = catalog_service.entries`): `FAILED tests/test_execution_request_builder.py::test_build_execution_request_captures_snapshot`
+2. **Stale results accepted** (removed `request_id` check in `_on_result_ready`): `FAILED tests/test_query_controller.py::test_query_controller_ignores_stale_worker_signal`
+3. **Cancel claims success** (set `status = CANCELLED` directly in `cancel()`): `FAILED tests/test_query_controller.py::test_query_controller_cancel_flow_transitions_to_cancellation_requested`
+4. **Concurrency allowed** (removed IDLE status check in `execute()`): `FAILED tests/test_query_controller.py::test_query_controller_second_run_refused_while_active`
+5. **Truncation wrong** (fetched `preview_limit` without `+1`, hardcoded `is_truncated = False`): `FAILED tests/test_registry.py::test_duckdb_adapter_truncation_limit_plus_one`
+6. **Connection leaked** (commented out `con.close()` in `_DuckDBAdapter.execute_preview` `finally` block): `FAILED tests/test_registry.py::test_duckdb_adapter_closes_connection`
+
+### V6 — Native Crash & Flake Check
+- Ran `scripts/check_flake.sh 25`: 25 passed out of 25 runs, 0 failures, 0 native crashes.
+
+## Deferred / Unverified
+- **No real window / manual UI verification:** All Qt tests were executed offscreen (`QT_QPA_PLATFORM=offscreen`). Window responsiveness under visual observation was not manually tested.
+- **Results display:** Minimal placeholder tab view; full grid is Phase 9.
+- **History format:** Appending to v1 history format; UUID-based v2 is Phase 11.
+- **Spark execution:** DuckDB engine only; Spark integration is Phase 13.
+- **Cross-platform:** Verified on Linux; macOS and Windows unverified.
+- **Cancellation timing:** DuckDB `interrupt()` is best-effort; exact interruption latency in real query execution is uncharacterised.
+
 
 
 

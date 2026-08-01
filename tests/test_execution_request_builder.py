@@ -33,7 +33,9 @@ def test_build_execution_request_captures_snapshot():
     assert request.source_dialect == "duckdb"
     assert request.engine == EngineKind.DUCKDB
     assert request.preview_limit == 500
-    assert len(request.catalog) == 1
+    from wherewolf.domain import CatalogBinding
+
+    assert isinstance(request.catalog[0], CatalogBinding)
     assert request.catalog[0].alias == "events"
 
     # submitted_at is timezone-aware

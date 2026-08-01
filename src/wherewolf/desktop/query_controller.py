@@ -4,23 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Protocol
+from uuid import UUID
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
 from wherewolf.desktop.workers.execution_worker import ExecutionWorker
-from wherewolf.domain import ExecutionRequest, ExecutionStatus, QueryResult
-from wherewolf.execution.base import CancellationHandle
+from wherewolf.domain import EngineKind, ExecutionRequest, ExecutionStatus, QueryResult
+from wherewolf.execution.base import CancellationHandle, ExecutionEngine
 
 
 class EngineRegistryProtocol(Protocol):
-    pass
+    def create(self, kind: EngineKind, request_id: UUID) -> ExecutionEngine: ...
 
 
 class QueryController(QObject):
     """Manages query execution state machine transitions and background workers."""
 
     status_changed = pyqtSignal(ExecutionStatus)
-    result_ready = pyqtSignal(QueryResult)
+    result_ready = pyqtSignal(object, object)
     handle_published = pyqtSignal(object)
 
     def __init__(
@@ -37,7 +38,7 @@ class QueryController(QObject):
         self._status = ExecutionStatus.IDLE
         self._active_request: ExecutionRequest | None = None
         self._active_handle: CancellationHandle | None = None
-        self._active_worker: QThread | None = None
+        self._workers: list[QThread] = []
 
     @property
     def status(self) -> ExecutionStatus:
@@ -70,8 +71,13 @@ class QueryController(QObject):
         result_sig = getattr(worker, "result_ready", None)
         if result_sig is not None:
             result_sig.connect(self._on_result_ready)
+        finished_sig = getattr(worker, "finished", None)
+        if finished_sig is not None:
+            finished_sig.connect(
+                lambda: self._workers.remove(worker) if worker in self._workers else None
+            )
 
-        self._active_worker = worker
+        self._workers.append(worker)
         worker.start()
         return True
 
@@ -107,14 +113,14 @@ class QueryController(QObject):
             # Ignore stale worker signal
             return
 
+        active_req = self._active_request
         terminal_status = result.status
         self._status = terminal_status
         self.status_changed.emit(terminal_status)
-        self.result_ready.emit(result)
+        self.result_ready.emit(result, active_req)
 
         self._active_request = None
         self._active_handle = None
-        self._active_worker = None
 
         self._status = ExecutionStatus.IDLE
         self.status_changed.emit(ExecutionStatus.IDLE)

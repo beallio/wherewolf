@@ -22,7 +22,14 @@ from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.widgets import CatalogDock, SqlEditor
 from wherewolf.desktop.workers import SchemaWorker
-from wherewolf.domain import CatalogBinding, EngineKind, ExecutionStatus, QueryResult, SchemaResult
+from wherewolf.domain import (
+    CatalogBinding,
+    EngineKind,
+    ExecutionRequest,
+    ExecutionStatus,
+    QueryResult,
+    SchemaResult,
+)
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import CatalogService, ExecutionRequestBuilder, SettingsService
 from wherewolf.storage.history import HistoryManager
@@ -118,8 +125,7 @@ class MainWindow(QMainWindow):
         self.query_controller.result_ready.connect(self._on_query_result_ready)
 
     def _on_run_triggered(self) -> None:
-        raw_sql = self.editor.text_to_run()
-        sql = raw_sql[0] if isinstance(raw_sql, tuple) else str(raw_sql)
+        sql, _start, _end = self.editor.text_to_run()
         if not sql or not sql.strip():
             self._show_status("No SQL statement to run", 5000)
             return
@@ -152,24 +158,23 @@ class MainWindow(QMainWindow):
             self.desktop_actions.run.setEnabled(True)
             self.desktop_actions.cancel.setEnabled(False)
 
-    def _on_query_result_ready(self, result: QueryResult) -> None:
-        if hasattr(self, "_results_text") and self._results_text is not None:
-            if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
-                self._results_text.setPlainText(str(result.frame))
-            elif result.status is ExecutionStatus.FAILED:
-                self._results_text.setPlainText(
-                    f"Error ({result.error_type}): {result.error_message}"
-                )
-            elif result.status is ExecutionStatus.CANCELLED:
-                self._results_text.setPlainText("Query execution cancelled.")
+    def _on_query_result_ready(
+        self, result: QueryResult, request: ExecutionRequest | None = None
+    ) -> None:
+        if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
+            self._results_text.setPlainText(str(result.frame))
+        elif result.status is ExecutionStatus.FAILED:
+            self._results_text.setPlainText(f"Error ({result.error_type}): {result.error_message}")
+        elif result.status is ExecutionStatus.CANCELLED:
+            self._results_text.setPlainText("Query execution cancelled.")
 
         if result.status is ExecutionStatus.SUCCEEDED:
-            active_req = self.query_controller.active_request
-            if active_req is not None:
-                catalog_dict = {b.alias: str(b.path) for b in active_req.catalog}
+            req = request if request is not None else self.query_controller.active_request
+            if req is not None:
+                catalog_dict = {b.alias: str(b.path) for b in req.catalog}
                 self.history_manager.add_entry(
-                    engine=active_req.engine.value,
-                    query=active_req.original_sql,
+                    engine=req.engine.value,
+                    query=req.original_sql,
                     catalog=catalog_dict,
                 )
 
