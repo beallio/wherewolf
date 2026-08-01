@@ -26,15 +26,21 @@ Baseline Test Tally: 254 passed, 1 skipped in 4.79s
   - C2: Verified all six V7 mutations with failing test node ids (`--color=no`, `git diff --quiet` confirmed).
   - C3: Documented design decision to retain `_results_text` as a transitional "Messages" tab ahead of Phase 10.
   - C4: Removed speculative `hasattr` guard from `_drain_schema_workers` fixture and added explicit V6 thread-safety test `test_main_window_result_grid_gui_thread_population`.
+- Round 02 Review Fixes:
+  - D1: Corrected V7 mutation entries 1 and 3 node ids per review round 02 measurements while retaining original entries for audit history.
 
 ## Scope Decision (C3)
 Retained `self._results_text` `QTextEdit` as a transitional "Messages" tab in `MainWindow` alongside the new "Results" tab (`ResultTableView`). This ensures query execution error tracebacks and cancellation messages have a dedicated display surface until Phase 10 (Messages Panel). This was a deliberate architectural choice to prevent dropping error visibility when the grid assumed ownership of query output.
 
 ## V7 Mutation Testing
-1. **Sort on DisplayRole instead of UserRole**: FAILED (`tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_numeric_sorting`, `tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_date_and_string_sorting`, `tests/test_result_table_view.py::test_result_table_view_copy_respects_sort`). (Measured in review round 01)
+1. **Sort on DisplayRole instead of UserRole**:
+   - *Original entry (round 01)*: FAILED (`tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_numeric_sorting`, `tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_date_and_string_sorting`, `tests/test_result_table_view.py::test_result_table_view_copy_respects_sort`).
+   - *Corrected (Measured in review round 02)*: FAILED (`tests/test_result_table_view.py::test_result_table_view_copy_respects_sort`, `tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_numeric_sorting`, `tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_null_ordering`, `tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_third_click_reset`).
 2. **Reverse null-ordering rule**: FAILED (`tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_null_ordering`).
-3. **Copy in model order instead of visual column order**: FAILED (`tests/test_result_table_view.py::test_result_table_view_column_operations`). (Measured in review round 01)
-4. **Include hidden columns in copy**: FAILED (`tests/test_result_table_view.py::test_result_table_view_column_operations`).
+3. **Copy in model order instead of visual column order**:
+   - *Original entry (round 01)*: FAILED (`tests/test_result_table_view.py::test_result_table_view_column_operations`).
+   - *Corrected (Measured in review round 02)*: FAILED (`tests/test_clipboard_serializers.py::test_serialize_visual_column_order`).
+4. **Include hidden columns in copy**: FAILED (`tests/test_result_table_view.py::test_result_table_view_column_operations`). (Confirmed in review round 02: `cb.text() == "col1\tcol3\n1\t100"`).
 5. **Off-by-one in filtered->source row mapping**: FAILED (`tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_search_and_filter`).
 6. **Drop third-click sort reset**: FAILED (`tests/test_typed_sort_proxy_model.py::test_typed_sort_proxy_model_third_click_reset`).
 
