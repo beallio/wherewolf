@@ -66,6 +66,11 @@ Run tests:
 uv run pytest
 ```
 
+To run an on-demand regression check for native Qt/coverage crashes across multiple test runs:
+```bash
+./scripts/check_flake.sh [runs]
+```
+
 Lint/Format:
 ```bash
 ruff check . --fix
