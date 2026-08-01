@@ -168,6 +168,9 @@ class MainWindow(QMainWindow):
 
         self.messages_panel.show_query_result(result)
 
+        engine_name = (
+            "DuckDB" if request.engine is EngineKind.DUCKDB else request.engine.value.title()
+        )
         if result.status is ExecutionStatus.SUCCEEDED:
             catalog_dict = {b.alias: str(b.path) for b in request.catalog}
             self.history_manager.add_entry(
@@ -178,16 +181,16 @@ class MainWindow(QMainWindow):
 
             trunc_str = " (truncated)" if result.truncated else ""
             msg = (
-                f"Engine: DuckDB | State: Succeeded | Elapsed: {result.execution_seconds:.2f}s | "
+                f"Engine: {engine_name} | State: Succeeded | Elapsed: {result.execution_seconds:.2f}s | "
                 f"Preview Rows: {result.preview_row_count}{trunc_str}"
             )
             self._show_status(msg, 10000)
 
         elif result.status is ExecutionStatus.FAILED:
-            msg = f"Engine: DuckDB | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}"
+            msg = f"Engine: {engine_name} | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}"
             self._show_status(msg, 10000)
         elif result.status is ExecutionStatus.CANCELLED:
-            msg = f"Engine: DuckDB | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed"
+            msg = f"Engine: {engine_name} | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed"
             self._show_status(msg, 10000)
 
     def _on_add_datasets(self) -> None:

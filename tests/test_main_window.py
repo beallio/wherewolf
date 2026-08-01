@@ -316,6 +316,64 @@ def test_main_window_apply_order_to_query(qtbot, monkeypatch) -> None:
     assert executed_sqls[0] == "SELECT * FROM users ORDER BY id ASC"
 
 
+def test_main_window_query_result_details_and_metrics(qtbot) -> None:
+    from datetime import datetime
+    from uuid import uuid4
+
+    from wherewolf.domain import EngineKind, ExecutionRequest, ExecutionStatus, QueryResult
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    req = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.SPARK,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=1000,
+        submitted_at=datetime.now(UTC),
+    )
+
+    # 1. Success result
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    res_success = QueryResult(
+        request_id=req.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=df,
+        execution_seconds=0.42,
+        preview_row_count=3,
+        total_row_count=3,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(res_success, req)
+    status_bar = window.statusBar()
+    assert status_bar is not None
+    assert "spark" in status_bar.currentMessage().lower()
+    assert "0.42s" in status_bar.currentMessage()
+    assert "3" in status_bar.currentMessage()
+
+    # 2. Failed result
+    res_failed = QueryResult(
+        request_id=req.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.15,
+        preview_row_count=0,
+        total_row_count=0,
+        truncated=False,
+        error_type="ExecutionError",
+        error_message="Table not found",
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(res_failed, req)
+    assert "spark" in status_bar.currentMessage().lower()
+    assert "0.15s" in status_bar.currentMessage()
+    assert "Table not found" in status_bar.currentMessage()
+
+
 def test_main_window_result_grid_gui_thread_population(qtbot, monkeypatch) -> None:
     from PyQt6.QtCore import QThread
 
