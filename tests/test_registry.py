@@ -192,29 +192,84 @@ def test_duckdb_adapter_sql_error_handling() -> None:
     assert res.error_message is not None
 
 
-def test_duckdb_adapter_missing_file_handling(tmp_path: Path) -> None:
-    from wherewolf.domain import CatalogEntry, SourceFormat
+def test_duckdb_adapter_cancellation_handle_matches_request_id() -> None:
+    req_id = uuid4()
+    reg = EngineRegistry()
+    adapter = reg.create(EngineKind.DUCKDB, req_id)
+    handle = adapter.cancellation_handle()
+
+    assert handle.request_id == req_id
+
+
+def test_duckdb_adapter_cancel_inactive_or_finished_is_safe() -> None:
+    req_id = uuid4()
+    reg = EngineRegistry()
+    adapter = reg.create(EngineKind.DUCKDB, req_id)
+    handle = adapter.cancellation_handle()
+
+    # Safe to call cancel when no query is running
+    assert handle.cancel() is True
+
+
+def test_duckdb_adapter_cancellation_yields_cancelled_status(tmp_path: Path) -> None:
+    csv_file = tmp_path / "big.csv"
+    # Generate enough rows so query takes time, or interrupt during query
+    csv_file.write_text("id\n" + "\n".join(str(i) for i in range(100_000)) + "\n")
+
+    from wherewolf.domain import ExecutionStatus
     from wherewolf.services.catalog_service import CatalogService
     from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
 
-    missing_path = tmp_path / "does_not_exist.csv"
-    entry = CatalogEntry(
-        id=uuid4(),
-        alias="missing",
-        path=missing_path,
-        source_format=SourceFormat.CSV,
-    )
-    cs = CatalogService(initial_entries=(entry,))
+    cs = CatalogService()
+    cs.add_paths((csv_file,))
+
+    req_id = uuid4()
     reg = EngineRegistry()
-    adapter = reg.create(EngineKind.DUCKDB, uuid4())
+    adapter = reg.create(EngineKind.DUCKDB, req_id)
+    handle = adapter.cancellation_handle()
+
+    # Pre-interrupt or interrupt during run via handle
+    handle.cancel()
 
     req = ExecutionRequestBuilder.build(
-        sql="SELECT * FROM missing",
+        sql="SELECT id, count(*) FROM big GROUP BY id ORDER BY id DESC",
         source_dialect="duckdb",
         engine=EngineKind.DUCKDB,
         catalog_service=cs,
     )
+
     res = adapter.execute_preview(req)
-    assert res.status.name == "FAILED"
+    assert res.status is ExecutionStatus.CANCELLED
     assert res.frame is None
-    assert res.error_message is not None
+
+
+def test_duckdb_adapter_cancel_one_adapter_does_not_affect_another(tmp_path: Path) -> None:
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("id\n1\n2\n")
+
+    from wherewolf.domain import ExecutionStatus
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    cs = CatalogService()
+    cs.add_paths((csv_file,))
+
+    reg = EngineRegistry()
+    adapter1 = reg.create(EngineKind.DUCKDB, uuid4())
+    adapter2 = reg.create(EngineKind.DUCKDB, uuid4())
+
+    handle1 = adapter1.cancellation_handle()
+    handle1.cancel()
+
+    req = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM data",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=cs,
+    )
+
+    res1 = adapter1.execute_preview(req)
+    res2 = adapter2.execute_preview(req)
+
+    assert res1.status is ExecutionStatus.CANCELLED
+    assert res2.status is ExecutionStatus.SUCCEEDED

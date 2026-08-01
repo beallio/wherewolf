@@ -73,11 +73,13 @@ class _DuckDBAdapter(ExecutionEngine):
     def __init__(self, request_id: UUID):
         self._request_id = request_id
         self._con = None
+        self._cancelled = False
 
     def cancellation_handle(self) -> CancellationHandle:
         return _CancellationHandle(request_id=self._request_id, _cancel=self.interrupt)
 
     def interrupt(self) -> None:
+        self._cancelled = True
         if self._con is not None:
             self._con.interrupt()
 
@@ -109,10 +111,25 @@ class _DuckDBAdapter(ExecutionEngine):
         import duckdb
 
         start_time = time.time()
+        if self._cancelled:
+            return QueryResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.CANCELLED,
+                frame=None,
+                execution_seconds=0.0,
+                preview_row_count=0,
+                total_row_count=None,
+                truncated=False,
+                completed_at=datetime.now(UTC),
+            )
+
         con = duckdb.connect(database=":memory:")
         self._con = con
 
         try:
+            if self._cancelled:
+                con.interrupt()
+
             for binding in request.catalog:
                 self._register_view(con, str(binding.path), binding.alias)
 
@@ -124,6 +141,18 @@ class _DuckDBAdapter(ExecutionEngine):
             row_count = len(df_preview)
             is_truncated = len(df_plus_one) > limit
             execution_time = time.time() - start_time
+
+            if self._cancelled:
+                return QueryResult(
+                    request_id=request.request_id,
+                    status=ExecutionStatus.CANCELLED,
+                    frame=None,
+                    execution_seconds=execution_time,
+                    preview_row_count=0,
+                    total_row_count=None,
+                    truncated=False,
+                    completed_at=datetime.now(UTC),
+                )
 
             return QueryResult(
                 request_id=request.request_id,
@@ -137,6 +166,22 @@ class _DuckDBAdapter(ExecutionEngine):
             )
         except Exception as e:  # noqa: BLE001  # Execution boundary: normalize runtime errors into failed QueryResult
             execution_time = time.time() - start_time
+            if (
+                self._cancelled
+                or isinstance(e, duckdb.InterruptException)
+                or "interrupt" in str(e).lower()
+            ):
+                return QueryResult(
+                    request_id=request.request_id,
+                    status=ExecutionStatus.CANCELLED,
+                    frame=None,
+                    execution_seconds=execution_time,
+                    preview_row_count=0,
+                    total_row_count=None,
+                    truncated=False,
+                    completed_at=datetime.now(UTC),
+                )
+
             return QueryResult(
                 request_id=request.request_id,
                 status=ExecutionStatus.FAILED,
