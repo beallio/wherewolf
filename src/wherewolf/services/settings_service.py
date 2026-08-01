@@ -106,7 +106,7 @@ class SettingsService:
     def restore_editor_font_size(self) -> int:
         default = self.DEFAULT_FONT_SIZE
         value = self._settings.value(self.editor_font_size_key, default)
-        if not isinstance(value, int):
+        if not isinstance(value, int) or isinstance(value, bool):
             return default
         return value
 
@@ -127,7 +127,7 @@ class SettingsService:
     def restore_completion_threshold(self) -> int:
         default = self.DEFAULT_COMPLETION_THRESHOLD
         value = self._settings.value(self.completion_threshold_key, default)
-        if not isinstance(value, int):
+        if not isinstance(value, int) or isinstance(value, bool):
             return default
         return value
 
@@ -138,8 +138,6 @@ class SettingsService:
         default = self.DEFAULT_COMPLETION_ENABLED
         value = self._settings.value(self.completion_enabled_key, default)
         if not isinstance(value, bool):
-            if isinstance(value, str):
-                return value.lower() in ("true", "1")
             return default
         return value
 
@@ -157,6 +155,8 @@ class SettingsService:
         if not isinstance(value, list):
             return default
         try:
+            if any(isinstance(item, bool) for item in value):
+                return default
             converted = tuple(int(item) for item in value)
         except (TypeError, ValueError):
             return default
