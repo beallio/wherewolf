@@ -13,7 +13,7 @@ class CompletionContext:
     sql: str
     cursor_offset: int
     dialect: str
-    catalog: tuple["CatalogEntry", ...]
+    catalog: tuple[CatalogEntry, ...]
 
 
 @dataclass(frozen=True, slots=True)

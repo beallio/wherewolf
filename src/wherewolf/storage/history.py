@@ -77,7 +77,7 @@ class HistoryManager:
                     if "catalog" not in entry:
                         entry["catalog"] = {"dataset": entry.get("path", "")}
                 return history
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             # If corrupted, we might want to be more careful, but for now returning empty
             return []
 
