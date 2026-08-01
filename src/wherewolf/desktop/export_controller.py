@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Event
 
 from PyQt6.QtCore import QObject, QThread, pyqtSignal
 
@@ -37,6 +38,11 @@ class ExportWorker(QThread):
         super().__init__()
         self._registry, self._request, self._frame = registry, request, frame
         self._destination, self._format, self._full_export = destination, export_format, full_export
+        self._handle_observed = Event()
+
+    def permit_export(self) -> None:
+        """Allow full-export work after its cancellation handle reaches the controller."""
+        self._handle_observed.set()
 
     def run(self) -> None:  # pragma: no cover - exercised through controller tests
         adapter = None
@@ -45,6 +51,7 @@ class ExportWorker(QThread):
                 assert self._request is not None
                 adapter = self._registry.create(self._request.engine, self._request.request_id)
                 self.handle_published.emit(adapter.cancellation_handle())
+                self._handle_observed.wait()
                 export_full = getattr(adapter, "export_full", None)
                 if export_full is None:
                     raise ValueError("Selected engine does not support full export")
@@ -107,6 +114,9 @@ class ExportController(QObject):
 
     def shutdown(self) -> None:
         if self._worker is not None and self._worker.isRunning():
+            permit_export = getattr(self._worker, "permit_export", None)
+            if callable(permit_export):
+                permit_export()
             self._worker.quit()
             self._worker.wait()
         self._worker = None
@@ -114,6 +124,10 @@ class ExportController(QObject):
     def _on_handle(self, handle) -> None:
         self._handle = handle
         self.handle_published.emit(handle)
+        if self._worker is not None:
+            permit_export = getattr(self._worker, "permit_export", None)
+            if callable(permit_export):
+                permit_export()
 
     def _on_result(self, result: ExportResult) -> None:
         self._handle = None
