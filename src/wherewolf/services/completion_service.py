@@ -11,12 +11,25 @@ from sqlglot import expressions as exp
 from wherewolf.domain.enums import CompletionKind
 from wherewolf.domain.models import CatalogEntry, ColumnSchema, CompletionContext, CompletionItem
 from wherewolf.services.completion_context import CursorContextKind, detect_context
+from wherewolf.services.sql_metadata import get_dialect_functions, get_dialect_keywords
 
 
 @dataclass(frozen=True, slots=True)
 class _CteInfo:
     name: str
     columns: tuple[ColumnSchema, ...] | None
+
+
+def _quote_identifier(name: str, dialect: str) -> str:
+    if not name:
+        return name
+    keywords = get_dialect_keywords(dialect)
+    needs_quotes = (
+        bool(re.search(r"[^a-zA-Z0-9_]", name)) or name[0].isdigit() or name.upper() in keywords
+    )
+    if needs_quotes:
+        return f'"{name}"'
+    return name
 
 
 class SqlCompletionService:
@@ -29,40 +42,43 @@ class SqlCompletionService:
 
         items: list[CompletionItem] = []
         prefix = cursor_ctx.prefix.lower()
+        dialect = context.dialect
 
-        ctes = self._find_ctes(context.sql, context.dialect, context.catalog)
+        ctes = self._find_ctes(context.sql, dialect, context.catalog)
         cte_map = {cte.name.lower(): cte for cte in ctes}
 
         if cursor_ctx.kind == CursorContextKind.TABLE_REF:
-            # Add CTEs first (shadowing catalog aliases if same name)
             added_names: set[str] = set()
             for cte in ctes:
                 name_lower = cte.name.lower()
                 if not prefix or name_lower.startswith(prefix):
+                    insert_text = _quote_identifier(cte.name, dialect)
+                    tier = 0 if prefix and name_lower == prefix else 1
                     items.append(
                         CompletionItem(
                             label=cte.name,
-                            insert_text=cte.name,
+                            insert_text=insert_text,
                             kind=CompletionKind.CTE,
                             detail="CTE",
-                            sort_key=(0, name_lower),
+                            sort_key=(tier, name_lower),
                         )
                     )
                     added_names.add(name_lower)
 
-            # Add catalog tables not shadowed by CTEs
             for entry in context.catalog:
                 alias_lower = entry.alias.lower()
                 if alias_lower in added_names:
                     continue
                 if not prefix or alias_lower.startswith(prefix):
+                    insert_text = _quote_identifier(entry.alias, dialect)
+                    tier = 0 if prefix and alias_lower == prefix else 2
                     items.append(
                         CompletionItem(
                             label=entry.alias,
-                            insert_text=entry.alias,
+                            insert_text=insert_text,
                             kind=CompletionKind.TABLE,
                             detail="table",
-                            sort_key=(0, alias_lower),
+                            sort_key=(tier, alias_lower),
                         )
                     )
 
@@ -70,41 +86,128 @@ class SqlCompletionService:
             qualifier = cursor_ctx.qualifier
             if qualifier:
                 qual_lower = qualifier.lower()
-                # Check if qualifier is a CTE
+                cols_to_add: tuple[ColumnSchema, ...] | None = None
                 if qual_lower in cte_map:
-                    cte_info = cte_map[qual_lower]
-                    if cte_info.columns is not None:
-                        for col in cte_info.columns:
-                            if not prefix or col.name.lower().startswith(prefix):
-                                items.append(
-                                    CompletionItem(
-                                        label=col.name,
-                                        insert_text=col.name,
-                                        kind=CompletionKind.COLUMN,
-                                        detail=col.data_type,
-                                        sort_key=(0, col.name.lower()),
-                                    )
-                                )
+                    cols_to_add = cte_map[qual_lower].columns
                 else:
                     target_table = self._resolve_qualifier_to_table(
-                        context.sql, context.cursor_offset, qualifier, context.dialect
+                        context.sql, context.cursor_offset, qualifier, dialect
                     )
                     if target_table:
                         entry = self._find_catalog_entry(context.catalog, target_table)
-                        if entry is not None and entry.schema is not None:
-                            for col in entry.schema:
-                                if not prefix or col.name.lower().startswith(prefix):
-                                    items.append(
-                                        CompletionItem(
-                                            label=col.name,
-                                            insert_text=col.name,
-                                            kind=CompletionKind.COLUMN,
-                                            detail=col.data_type,
-                                            sort_key=(0, col.name.lower()),
-                                        )
-                                    )
+                        if entry is not None:
+                            cols_to_add = entry.schema
 
-        return tuple(items)
+                if cols_to_add:
+                    for col in cols_to_add:
+                        c_lower = col.name.lower()
+                        if not prefix or c_lower.startswith(prefix):
+                            insert_text = _quote_identifier(col.name, dialect)
+                            items.append(
+                                CompletionItem(
+                                    label=col.name,
+                                    insert_text=insert_text,
+                                    kind=CompletionKind.COLUMN,
+                                    detail=col.data_type,
+                                    sort_key=(0, c_lower),
+                                )
+                            )
+
+        elif cursor_ctx.kind == CursorContextKind.COLUMN_REF:
+            # 1. In-scope CTEs (Tier 1)
+            added_tables: set[str] = set()
+            for cte in ctes:
+                c_lower = cte.name.lower()
+                if not prefix or c_lower.startswith(prefix):
+                    tier = 0 if prefix and c_lower == prefix else 1
+                    items.append(
+                        CompletionItem(
+                            label=cte.name,
+                            insert_text=_quote_identifier(cte.name, dialect),
+                            kind=CompletionKind.CTE,
+                            detail="CTE",
+                            sort_key=(tier, c_lower),
+                        )
+                    )
+                    added_tables.add(c_lower)
+
+            # 2. In-scope catalog tables (Tier 2)
+            for entry in context.catalog:
+                a_lower = entry.alias.lower()
+                if a_lower not in added_tables and (not prefix or a_lower.startswith(prefix)):
+                    tier = 0 if prefix and a_lower == prefix else 2
+                    items.append(
+                        CompletionItem(
+                            label=entry.alias,
+                            insert_text=_quote_identifier(entry.alias, dialect),
+                            kind=CompletionKind.TABLE,
+                            detail="table",
+                            sort_key=(tier, a_lower),
+                        )
+                    )
+
+            # 3. In-scope columns from referenced tables/CTEs (Tier 3)
+            tables_in_query = self._find_tables_in_statement(context.sql, dialect)
+            for tbl in tables_in_query:
+                tbl_lower = tbl.lower()
+                cols: tuple[ColumnSchema, ...] | None = None
+                if tbl_lower in cte_map:
+                    cols = cte_map[tbl_lower].columns
+                else:
+                    entry = self._find_catalog_entry(context.catalog, tbl)
+                    if entry:
+                        cols = entry.schema
+
+                if cols:
+                    for col in cols:
+                        col_lower = col.name.lower()
+                        if not prefix or col_lower.startswith(prefix):
+                            tier = 0 if prefix and col_lower == prefix else 3
+                            items.append(
+                                CompletionItem(
+                                    label=col.name,
+                                    insert_text=_quote_identifier(col.name, dialect),
+                                    kind=CompletionKind.COLUMN,
+                                    detail=col.data_type,
+                                    sort_key=(tier, col_lower),
+                                )
+                            )
+
+            # 4. Dialect functions (Tier 4)
+            funcs = get_dialect_functions(dialect)
+            for fn in funcs:
+                fn_lower = fn.name.lower()
+                if not prefix or fn_lower.startswith(prefix):
+                    tier = 0 if prefix and fn_lower == prefix else 4
+                    items.append(
+                        CompletionItem(
+                            label=fn.name,
+                            insert_text=f"{fn.name}(",
+                            kind=CompletionKind.FUNCTION,
+                            detail=fn.signature,
+                            sort_key=(tier, fn_lower),
+                        )
+                    )
+
+            # 5. Dialect keywords (Tier 5)
+            keywords = get_dialect_keywords(dialect)
+            for kw in keywords:
+                kw_lower = kw.lower()
+                if not prefix or kw_lower.startswith(prefix):
+                    tier = 0 if prefix and kw_lower == prefix else 5
+                    items.append(
+                        CompletionItem(
+                            label=kw,
+                            insert_text=kw,
+                            kind=CompletionKind.KEYWORD,
+                            detail="keyword",
+                            sort_key=(tier, kw_lower),
+                        )
+                    )
+
+        # Stable sort by sort_key
+        sorted_items = sorted(items, key=lambda x: (x.sort_key[0], x.sort_key[1], x.label))
+        return tuple(sorted_items)
 
     def _find_ctes(
         self, sql: str, dialect: str, catalog: tuple[CatalogEntry, ...]
@@ -204,6 +307,26 @@ class SqlCompletionService:
                 return tbl
 
         return None
+
+    def _find_tables_in_statement(self, sql: str, dialect: str) -> tuple[str, ...]:
+        tables: set[str] = set()
+
+        try:
+            parsed = sqlglot.parse_one(sql, read=dialect)
+            if parsed:
+                for tbl in parsed.find_all(exp.Table):
+                    if tbl.name:
+                        tables.add(tbl.name)
+                return tuple(tables)
+        except Exception:  # noqa: BLE001, S110 - deliberate fallback to lexical scanner on parse error
+            pass
+
+        pattern = r"\b(?:FROM|JOIN)\s+([a-zA-Z0-9_]+)"
+        matches = re.finditer(pattern, sql, re.IGNORECASE)
+        for match in matches:
+            tables.add(match.group(1))
+
+        return tuple(tables)
 
     @staticmethod
     def _find_catalog_entry(

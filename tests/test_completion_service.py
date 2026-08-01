@@ -212,3 +212,70 @@ def test_cte_qualified_columns_not_derivable_returns_nothing() -> None:
     items = service.complete(ctx)
     column_items = [item for item in items if item.kind == CompletionKind.COLUMN]
     assert len(column_items) == 0
+
+
+def test_completion_ranking_order() -> None:
+    service = SqlCompletionService()
+    catalog = (_make_catalog_entry("customer_table", (ColumnSchema("customer_id", "INT"),)),)
+    sql = "WITH cnt AS (SELECT 1 AS n)\nSELECT c FROM customer_table"
+    # cursor after "SELECT c"
+    cursor_offset = sql.find("SELECT c") + 8
+    ctx = CompletionContext(sql=sql, cursor_offset=cursor_offset, dialect="duckdb", catalog=catalog)
+
+    items = service.complete(ctx)
+    matching_kinds = [item.kind for item in items if item.label.lower().startswith("c")]
+
+    # Expected order: CTE, TABLE, COLUMN, FUNCTION, KEYWORD
+    # e.g., cnt (CTE), customer_table (TABLE), customer_id (COLUMN), COUNT/COALESCE (FUNCTION), CAST/CASE (KEYWORD)
+    cte_idx = matching_kinds.index(CompletionKind.CTE)
+    tbl_idx = matching_kinds.index(CompletionKind.TABLE)
+    col_idx = matching_kinds.index(CompletionKind.COLUMN)
+    fn_idx = matching_kinds.index(CompletionKind.FUNCTION)
+    kw_idx = matching_kinds.index(CompletionKind.KEYWORD)
+
+    assert cte_idx < tbl_idx < col_idx < fn_idx < kw_idx
+
+
+def test_identifier_quoting_and_function_parens() -> None:
+    service = SqlCompletionService()
+    catalog = (
+        _make_catalog_entry(
+            "orders",
+            (
+                ColumnSchema("my col", "VARCHAR"),
+                ColumnSchema("select", "INTEGER"),
+            ),
+        ),
+    )
+
+    sql = "SELECT o. FROM orders o"
+    ctx = CompletionContext(sql=sql, cursor_offset=9, dialect="duckdb", catalog=catalog)
+    items = service.complete(ctx)
+
+    item_dict = {item.label: item for item in items}
+    assert item_dict["my col"].insert_text == '"my col"'
+    assert item_dict["select"].insert_text == '"select"'
+
+    sql_fn = "SELECT COAL"
+    ctx_fn = CompletionContext(
+        sql=sql_fn, cursor_offset=len(sql_fn), dialect="duckdb", catalog=catalog
+    )
+    fn_items = service.complete(ctx_fn)
+    coalesce_item = next(item for item in fn_items if item.label == "COALESCE")
+
+    assert coalesce_item.kind == CompletionKind.FUNCTION
+    assert coalesce_item.insert_text == "COALESCE("
+
+
+def test_ranking_determinism() -> None:
+    service = SqlCompletionService()
+    catalog = (
+        _make_catalog_entry("b_tbl"),
+        _make_catalog_entry("a_tbl"),
+    )
+    sql = "SELECT * FROM "
+    ctx = CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=catalog)
+
+    items = service.complete(ctx)
+    labels = [item.label for item in items if item.kind == CompletionKind.TABLE]
+    assert labels == ["a_tbl", "b_tbl"]
