@@ -145,14 +145,14 @@ class ResultTableView(QTableView):
         column = header.logicalIndexAt(pos)
         if column >= 0:
             menu = self.create_header_context_menu(column)
-            menu.exec(p=header.mapToGlobal(pos))
+            QMenu.exec(menu, header.mapToGlobal(pos))
 
     def _on_body_context_menu_requested(self, pos: QPoint) -> None:
         idx = self.indexAt(pos)
         viewport = self.viewport()
         if idx.isValid() and viewport is not None:
             menu = self.create_body_context_menu()
-            menu.exec(p=viewport.mapToGlobal(pos))
+            QMenu.exec(menu, viewport.mapToGlobal(pos))
 
     def keyPressEvent(self, e: QKeyEvent | None) -> None:
         if e is not None and e.matches(QKeySequence.StandardKey.Copy):
