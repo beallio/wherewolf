@@ -8,12 +8,16 @@
 ## Files Modified
 - `docs/plans/2026-07-31_pyqt6-sql-intellisense.md` (initial commit of plan)
 - `docs/agent_conversations/2026-07-31_pyqt6-sql-intellisense.md` (session log)
+- `src/wherewolf/domain/models.py` (added CompletionContext, CompletionItem)
 
 ## Tests Added
-- None yet (Task 1 baseline)
+- `tests/test_completion_models.py`
 
 ## Design Decisions
 - Followed 12-task plan incrementally.
+- Added dataclasses `CompletionContext` and `CompletionItem` with `__post_init__` empty label check.
 
 ## Results
-- Baseline verified: 179 passed, 1 skipped.
+- Task 1 baseline: 179 passed, 1 skipped.
+- Task 2 complete: `tests/test_completion_models.py` passing (3 tests).
+
