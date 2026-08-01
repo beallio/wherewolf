@@ -220,13 +220,16 @@ class _DuckDBAdapter(ExecutionEngine):
 
             temp_alias = "_schema_hud"
             self._register_view(con, str(entry.path), temp_alias)
-            df = con.sql(f"DESCRIBE {temp_alias}").pl()
-            columns = df.select(["column_name", "column_type"]).rename(
-                {"column_name": "Column", "column_type": "Type"}
+            rows = con.sql(f"DESCRIBE {temp_alias}").fetchall()
+            cols = tuple(
+                ColumnSchema(
+                    name=str(r[0]), data_type=str(r[1]), nullable=(str(r[2]).upper() == "YES")
+                )
+                for r in rows
             )
             return SchemaResult(
                 entry_id=entry.id,
-                columns=_frame_to_columns(columns),
+                columns=cols,
             )
         except Exception as e:  # noqa: BLE001  # Schema inspection boundary: return empty schema on error
             if (

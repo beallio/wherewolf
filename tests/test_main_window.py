@@ -266,7 +266,9 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
-    assert "Error (SyntaxError): near SELECT" in window._results_text.toPlainText()
+    msg, severity = window.messages_panel.message_at(0)
+    assert "Error (SyntaxError): near SELECT" in msg
+    assert severity == "error"
 
     # 3. Cancelled result: grid cleared
     res_cancelled = QueryResult(
@@ -281,7 +283,9 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_cancelled, request)
     assert grid.proxy_model().rowCount() == 0
-    assert "cancelled" in window._results_text.toPlainText().lower()
+    msg, severity = window.messages_panel.message_at(0)
+    assert "cancelled" in msg.lower()
+    assert severity == "warning"
 
 
 def test_main_window_result_grid_gui_thread_population(qtbot, monkeypatch) -> None:

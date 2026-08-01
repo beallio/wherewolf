@@ -13,7 +13,6 @@ from PyQt6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QTabWidget,
-    QTextEdit,
     QToolBar,
 )
 
@@ -21,6 +20,7 @@ from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.widgets import CatalogDock, SqlEditor
+from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.workers import SchemaWorker
 from wherewolf.domain import (
@@ -162,13 +162,10 @@ class MainWindow(QMainWindow):
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
             self.result_table_view.set_frame(result.frame)
-            self._results_text.setPlainText("")
-        elif result.status is ExecutionStatus.FAILED:
+        else:
             self.result_table_view.set_frame(None)
-            self._results_text.setPlainText(f"Error ({result.error_type}): {result.error_message}")
-        elif result.status is ExecutionStatus.CANCELLED:
-            self.result_table_view.set_frame(None)
-            self._results_text.setPlainText("Query execution cancelled.")
+
+        self.messages_panel.show_query_result(result)
 
         if result.status is ExecutionStatus.SUCCEEDED:
             catalog_dict = {b.alias: str(b.path) for b in request.catalog}
@@ -255,10 +252,10 @@ class MainWindow(QMainWindow):
         self.result_table_view = ResultTableView(self)
         self.result_table_view.setObjectName("result_table_view")
         self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
-        self._results_text = QTextEdit("Results pending")
-        self._results_text.setObjectName("results_text")
         results.addTab(self.result_table_view, "Results")
-        results.addTab(self._results_text, "Messages")
+        self.messages_panel = MessagesPanel(self)
+        self.messages_panel.setObjectName("messages_panel")
+        results.addTab(self.messages_panel, "Messages")
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
