@@ -162,3 +162,53 @@ def test_qualified_column_parseable_and_broken_sql(sql: str, cursor_offset: int)
     items = service.complete(ctx)
     labels = [item.label for item in items if item.kind == CompletionKind.COLUMN]
     assert "id" in labels
+
+
+def test_cte_suggested_in_from_clause() -> None:
+    catalog = (_make_catalog_entry("orders"),)
+    service = SqlCompletionService()
+
+    sql = "WITH recent AS (SELECT * FROM orders)\nSELECT * FROM "
+    ctx = CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=catalog)
+
+    items = service.complete(ctx)
+    cte_items = [item for item in items if item.kind == CompletionKind.CTE]
+    assert len(cte_items) == 1
+    assert cte_items[0].label == "recent"
+
+
+def test_cte_shadows_catalog_alias() -> None:
+    catalog = (_make_catalog_entry("orders"),)
+    service = SqlCompletionService()
+
+    sql = "WITH orders AS (SELECT 1 AS x)\nSELECT * FROM "
+    ctx = CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=catalog)
+
+    items = service.complete(ctx)
+    table_names = [item.label for item in items if item.label == "orders"]
+    assert len(table_names) == 1
+    assert items[0].kind == CompletionKind.CTE
+
+
+def test_cte_qualified_columns_derivable() -> None:
+    orders_cols = (ColumnSchema("id", "INTEGER"), ColumnSchema("amount", "DOUBLE"))
+    catalog = (_make_catalog_entry("orders", orders_cols),)
+    service = SqlCompletionService()
+
+    sql = "WITH recent AS (SELECT * FROM orders)\nSELECT recent."
+    ctx = CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=catalog)
+
+    items = service.complete(ctx)
+    labels = [item.label for item in items if item.kind == CompletionKind.COLUMN]
+    assert "id" in labels
+    assert "amount" in labels
+
+
+def test_cte_qualified_columns_not_derivable_returns_nothing() -> None:
+    service = SqlCompletionService()
+    sql = "WITH unknown AS (SELECT UNKNOWN_FUNC())\nSELECT unknown."
+    ctx = CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=())
+
+    items = service.complete(ctx)
+    column_items = [item for item in items if item.kind == CompletionKind.COLUMN]
+    assert len(column_items) == 0
