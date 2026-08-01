@@ -133,3 +133,40 @@ def test_result_table_view_body_context_menu_actions(qtbot):
 
     actions["Copy with Quoted Column Names"].trigger()
     assert QApplication.clipboard().text() == '"a"\t"b"\n10\tx\n20\ty'
+
+
+def test_result_table_view_column_operations(qtbot):
+    df = pl.DataFrame({"col1": [1, 2], "col2": [10, 20], "col3": [100, 200]})
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(df)
+
+    header = table_view.horizontalHeader()
+
+    # Move visual column 0 to visual column 1
+    table_view.move_column(0, 1)
+    assert header.visualIndex(0) == 1
+    assert header.visualIndex(1) == 0
+
+    # Hide column 1
+    table_view.hide_column(1)
+    assert table_view.isColumnHidden(1) is True
+
+    # Copy with hidden column: column 1 should be excluded from copy
+    sel_model = table_view.selectionModel()
+    idx0 = table_view.model().index(0, 0)
+    idx2 = table_view.model().index(0, 2)
+    selection = QItemSelection(idx0, idx2)
+    sel_model.select(
+        selection,
+        QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Clear,
+    )
+    table_view.copy_selection(include_headers=True)
+    assert QApplication.clipboard().text() == "col1\tcol3\n1\t100"
+
+    # Reset columns default: restores order and visibility
+    table_view.reset_columns_default()
+    assert table_view.isColumnHidden(1) is False
+    assert header.visualIndex(0) == 0
+    assert header.visualIndex(1) == 1
+    assert header.visualIndex(2) == 2

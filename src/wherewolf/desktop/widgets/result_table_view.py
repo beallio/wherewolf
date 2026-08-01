@@ -46,6 +46,31 @@ class ResultTableView(QTableView):
     def frame(self) -> pl.DataFrame:
         return self._source_model.frame()
 
+    def move_column(self, from_visual: int, to_visual: int) -> None:
+        self.horizontalHeader().moveSection(from_visual, to_visual)
+
+    def hide_column(self, column: int) -> None:
+        self.setColumnHidden(column, True)
+
+    def show_column(self, column: int) -> None:
+        self.setColumnHidden(column, False)
+
+    def show_all_columns(self) -> None:
+        for c in range(self._proxy_model.columnCount()):
+            self.setColumnHidden(c, False)
+
+    def auto_size_columns(self) -> None:
+        self.resizeColumnsToContents()
+
+    def reset_columns_default(self) -> None:
+        header = self.horizontalHeader()
+        num_cols = self._proxy_model.columnCount()
+        for c in range(num_cols):
+            self.setColumnHidden(c, False)
+            v_idx = header.visualIndex(c)
+            if v_idx != c:
+                header.moveSection(v_idx, c)
+
     def create_header_context_menu(self, column: int) -> QMenu:
         menu = QMenu(self)
         h_name = str(
@@ -81,6 +106,11 @@ class ResultTableView(QTableView):
             "Insert Header into Editor",
             lambda: self.insert_header_requested.emit(h_name),
         )
+        menu.addSeparator()
+        menu.addAction("Hide Column", lambda: self.hide_column(column))
+        menu.addAction("Show All Columns", self.show_all_columns)
+        menu.addAction("Auto-size Columns", self.auto_size_columns)
+        menu.addAction("Reset Columns to Default", self.reset_columns_default)
         return menu
 
     def create_body_context_menu(self) -> QMenu:
