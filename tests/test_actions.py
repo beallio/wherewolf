@@ -31,6 +31,9 @@ def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
     )
     assert "Unavailable" not in actions.add_datasets.toolTip()
 
+    assert actions.reset_layout.text() == "Reset Layout"
+    assert actions.clear_history.text() == "Clear History"
+
 
 def test_add_datasets_action_adds_catalog_paths(tmp_path, qtbot) -> None:
     service = CatalogService()

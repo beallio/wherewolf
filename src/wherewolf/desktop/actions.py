@@ -17,6 +17,8 @@ class DesktopActions:
     format_sql: QAction
     add_datasets: QAction
     show_completion: QAction
+    reset_layout: QAction
+    clear_history: QAction
 
 
 def build_actions(parent: QWidget | None = None) -> DesktopActions:
@@ -42,10 +44,18 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     show_completion.setEnabled(True)
     show_completion.setShortcut(QKeySequence("Ctrl+Space"))
 
+    reset_layout = QAction("Reset Layout", parent)
+    reset_layout.setEnabled(True)
+
+    clear_history = QAction("Clear History", parent)
+    clear_history.setEnabled(True)
+
     return DesktopActions(
         run=run,
         cancel=cancel,
         format_sql=format_sql,
         add_datasets=add_datasets,
         show_completion=show_completion,
+        reset_layout=reset_layout,
+        clear_history=clear_history,
     )

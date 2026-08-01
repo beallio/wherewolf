@@ -138,6 +138,8 @@ class MainWindow(QMainWindow):
 
     def _connect_actions(self) -> None:
         self.desktop_actions.add_datasets.triggered.connect(self._on_add_datasets)
+        self.desktop_actions.reset_layout.triggered.connect(self._reset_layout)
+        self.desktop_actions.clear_history.triggered.connect(self._clear_history)
         self.desktop_actions.run.triggered.connect(self._on_run_triggered)
         self.desktop_actions.cancel.triggered.connect(self._on_cancel_triggered)
 
@@ -348,6 +350,7 @@ class MainWindow(QMainWindow):
         assert menu_bar is not None
         file_menu = cast(QMenu, menu_bar.addMenu("File"))
         file_menu.setObjectName("file_menu")
+        file_menu.addAction(self.desktop_actions.clear_history)
 
         edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
         edit_menu.setObjectName("edit_menu")
@@ -361,6 +364,7 @@ class MainWindow(QMainWindow):
 
         view_menu = cast(QMenu, menu_bar.addMenu("View"))
         view_menu.setObjectName("view_menu")
+        view_menu.addAction(self.desktop_actions.reset_layout)
 
         help_menu = cast(QMenu, menu_bar.addMenu("Help"))
         help_menu.setObjectName("help_menu")
@@ -386,6 +390,24 @@ class MainWindow(QMainWindow):
 
         font_size = self._settings_service.restore_editor_font_size()
         self.editor.set_font_size(font_size)
+
+    def _reset_layout(self) -> None:
+        """Return persistent docks and the central splitter to their default arrangement."""
+        for dock, area in (
+            (self._catalog_dock_widget, Qt.DockWidgetArea.LeftDockWidgetArea),
+            (self._history_dock_widget, Qt.DockWidgetArea.RightDockWidgetArea),
+        ):
+            dock.setFloating(False)
+            self.addDockWidget(area, dock)
+            dock.show()
+        self._central_splitter.setSizes(list(self._settings_service.DEFAULT_SPLITTER_SIZES))
+        self._settings_service.save_window_state(self.saveState().data())
+        self._settings_service.save_splitter_sizes(self._central_splitter.sizes())
+
+    def _clear_history(self) -> None:
+        """Atomically clear persisted history and synchronize the dock immediately."""
+        self.history_manager.clear()
+        self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
         for worker in list(self._schema_workers):

@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -231,6 +232,50 @@ def test_main_window_without_stored_settings_has_a_sane_default_layout(
     )
     assert len(window._central_splitter.sizes()) == 2
     assert all(size > 0 for size in window._central_splitter.sizes())
+
+
+def test_reset_layout_restores_and_persists_default_docks_and_splitter(
+    tmp_path: Path, qtbot
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "reset-layout")
+    window = MainWindow(settings_service=service)
+    qtbot.addWidget(window)
+    window.resize(800, 600)
+    window.show()
+    qtbot.waitUntil(lambda: window._central_splitter.height() > 0)
+    window.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, window._history_dock_widget)
+    window._central_splitter.setSizes([300, 100])
+
+    window.desktop_actions.reset_layout.trigger()
+
+    assert (
+        window.dockWidgetArea(window._catalog_dock_widget) is Qt.DockWidgetArea.LeftDockWidgetArea
+    )
+    assert (
+        window.dockWidgetArea(window._history_dock_widget) is Qt.DockWidgetArea.RightDockWidgetArea
+    )
+    assert service.restore_splitter_sizes() == tuple(window._central_splitter.sizes())
+    restored = MainWindow(settings_service=service)
+    qtbot.addWidget(restored)
+    assert (
+        restored.dockWidgetArea(restored._history_dock_widget)
+        is Qt.DockWidgetArea.RightDockWidgetArea
+    )
+
+
+def test_clear_history_action_empties_store_and_history_dock(tmp_path: Path, qtbot) -> None:
+    history_path = tmp_path / "history.json"
+    history = HistoryManager(storage_path=history_path)
+    history.add_entry("duckdb", "SELECT to_clear")
+    window = MainWindow(history_manager=history)
+    qtbot.addWidget(window)
+    assert window.history_dock.history_list.count() == 1
+
+    window.desktop_actions.clear_history.trigger()
+
+    assert history.get_all() == []
+    assert window.history_dock.history_list.count() == 0
+    assert json.loads(history_path.read_text()) == []
 
 
 def test_main_window_action_enabled_states_and_status_bar_during_execution(
