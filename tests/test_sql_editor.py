@@ -1,7 +1,17 @@
 from PyQt6.Qsci import QsciLexerSQL
 
 from wherewolf.desktop.widgets import SqlEditor
-from wherewolf.services import StatementSelection, StatementService
+from wherewolf.services import SqlCompletionService, StatementSelection, StatementService
+
+
+class _SpyCompletionService(SqlCompletionService):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls = 0
+
+    def complete(self, context):
+        self.calls += 1
+        return super().complete(context)
 
 
 class _SpyStatementService(StatementService):
@@ -148,3 +158,134 @@ def test_format_error_leaves_text_unchanged_and_reports_diagnostic(qtbot) -> Non
     assert editor.text() == "select from"
     assert messages
     assert messages[-1]
+
+
+def test_sql_editor_completion_threshold_and_ctrl_space(qtbot, tmp_path) -> None:
+    from PyQt6.QtCore import QSettings
+
+    from wherewolf.services import SettingsService
+
+    settings = QSettings(str(tmp_path / "test.ini"), QSettings.Format.IniFormat)
+    settings_service = SettingsService(settings)
+
+    spy_service = _SpyCompletionService()
+    editor = SqlEditor(settings_service=settings_service, completion_service=spy_service)
+    qtbot.addWidget(editor)
+
+    assert editor.show_completion_action is not None
+    assert editor.show_completion_action.isEnabled()
+    assert editor.completion_threshold == 2
+    assert editor.completion_enabled is True
+    assert editor.show_completion_action.shortcut().toString() == "Ctrl+Space"
+
+    # 1. Prefix shorter than default threshold (2) does NOT request completion
+    editor.setText("S")
+    editor.setCursorPosition(0, 1)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 0
+
+    # 2. Prefix at or above threshold (2) DOES request completion
+    editor.setText("SE")
+    editor.setCursorPosition(0, 2)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 1
+
+
+def test_sql_editor_completion_disabled_unforced_vs_forced(qtbot, tmp_path) -> None:
+    from PyQt6.QtCore import QSettings
+
+    from wherewolf.services import SettingsService
+
+    settings = QSettings(str(tmp_path / "test.ini"), QSettings.Format.IniFormat)
+    settings_service = SettingsService(settings)
+    settings_service.save_completion_enabled(False)
+
+    spy_service = _SpyCompletionService()
+    editor = SqlEditor(settings_service=settings_service, completion_service=spy_service)
+    qtbot.addWidget(editor)
+
+    assert editor.completion_enabled is False
+
+    # 3. With completion_enabled=False, unforced typing does NOT request completion
+    editor.setText("SELECT")
+    editor.setCursorPosition(0, 6)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 0
+
+    # Forced request (Ctrl+Space) STILL requests completion
+    editor.request_completion(forced=True)
+    assert spy_service.calls == 1
+
+
+def test_sql_editor_completion_custom_threshold(qtbot, tmp_path) -> None:
+    from PyQt6.QtCore import QSettings
+
+    from wherewolf.services import SettingsService
+
+    settings = QSettings(str(tmp_path / "test.ini"), QSettings.Format.IniFormat)
+    settings_service = SettingsService(settings)
+    settings_service.save_completion_threshold(3)
+
+    spy_service = _SpyCompletionService()
+    editor = SqlEditor(settings_service=settings_service, completion_service=spy_service)
+    qtbot.addWidget(editor)
+
+    assert editor.completion_threshold == 3
+
+    # 4. Set to 3: 2-character prefix no longer triggers
+    editor.setText("SE")
+    editor.setCursorPosition(0, 2)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 0
+
+    # 3-character prefix DOES trigger
+    editor.setText("SEL")
+    editor.setCursorPosition(0, 3)
+    editor.request_completion(forced=False)
+    assert spy_service.calls == 1
+
+
+def test_main_window_show_completion_action_is_same_object_in_query_menu_and_editor(qtbot) -> None:
+    from wherewolf.desktop import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    action_in_actions = window.desktop_actions.show_completion
+    action_in_menu = None
+    for action in window.query_menu.actions():
+        if action.text() == "Show Completion":
+            action_in_menu = action
+            break
+
+    assert action_in_menu is not None
+    assert action_in_menu is action_in_actions
+    assert window.editor.show_completion_action is action_in_actions
+
+
+def test_sql_editor_gui_thread_never_blocked_with_none_schema(qtbot) -> None:
+    from pathlib import Path
+    from uuid import uuid4
+
+    from wherewolf.domain.enums import SourceFormat
+    from wherewolf.domain.models import CatalogEntry
+
+    catalog = (
+        CatalogEntry(
+            id=uuid4(),
+            alias="orders",
+            path=Path("/tmp/orders.csv"),
+            source_format=SourceFormat.CSV,
+            schema=None,
+        ),
+    )
+
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.set_catalog(catalog)
+
+    editor.setText("SELECT o. FROM orders o")
+    editor.setCursorPosition(0, 9)
+
+    # Trigger completion - must return promptly and show no columns without raising or blocking
+    editor.request_completion(forced=True)

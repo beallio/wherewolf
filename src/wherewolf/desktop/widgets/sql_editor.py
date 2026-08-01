@@ -7,8 +7,16 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence
 from PyQt6.QtWidgets import QMenu
 
-from wherewolf.domain import SqlDiagnostic
-from wherewolf.services import SettingsService, SqlFormattingService, StatementService
+from wherewolf.desktop.widgets.completion_adapter import CompletionAdapter
+from wherewolf.domain import CatalogEntry, SqlDiagnostic
+from wherewolf.domain.models import CompletionContext
+from wherewolf.services import (
+    SettingsService,
+    SqlCompletionService,
+    SqlFormattingService,
+    StatementService,
+)
+from wherewolf.services.completion_context import detect_context
 
 
 class SqlEditor(QsciScintilla):
@@ -22,14 +30,27 @@ class SqlEditor(QsciScintilla):
         settings_service: SettingsService | None = None,
         statement_service: StatementService | None = None,
         formatting_service: SqlFormattingService | None = None,
+        completion_service: SqlCompletionService | None = None,
         format_action: QAction | None = None,
+        show_completion_action: QAction | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent=parent)
         self._settings_service = settings_service or SettingsService()
         self._statement_service = statement_service or StatementService()
         self._formatting_service = formatting_service or SqlFormattingService()
+        self._completion_service = completion_service or SqlCompletionService()
         self._format_action = format_action
+
+        if show_completion_action is not None:
+            self._show_completion_action = show_completion_action
+        else:
+            self._show_completion_action = QAction("Show Completion", self)
+            self._show_completion_action.setShortcut(QKeySequence("Ctrl+Space"))
+            self._show_completion_action.setEnabled(True)
+
+        self._catalog: tuple[CatalogEntry, ...] = ()
+        self._completion_adapter = CompletionAdapter(self, self._completion_service)
         self._diagnostic_indicator = 1
         self._font_size = self._settings_service.restore_editor_font_size()
 
@@ -39,10 +60,50 @@ class SqlEditor(QsciScintilla):
         self._setup_settings()
         self._refresh_line_margin()
         self.textChanged.connect(self._refresh_line_margin)
+        self.textChanged.connect(self._on_text_changed_completion)
+        self._show_completion_action.triggered.connect(lambda: self.request_completion(forced=True))
 
     @property
     def font_size(self) -> int:
         return self._font_size
+
+    @property
+    def show_completion_action(self) -> QAction:
+        return self._show_completion_action
+
+    @property
+    def completion_threshold(self) -> int:
+        return self._settings_service.restore_completion_threshold()
+
+    @property
+    def completion_enabled(self) -> bool:
+        return self._settings_service.restore_completion_enabled()
+
+    def set_catalog(self, catalog: tuple[CatalogEntry, ...]) -> None:
+        self._catalog = tuple(catalog)
+
+    def request_completion(self, forced: bool = False) -> None:
+        text = self.text()
+        line, col = self.getCursorPosition()
+        cursor_offset = self.positionFromLineIndex(line, col)
+
+        if not forced:
+            if not self.completion_enabled:
+                return
+            cursor_ctx = detect_context(text, cursor_offset)
+            if len(cursor_ctx.prefix) < self.completion_threshold:
+                return
+
+        ctx = CompletionContext(
+            sql=text,
+            cursor_offset=cursor_offset,
+            dialect="duckdb",
+            catalog=self._catalog,
+        )
+        self._completion_adapter.request_completion(ctx)
+
+    def _on_text_changed_completion(self) -> None:
+        self.request_completion(forced=False)
 
     def _setup_editor(self) -> None:
         self.setLexer(QsciLexerSQL(self))
@@ -95,8 +156,6 @@ class SqlEditor(QsciScintilla):
         self.setCaretLineVisible(True)
 
     def _setup_context_menu(self) -> None:
-        # Context menu is populated dynamically at show time so all actions stay
-        # current with latest formatting action state.
         return
 
     def _setup_settings(self) -> None:
@@ -225,7 +284,6 @@ class SqlEditor(QsciScintilla):
                 self._diagnostic_indicator,
             )
         except Exception:  # noqa: BLE001
-            # Indicator painting API differs across Qsci bindings; non-critical when unavailable.
             return
 
     def _clear_diagnostic_indicator(self) -> None:
@@ -239,7 +297,6 @@ class SqlEditor(QsciScintilla):
                 self._diagnostic_indicator,
             )
         except Exception:  # noqa: BLE001
-            # Indicator API compatibility with Qsci bindings.
             return
 
     def _restore_view(self, first_visible_line: int, horizontal: int) -> None:
@@ -312,6 +369,8 @@ class SqlEditor(QsciScintilla):
         menu.addAction(self._paste_action)
         menu.addSeparator()
         menu.addAction(self._toggle_comment_action)
+        menu.addSeparator()
+        menu.addAction(self._show_completion_action)
         if self._format_action is not None:
             menu.addSeparator()
             menu.addAction(self._format_action)

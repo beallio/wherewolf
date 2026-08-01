@@ -16,6 +16,7 @@ class DesktopActions:
     cancel: QAction
     format_sql: QAction
     add_datasets: QAction
+    show_completion: QAction
 
 
 def build_actions(parent: QWidget | None = None) -> DesktopActions:
@@ -37,4 +38,14 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     add_datasets.setShortcut(QKeySequence.StandardKey.Open)
     add_datasets.setToolTip("")
 
-    return DesktopActions(run=run, cancel=cancel, format_sql=format_sql, add_datasets=add_datasets)
+    show_completion = QAction("Show Completion", parent)
+    show_completion.setEnabled(True)
+    show_completion.setShortcut(QKeySequence("Ctrl+Space"))
+
+    return DesktopActions(
+        run=run,
+        cancel=cancel,
+        format_sql=format_sql,
+        add_datasets=add_datasets,
+        show_completion=show_completion,
+    )

@@ -19,6 +19,9 @@ class SettingsService:
     DEFAULT_SPLITTER_SIZES: Final = (1, 1)
     DEFAULT_DATASET_DIRECTORY: Final = Path.home()
 
+    DEFAULT_COMPLETION_THRESHOLD: Final = 2
+    DEFAULT_COMPLETION_ENABLED: Final = True
+
     def __init__(self, settings: QSettings | None = None):
         self._settings = settings or QSettings(self.ORGANIZATION, self.APPLICATION)
 
@@ -41,6 +44,14 @@ class SettingsService:
     @staticmethod
     def _last_dataset_directory_key(schema_version: str) -> str:
         return f"{schema_version}/dataset_directory/last"
+
+    @staticmethod
+    def _completion_threshold_key(schema_version: str) -> str:
+        return f"{schema_version}/completion/threshold"
+
+    @staticmethod
+    def _completion_enabled_key(schema_version: str) -> str:
+        return f"{schema_version}/completion/enabled"
 
     @property
     def namespace_prefix(self) -> str:
@@ -65,6 +76,14 @@ class SettingsService:
     @property
     def last_dataset_directory_key(self) -> str:
         return self._last_dataset_directory_key(self.namespace_prefix)
+
+    @property
+    def completion_threshold_key(self) -> str:
+        return self._completion_threshold_key(self.namespace_prefix)
+
+    @property
+    def completion_enabled_key(self) -> str:
+        return self._completion_enabled_key(self.namespace_prefix)
 
     def restore_window_geometry(self) -> bytes:
         return self._read_bytes(self.window_geometry_key, b"")
@@ -104,6 +123,28 @@ class SettingsService:
 
     def save_last_dataset_directory(self, directory: Path) -> None:
         self._settings.setValue(self.last_dataset_directory_key, str(directory))
+
+    def restore_completion_threshold(self) -> int:
+        default = self.DEFAULT_COMPLETION_THRESHOLD
+        value = self._settings.value(self.completion_threshold_key, default)
+        if not isinstance(value, int):
+            return default
+        return value
+
+    def save_completion_threshold(self, threshold: int) -> None:
+        self._settings.setValue(self.completion_threshold_key, int(threshold))
+
+    def restore_completion_enabled(self) -> bool:
+        default = self.DEFAULT_COMPLETION_ENABLED
+        value = self._settings.value(self.completion_enabled_key, default)
+        if not isinstance(value, bool):
+            if isinstance(value, str):
+                return value.lower() in ("true", "1")
+            return default
+        return value
+
+    def save_completion_enabled(self, enabled: bool) -> None:
+        self._settings.setValue(self.completion_enabled_key, bool(enabled))
 
     def _read_bytes(self, key: str, default: bytes) -> bytes:
         value = self._settings.value(key, default)

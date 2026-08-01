@@ -86,3 +86,17 @@ def test_settings_service_last_dataset_directory_falls_back_for_corrupt(tmp_path
     service._settings.setValue(service.last_dataset_directory_key, 1234)
 
     assert service.restore_last_dataset_directory() == service.DEFAULT_DATASET_DIRECTORY
+
+
+def test_settings_service_completion_threshold_and_enabled_round_trip(tmp_path: Path) -> None:
+    settings = _configure_qsettings_path(tmp_path / "completion")
+    service = SettingsService(settings)
+
+    assert service.restore_completion_threshold() == 2
+    assert service.restore_completion_enabled() is True
+
+    service.save_completion_threshold(3)
+    service.save_completion_enabled(False)
+
+    assert service.restore_completion_threshold() == 3
+    assert service.restore_completion_enabled() is False

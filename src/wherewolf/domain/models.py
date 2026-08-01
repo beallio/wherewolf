@@ -5,7 +5,28 @@ from uuid import UUID
 
 import polars as pl
 
-from wherewolf.domain.enums import EngineKind, ExecutionStatus, SourceFormat
+from wherewolf.domain.enums import CompletionKind, EngineKind, ExecutionStatus, SourceFormat
+
+
+@dataclass(frozen=True, slots=True)
+class CompletionContext:
+    sql: str
+    cursor_offset: int
+    dialect: str
+    catalog: tuple["CatalogEntry", ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CompletionItem:
+    label: str
+    insert_text: str
+    kind: CompletionKind
+    detail: str | None
+    sort_key: tuple[int, str]
+
+    def __post_init__(self):
+        if not self.label:
+            raise ValueError("empty label")
 
 
 @dataclass(frozen=True, slots=True)
