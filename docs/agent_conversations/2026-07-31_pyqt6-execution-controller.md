@@ -21,4 +21,6 @@
 ## Results
 - Task 1 baseline recorded and clean.
 - Task 2 implemented `ExecutionRequestBuilder` with TDD green.
+- Task 3 added `executable_sql` translation using `translate_statements()` with TDD green.
+
 

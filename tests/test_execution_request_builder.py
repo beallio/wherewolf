@@ -87,3 +87,59 @@ def test_empty_or_whitespace_sql_rejected():
             engine=EngineKind.DUCKDB,
             catalog_service=catalog_service,
         )
+
+
+def test_build_same_dialect_does_not_rewrite_sql():
+    catalog_service = CatalogService()
+    sql = "SELECT 1 AS col"
+    req = ExecutionRequestBuilder.build(
+        sql=sql,
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog_service,
+    )
+    assert req.original_sql == sql
+    assert req.executable_sql == sql
+
+
+def test_build_different_dialect_translates_sql():
+    catalog_service = CatalogService()
+    # T-SQL top N -> DuckDB LIMIT
+    tsql = "SELECT TOP 10 * FROM tbl"
+    req = ExecutionRequestBuilder.build(
+        sql=tsql,
+        source_dialect="tsql",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog_service,
+    )
+    assert req.original_sql == tsql
+    assert "LIMIT 10" in req.executable_sql
+
+
+def test_build_multi_statement_preserves_all_statements():
+    catalog_service = CatalogService()
+    sql = "SELECT 1; SELECT 2"
+    req = ExecutionRequestBuilder.build(
+        sql=sql,
+        source_dialect="tsql",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog_service,
+    )
+    assert req.original_sql == sql
+    # Multi-statement preserved in executable_sql (both statements present)
+    assert "1" in req.executable_sql
+    assert "2" in req.executable_sql
+
+
+def test_build_untranslatable_sql_raises_translation_error():
+    from wherewolf.domain.errors import TranslationError
+
+    catalog_service = CatalogService()
+    sql = "INVALID SYNTAX (((("
+    with pytest.raises(TranslationError):
+        ExecutionRequestBuilder.build(
+            sql=sql,
+            source_dialect="tsql",
+            engine=EngineKind.DUCKDB,
+            catalog_service=catalog_service,
+        )
