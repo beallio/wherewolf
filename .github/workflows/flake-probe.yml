@@ -16,6 +16,9 @@ on:
   push:
     branches:
       - feat/ci-qt-flake-312
+    paths:
+      - .github/probe-mode
+      - .github/workflows/flake-probe.yml
 
 jobs:
   probe:

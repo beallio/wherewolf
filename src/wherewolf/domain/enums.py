@@ -17,7 +17,7 @@ class SourceFormat(StrEnum):
     XLSX = "xlsx"
 
     @classmethod
-    def from_path(cls, path: Path) -> "SourceFormat":
+    def from_path(cls, path: Path) -> SourceFormat:
         suffix = path.suffix.lower()
         match suffix:
             case ".csv":

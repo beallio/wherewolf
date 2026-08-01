@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from PyQt6.QtWidgets import QFileDialog, QWidget
-from typing_extensions import runtime_checkable
 
 from wherewolf.domain.enums import SourceFormat
 
