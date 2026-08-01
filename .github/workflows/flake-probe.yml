@@ -2,17 +2,15 @@ name: Flake Probe
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - feat/ci-qt-flake-312
 
 jobs:
   probe:
-    name: probe-${{ matrix.probe }}
+    name: probe-${{ matrix.python-version }}-${{ matrix.probe }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        python-version: ["3.12", "3.14"]
         probe: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     steps:
       - uses: actions/checkout@v6
@@ -21,8 +19,8 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
-      - name: Set up Python 3.12
-        run: uv python install 3.12
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
       - name: Install Qt offscreen system libraries
         run: |
           sudo apt-get update
@@ -33,6 +31,6 @@ jobs:
           distribution: temurin
           java-version: '21'
       - name: Install dependencies
-        run: ./run.sh uv sync --all-extras --dev --python 3.12
+        run: ./run.sh uv sync --all-extras --dev --python ${{ matrix.python-version }}
       - name: Run tests
-        run: ./run.sh uv run --python 3.12 pytest
+        run: ./run.sh uv run --python ${{ matrix.python-version }} pytest
