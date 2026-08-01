@@ -72,6 +72,11 @@ To run an on-demand regression check for native Qt/coverage crashes across multi
 ./scripts/check_flake.sh [runs]
 ```
 
+There is also a manual GitHub Actions probe workflow (`.github/workflows/flake-probe.yml`) that dispatches
+10 parallel Python 3.12 test runs with the same Qt/coverage configuration as CI (`on: workflow_dispatch` only).
+
+Use it to measure CI-only flake rates without affecting normal branch push/pull_request budgets.
+
 Lint/Format:
 ```bash
 ruff check . --fix
