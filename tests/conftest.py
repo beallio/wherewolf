@@ -2,6 +2,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+APPTEST_TIMEOUT = 30
+
 
 def pytest_sessionstart(session):
     cov_plugin = session.config.pluginmanager.get_plugin("_cov")

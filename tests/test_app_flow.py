@@ -1,4 +1,5 @@
 import polars as pl
+from conftest import APPTEST_TIMEOUT
 from streamlit.testing.v1 import AppTest
 
 
@@ -8,7 +9,7 @@ def test_app_query_execution_flow(tmp_path):
     csv_file = tmp_path / "app_test.csv"
     pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]}).write_csv(csv_file)
 
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
     at.run()
 
     # 2. Inject catalog and query into session state
@@ -36,7 +37,7 @@ def test_app_query_execution_flow(tmp_path):
 
 def test_app_clear_history():
     """Verify the clear history button works in the UI."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
     at.run()
 
     # Find clear history button
@@ -50,7 +51,7 @@ def test_app_clear_history():
 
 def test_translation_target_options():
     """Verify that translation targets exclude the input dialect."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
     at.run()
 
     # Simulate a successful execution with DuckDB as input

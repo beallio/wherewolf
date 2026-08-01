@@ -1,11 +1,12 @@
 from unittest.mock import patch
 
+from conftest import APPTEST_TIMEOUT
 from streamlit.testing.v1 import AppTest
 
 
 def test_app_initialization():
     """Basic test to ensure the Streamlit app can be initialized."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
     at.run()
 
     # Assert basic UI elements exist
@@ -16,7 +17,7 @@ def test_app_initialization():
 
 def test_query_updates_on_first_dataset():
     """Test that the query updates when the first dataset is loaded."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
 
     # We mock render_explorer to return a path then None
     with patch("wherewolf.app.FileBrowser.render_explorer") as mock_render:
@@ -32,7 +33,7 @@ def test_query_updates_on_first_dataset():
 
 def test_query_does_not_update_on_second_dataset():
     """Test that the query does not update when a second dataset is loaded."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
 
     with patch("wherewolf.app.FileBrowser.render_explorer") as mock_render:
         # Load first dataset

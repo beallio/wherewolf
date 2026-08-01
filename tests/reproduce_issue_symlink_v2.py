@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from conftest import APPTEST_TIMEOUT
 from streamlit.testing.v1 import AppTest
 
 
@@ -17,7 +18,7 @@ def test_app_handles_broken_symlinks(tmp_path):
     os.symlink(target, broken_link)
 
     # 2. Run the App using AppTest
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
 
     # 3. Set the explorer path in session state BEFORE running
     # Note: st.session_state in AppTest is set via at.session_state

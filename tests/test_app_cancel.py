@@ -1,5 +1,6 @@
 from unittest.mock import MagicMock, patch
 
+from conftest import APPTEST_TIMEOUT
 from streamlit.testing.v1 import AppTest
 
 
@@ -9,7 +10,7 @@ def test_app_cancel_logic_mocked():
         mock_engine = MagicMock()
         mock_engine_cls.return_value = mock_engine
 
-        at = AppTest.from_file("src/wherewolf/app.py")
+        at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
         at.run()
 
         # Simulate that a query is running

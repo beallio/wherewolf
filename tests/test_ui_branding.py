@@ -1,9 +1,10 @@
+from conftest import APPTEST_TIMEOUT
 from streamlit.testing.v1 import AppTest
 
 
 def test_sidebar_is_visible_by_default():
     """Verify that the sidebar is expanded by default as configured."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
     at.run()
 
     # Check sidebar state - look for our custom HTML branding
@@ -12,7 +13,7 @@ def test_sidebar_is_visible_by_default():
 
 def test_branding_css_present():
     """Verify that the custom CSS for hiding branding is injected."""
-    at = AppTest.from_file("src/wherewolf/app.py")
+    at = AppTest.from_file("src/wherewolf/app.py", default_timeout=APPTEST_TIMEOUT)
     at.run()
 
     # Find the markdown element containing our style tag
