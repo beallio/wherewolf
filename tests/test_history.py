@@ -192,3 +192,37 @@ def test_record_missing_required_key_is_skipped(storage_dir):
     entries = HistoryManager(storage_path=history_file).get_all()
 
     assert entries == [valid_entry]
+
+
+def test_get_by_id_returns_the_matching_record_or_none(storage_dir):
+    manager = HistoryManager(storage_path=storage_dir / "history.json")
+    manager.add_entry("duckdb", "SELECT first")
+    manager.add_entry("duckdb", "SELECT second")
+    selected = manager.get_all()[0]
+
+    assert manager.get_by_id(selected["id"]) == selected
+    assert manager.get_by_id("f46d098f-4cdc-4ad7-bd40-4c6db2ad0b64") is None
+
+
+def test_record_cap_evicts_the_oldest_v1_record_after_migration(storage_dir):
+    history_file = storage_dir / "history.json"
+    v1_entries = [
+        {
+            "timestamp": f"2026-08-01T12:{index:02d}:00+00:00",
+            "engine": "duckdb",
+            "query": f"SELECT legacy_{index}",
+        }
+        for index in range(100)
+    ]
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps(v1_entries))
+    manager = HistoryManager(storage_path=history_file)
+
+    assert len(manager.get_all()) == 100
+    manager.add_entry("duckdb", "SELECT newest")
+    entries = manager.get_all()
+
+    assert len(entries) == 100
+    assert entries[0]["query"] == "SELECT newest"
+    assert entries[-1]["query"] == "SELECT legacy_98"
+    assert "SELECT legacy_99" not in [entry["query"] for entry in entries]

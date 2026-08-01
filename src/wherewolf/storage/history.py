@@ -134,6 +134,10 @@ class HistoryManager:
             self._write_history(readable_entries)
         return readable_entries
 
+    def get_by_id(self, entry_id: str) -> dict | None:
+        """Return the history record identified by its stable UUID, if present."""
+        return next((entry for entry in self.get_all() if entry["id"] == entry_id), None)
+
     def clear(self):
         """Clears the query history."""
         self._write_history([])
