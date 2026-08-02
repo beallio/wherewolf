@@ -30,12 +30,12 @@ def test_completion_adapter_converts_items_and_shows_list(qtbot, editor):
     )
 
     show_spy = MagicMock()
-    editor.showUserList = show_spy
+    editor.SendScintilla = show_spy
 
     adapter.request_completion(ctx)
 
     service.complete.assert_called_once_with(ctx)
-    show_spy.assert_called_once()
+    show_spy.assert_called_once_with(editor.SCI_AUTOCSHOW, 3, b"orders?1 customers?1")
 
 
 def test_completion_adapter_empty_result_no_popup(qtbot, editor):
@@ -46,7 +46,7 @@ def test_completion_adapter_empty_result_no_popup(qtbot, editor):
     ctx = CompletionContext(sql="SELECT 'text'", cursor_offset=10, dialect="duckdb", catalog=())
 
     show_spy = MagicMock()
-    editor.showUserList = show_spy
+    editor.SendScintilla = show_spy
 
     adapter.request_completion(ctx)
     show_spy.assert_not_called()

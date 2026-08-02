@@ -147,6 +147,7 @@ class SqlEditor(QsciScintilla):
         self.setPaper(self._PAPER)
         self.setColor(self._TEXT)
         self.setAutoIndent(True)
+        self.setAutoCompletionShowSingle(True)
         self.setIndentationGuides(True)
         self.setIndentationWidth(2)
         self.setTabWidth(2)
