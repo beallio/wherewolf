@@ -150,6 +150,25 @@ def test_main_window_query_actions_initial_state_and_shared_instances(qtbot) -> 
     assert editor_context is not None
 
 
+def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
+    """The menubar must expose the same actions the editor uses in its context menu."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    actions = [action for action in window.edit_menu.actions() if not action.isSeparator()]
+
+    assert actions
+    assert [action.text() for action in actions] == [
+        "Undo",
+        "Redo",
+        "Cut",
+        "Copy",
+        "Paste",
+        "Toggle Comment",
+    ]
+    assert actions == list(window.editor.edit_actions)
+
+
 def test_format_action_is_shared_with_editor_context_action(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

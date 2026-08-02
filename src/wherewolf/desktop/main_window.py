@@ -448,6 +448,15 @@ class MainWindow(QMainWindow):
 
         edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
         edit_menu.setObjectName("edit_menu")
+        undo, redo, cut, copy, paste, toggle_comment = self.editor.edit_actions
+        edit_menu.addAction(undo)
+        edit_menu.addAction(redo)
+        edit_menu.addSeparator()
+        edit_menu.addAction(cut)
+        edit_menu.addAction(copy)
+        edit_menu.addAction(paste)
+        edit_menu.addSeparator()
+        edit_menu.addAction(toggle_comment)
 
         query_menu = cast(QMenu, menu_bar.addMenu("Query"))
         query_menu.setObjectName("query_menu")

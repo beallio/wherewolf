@@ -72,6 +72,18 @@ class SqlEditor(QsciScintilla):
         return self._show_completion_action
 
     @property
+    def edit_actions(self) -> tuple[QAction, QAction, QAction, QAction, QAction, QAction]:
+        """Return the editor-owned actions suitable for an Edit menu."""
+        return (
+            self._undo_action,
+            self._redo_action,
+            self._cut_action,
+            self._copy_action,
+            self._paste_action,
+            self._toggle_comment_action,
+        )
+
+    @property
     def completion_threshold(self) -> int:
         return self._settings_service.restore_completion_threshold()
 
