@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from PyQt6.QtWidgets import QWidget
+from PyQt6.QtWidgets import QFileDialog, QWidget
 
 from wherewolf.desktop.dialogs.file_dialog_service import (
     FileDialogService,
@@ -64,6 +64,45 @@ def test_qt_file_dialog_service_cancellation_is_empty_tuple(
 
     service = QtFileDialogService()
     assert service.choose_dataset_files(default_directory) == ()
+
+
+def test_qt_file_dialog_service_show_hidden_uses_hidden_file_filter(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    class Dialog:
+        def setFileMode(self, _mode):
+            pass
+
+        def setNameFilter(self, _filter):
+            pass
+
+        def setDirectory(self, _directory):
+            pass
+
+        def setOption(self, _option):
+            pass
+
+        def setFilter(self, file_filter):
+            captured["filter"] = file_filter
+
+        def exec(self):
+            return False
+
+        def selectedFiles(self):
+            return []
+
+    class DialogFactory:
+        FileMode = QFileDialog.FileMode
+        Option = QFileDialog.Option
+
+        def __call__(self, *_args, **_kwargs):
+            return Dialog()
+
+    monkeypatch.setattr(
+        "wherewolf.desktop.dialogs.file_dialog_service.QFileDialog", DialogFactory()
+    )
+    assert QtFileDialogService().choose_dataset_files(None, show_hidden=True) == ()
+    assert captured["filter"]
 
 
 def test_qt_export_dialog_cancellation_returns_none_without_creating_destination(

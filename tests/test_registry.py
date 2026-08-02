@@ -349,3 +349,28 @@ def test_duckdb_adapter_closes_connection(tmp_path: Path, monkeypatch) -> None:
     )
     adapter.execute_preview(req)
     assert closed is True
+
+
+@pytest.mark.parametrize(
+    ("pyspark", "java", "available", "reason"),
+    [
+        (False, False, False, "pyspark and Java"),
+        (False, True, False, "pyspark"),
+        (True, False, False, "Java"),
+        (True, True, True, None),
+    ],
+)
+def test_spark_availability_requires_pyspark_and_java(
+    monkeypatch, pyspark: bool, java: bool, available: bool, reason: str | None
+) -> None:
+    registry = EngineRegistry()
+    monkeypatch.setattr(registry, "_pyspark_available", lambda: pyspark)
+    monkeypatch.setattr(registry, "_java_available", lambda: java)
+
+    descriptor = registry._spark_descriptor()
+
+    assert descriptor.available is available
+    if reason is not None:
+        assert descriptor.unavailable_reason is not None
+        for missing in reason.split(" and "):
+            assert missing in descriptor.unavailable_reason

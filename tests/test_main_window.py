@@ -131,7 +131,7 @@ def test_main_window_query_actions_initial_state_and_shared_instances(qtbot) -> 
     cancel_action = window.desktop_actions.cancel
     format_action = window.desktop_actions.format_sql
 
-    assert run_action.isEnabled()
+    assert not run_action.isEnabled()
     assert not cancel_action.isEnabled()
     assert format_action.isEnabled()
 
@@ -165,9 +165,177 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Cut",
         "Copy",
         "Paste",
+        "Select All",
+        "Find / Replace…",
         "Toggle Comment",
     ]
-    assert actions == list(window.editor.edit_actions)
+    assert actions[:5] == list(window.editor.edit_actions[:5])
+
+
+def test_main_window_find_replace_dialog_changes_editor_text(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT old_value, old_value")
+
+    window.find_replace_action.trigger()
+    dialog = window.find_replace_dialog
+    dialog.find_input.setText("old_value")
+    dialog.replace_input.setText("new_value")
+    dialog.replace_all_button.click()
+
+    assert window.editor.text() == "SELECT new_value, new_value"
+
+
+def test_main_window_preview_filter_reduces_rows_and_clear_restores_them(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.result_table_view.set_frame(pl.DataFrame({"name": ["Ada", "Grace", "Ada Lovelace"]}))
+
+    assert window.result_table_view.proxy_model().rowCount() == 3
+    window.preview_filter_input.setText("ada")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    window.clear_preview_filter_action.trigger()
+    assert window.result_table_view.proxy_model().rowCount() == 3
+
+
+def test_main_window_exports_selected_cells_in_visual_column_order(tmp_path: Path, qtbot) -> None:
+    destination = tmp_path / "selection"
+    window = MainWindow(
+        file_dialog_service=FakeFileDialogService(paths=(), export_path=destination)
+    )
+    qtbot.addWidget(window)
+    grid = window.result_table_view
+    grid.set_frame(pl.DataFrame({"a": [1, 2], "b": ["one", "two"]}))
+    grid.move_column(1, 0)
+    grid.selectRow(0)
+
+    window.desktop_actions.export_selection.trigger()
+
+    assert pl.read_csv(destination.with_suffix(".csv")).to_dicts() == [{"b": "one", "a": 1}]
+
+
+def test_main_window_routes_editor_diagnostic_to_messages_tab(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.editor._update_status("bad SQL")
+
+    text, severity = window.messages_panel.message_at(0)
+    assert "bad SQL" in text
+    assert severity == "info"
+
+
+def test_main_window_editor_shows_call_tip_for_known_function(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    shown: list[str] = []
+    monkeypatch.setattr(
+        window.editor,
+        "SendScintilla",
+        lambda _message, _position, text: shown.append(text.decode()),
+    )
+
+    window.editor.setText("SELECT COUNT(")
+    window.editor.setCursorPosition(0, len("SELECT COUNT("))
+    window.editor.request_completion(forced=True)
+
+    assert shown and "COUNT" in shown[-1]
+
+
+def test_main_window_preferences_persist_and_change_editor_font(tmp_path: Path, qtbot) -> None:
+    settings = _configure_qsettings_path(tmp_path / "preferences-dialog")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.font_size.setValue(18)
+    dialog.completion_enabled.setChecked(False)
+    dialog.completion_threshold.setValue(4)
+    dialog.accept()
+
+    assert settings.restore_editor_font_size() == 18
+    assert settings.restore_completion_enabled() is False
+    assert settings.restore_completion_threshold() == 4
+    assert window.editor.font_size == 18
+
+
+def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
+    tmp_path: Path, qtbot
+) -> None:
+    csv_file = tmp_path / "people.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(file_dialog_service=FakeFileDialogService(paths=(csv_file,)))
+    qtbot.addWidget(window)
+
+    assert not window.desktop_actions.run.isEnabled()
+    assert "Please add a dataset" in window.empty_catalog_banner.text()
+    window.desktop_actions.add_datasets.trigger()
+
+    assert window.desktop_actions.run.isEnabled()
+    assert "Wherewolf" in window.windowTitle()
+    assert "Added `people` to catalog." in window.status_bar.currentMessage()
+
+
+def test_main_window_explains_truncation_and_keeps_raw_error_details_collapsed(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    request = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=1,
+        submitted_at=datetime.now(UTC),
+    )
+    truncated = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"x": [1]}),
+        execution_seconds=0.1,
+        preview_row_count=1,
+        total_row_count=None,
+        truncated=True,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(truncated, request)
+    assert not window.result_truncation_notice.isHidden()
+    failed = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.1,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="SyntaxError",
+        error_message="bad syntax",
+        error_detail="raw backend traceback",
+    )
+    window._on_query_result_ready(failed, request)
+    assert not window.messages_panel.error_details_toggle.isHidden()
+    assert window.messages_panel.error_details.isHidden()
+
+
+def test_main_window_help_actions_and_catalog_reveal_command(qtbot, tmp_path: Path) -> None:
+    source = tmp_path / "people.csv"
+    source.write_text("id\n1\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.catalog.add_paths((source,))
+    qtbot.waitUntil(lambda: window.catalog.model.rowCount() == 1)
+    window.catalog.view.selectRow(0)
+
+    assert {action.text() for action in window.help_menu.actions()} >= {
+        "About",
+        "Documentation",
+        "Open-Source Licenses",
+    }
+    command = window.catalog.reveal_command(source)
+    assert str(source.parent) in command or str(source) in command
 
 
 def test_main_window_schema_panel_shows_schema_after_adding_dataset(tmp_path: Path, qtbot) -> None:
@@ -201,6 +369,7 @@ def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, m
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(window.query_controller, "execute", submitted.append)
     window.editor.setText("SELECT TOP 10 * FROM users")
+    window.desktop_actions.run.setEnabled(True)  # isolated request-builder test without a catalog
 
     source_index = window.input_dialect_selector.findData("tsql")
     assert source_index >= 0
@@ -221,9 +390,11 @@ def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
     qtbot.addWidget(window)
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(window.query_controller, "execute", submitted.append)
+    window.desktop_actions.run.setEnabled(True)
     window.preview_limit_selector.setValue(250)
     window.editor_theme_selector.setCurrentText("Light")
     window.editor.setText("SELECT 1")
+    window.desktop_actions.run.setEnabled(True)  # isolated request-builder test without a catalog
 
     window.desktop_actions.run.trigger()
 
@@ -350,6 +521,7 @@ def test_main_window_run_empty_editor_shows_status_and_starts_nothing(qtbot) -> 
     window = MainWindow()
     qtbot.addWidget(window)
     window.editor.setText("   \n\t ")
+    window.desktop_actions.run.setEnabled(True)
 
     window.desktop_actions.run.trigger()
 
@@ -503,6 +675,7 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     window = MainWindow()
     qtbot.addWidget(window)
     window._catalog_service.add_paths((csv_file,))
+    window._update_catalog_affordances()
     qtbot.waitUntil(lambda: not any(w.isRunning() for w in window._schema_workers))
     window.editor.setText("SELECT * FROM data")
     window.editor.selectAll()

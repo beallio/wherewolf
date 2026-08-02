@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import util
 from pathlib import Path
+from shutil import which
 from uuid import UUID
 
 import polars as pl
@@ -405,14 +406,30 @@ class EngineRegistry:
         if kind is EngineKind.SPARK:
             if not self._is_spark_available():
                 raise EngineUnavailableError(
-                    "Spark engine is unavailable because pyspark is not installed"
+                    f"Spark engine is unavailable because {self._spark_unavailable_reason()}"
                 )
             return _SparkAdapter(request_id)
 
         raise ValueError(f"Unsupported engine kind: {kind}")
 
     def _is_spark_available(self) -> bool:
+        return self._pyspark_available() and self._java_available()
+
+    @staticmethod
+    def _pyspark_available() -> bool:
         return util.find_spec("pyspark") is not None
+
+    @staticmethod
+    def _java_available() -> bool:
+        return which("java") is not None
+
+    def _spark_unavailable_reason(self) -> str:
+        missing: list[str] = []
+        if not self._pyspark_available():
+            missing.append("pyspark is not installed; install wherewolf[spark]")
+        if not self._java_available():
+            missing.append("Java is not available on PATH")
+        return " and ".join(missing)
 
     def _spark_descriptor(self) -> EngineDescriptor:
         if self._is_spark_available():
@@ -426,7 +443,7 @@ class EngineRegistry:
             kind=EngineKind.SPARK,
             display_name="Spark",
             available=False,
-            unavailable_reason="pyspark is not installed; install wherewolf[spark] and Java",
+            unavailable_reason=self._spark_unavailable_reason(),
         )
 
 
