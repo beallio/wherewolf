@@ -740,26 +740,32 @@ def test_history_record_restore_updates_editor_without_execution_or_catalog(
     assert window._catalog_service.entries == initial_catalog
 
 
-def test_history_catalog_restore_loads_available_files_and_reports_missing_ones(
-    tmp_path: Path, qtbot
+def test_history_record_restore_leaves_existing_catalog_and_schema_work_untouched(
+    tmp_path: Path, qtbot, monkeypatch
 ) -> None:
-    existing = tmp_path / "available.csv"
-    existing.write_text("id\n1\n")
-    missing = tmp_path / "missing.csv"
+    initial = tmp_path / "already_loaded.csv"
+    initial.write_text("id\n1\n")
+    historical = tmp_path / "historical.csv"
+    historical.write_text("id\n2\n")
     history = HistoryManager(storage_path=tmp_path / "history.json")
     history.add_entry(
         "duckdb",
-        "SELECT * FROM available",
-        catalog={"available": str(existing), "missing": str(missing)},
+        "SELECT restored_query",
+        catalog={"historical": str(historical)},
     )
-    window = MainWindow(history_manager=history)
+    catalog_service = CatalogService()
+    catalog_service.add_paths((initial,))
+    window = MainWindow(history_manager=history, catalog_service=catalog_service)
     qtbot.addWidget(window)
+    entries_before = window._catalog_service.entries
+    queued_schema_work: list[CatalogBinding] = []
+    monkeypatch.setattr(window, "_queue_schema_work", queued_schema_work.append)
 
     window.history_dock.record_selected.emit(history.get_all()[0])
 
-    qtbot.waitUntil(lambda: len(window._catalog_service.entries) == 1)
-    assert window._catalog_service.entries[0].path == existing.resolve()
-    assert str(missing) in window.status_bar.currentMessage()
+    assert window.editor.text() == "SELECT restored_query"
+    assert window._catalog_service.entries == entries_before
+    assert queued_schema_work == []
 
 
 def test_main_window_restores_geometry_dock_layout_and_splitter_state(
