@@ -29,6 +29,7 @@ from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
+from wherewolf.desktop.widgets.schema_panel import SchemaPanel
 from wherewolf.desktop.workers import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
@@ -85,6 +86,7 @@ class MainWindow(QMainWindow):
         self.main_toolbar = self._build_toolbar()
         self._catalog_dock_widget = self._build_catalog_dock()
         self.dataset_catalog_dock = self._catalog_dock_widget
+        self._schema_dock_widget = self._build_schema_dock()
         self._history_dock_widget = self._build_history_dock()
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
@@ -108,6 +110,16 @@ class MainWindow(QMainWindow):
     @property
     def catalog_view(self) -> QDockWidget:
         return self._catalog_dock_widget
+
+    @property
+    def schema_panel(self) -> SchemaPanel:
+        widget = self._schema_dock_widget.widget()
+        assert isinstance(widget, SchemaPanel)
+        return widget
+
+    @property
+    def schema_dock(self) -> QDockWidget:
+        return self._schema_dock_widget
 
     @property
     def history_dock(self) -> HistoryDock:
@@ -166,6 +178,18 @@ class MainWindow(QMainWindow):
         dock.setObjectName("history_dock")
         dock.setWidget(history_dock)
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        return dock
+
+    def _build_schema_dock(self) -> QDockWidget:
+        schema_panel = SchemaPanel(self)
+        schema_panel.insert_columns_requested.connect(self.editor_insert_text)
+
+        dock = QDockWidget("Schema", self)
+        dock.setObjectName("schema_dock")
+        dock.setWidget(schema_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        self.tabifyDockWidget(self._catalog_dock_widget, dock)
+        self._catalog_dock_widget.raise_()
         return dock
 
     def _connect_actions(self) -> None:
@@ -340,6 +364,7 @@ class MainWindow(QMainWindow):
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
         self.editor.set_catalog(self._catalog_service.entries)
+        self.schema_panel.set_schema_result(schema_result)
 
     def _build_central_area(self) -> QSplitter:
         editor = SqlEditor(
@@ -509,6 +534,7 @@ class MainWindow(QMainWindow):
         """Return persistent docks and the central splitter to their default arrangement."""
         for dock, area in (
             (self._catalog_dock_widget, Qt.DockWidgetArea.LeftDockWidgetArea),
+            (self._schema_dock_widget, Qt.DockWidgetArea.LeftDockWidgetArea),
             (self._history_dock_widget, Qt.DockWidgetArea.RightDockWidgetArea),
         ):
             dock.setFloating(False)

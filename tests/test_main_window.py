@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wherewolf.desktop import main_window
+from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.domain import (
     CatalogBinding,
@@ -167,6 +168,19 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Toggle Comment",
     ]
     assert actions == list(window.editor.edit_actions)
+
+
+def test_main_window_schema_panel_shows_schema_after_adding_dataset(tmp_path: Path, qtbot) -> None:
+    csv_file = tmp_path / "people.csv"
+    csv_file.write_text("id,name\n1,Ada\n")
+    window = MainWindow(file_dialog_service=FakeFileDialogService(paths=(csv_file,)))
+    qtbot.addWidget(window)
+
+    window.desktop_actions.add_datasets.trigger()
+
+    qtbot.waitUntil(lambda: window.schema_panel.column_count_rows() == 2)
+    assert [window.schema_panel.cell_text(row, 0) for row in range(2)] == ["id", "name"]
+    assert [window.schema_panel.cell_text(row, 1) for row in range(2)] == ["BIGINT", "VARCHAR"]
 
 
 def test_format_action_is_shared_with_editor_context_action(qtbot) -> None:
