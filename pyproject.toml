@@ -36,6 +36,13 @@ wherewolf-desktop = "wherewolf.desktop.application:main"
 
 [tool.uv]
 cache-dir = "/tmp/wherewolf/.uv_cache"
+# Absolute UTC instant so the lockfile is reproducible and CI can verify it with
+# --locked. A bare date resolves to LOCAL midnight and differs per machine timezone.
+# A relative exclude-newer (e.g. the maintainer's global "7 days") writes a
+# machine-specific exclude-newer-span into uv.lock that CI cannot reproduce.
+exclude-newer = "2026-07-26T00:00:00Z"
+# polars 1.43.0/1.43.1 are yanked; 1.43.2 (the fix) postdates the pin.
+exclude-newer-package = { polars = false, "polars-runtime-32" = false, "polars-runtime-64" = false, pyludusavi = false }
 
 [tool.ruff]
 line-length = 100

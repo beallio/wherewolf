@@ -28,9 +28,12 @@ def test_ci_install_contracts_match_the_tooling_each_leg_runs() -> None:
         for name in ("lint", "test-duckdb", "test-spark", "build", "qt-smoke")
     }
 
-    # Do not restore --locked: the maintainer's relative exclude-newer-span makes the
-    # lock impossible for CI to reproduce, even though the resolved dependencies are valid.
-    assert all("--locked" not in line for job in jobs.values() for line in _sync_lines(job))
+    # --locked is required: an absolute `exclude-newer` in pyproject.toml keeps uv.lock
+    # machine-independent, so CI can verify the lockfile is current. Reverting to a relative
+    # exclude-newer would reintroduce a machine-specific exclude-newer-span and break this.
+    assert all(any("--locked" in line for line in _sync_lines(job)) for job in jobs.values()), (
+        "every leg must install from the verified lockfile"
+    )
 
     lint_sync = _sync_lines(jobs["lint"])
     assert "ty check" in jobs["lint"]
