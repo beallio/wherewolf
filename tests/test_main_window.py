@@ -105,6 +105,28 @@ def test_engine_selector_disables_missing_spark_with_installation_guidance(
     assert selector.currentData() is EngineKind.DUCKDB
 
 
+def test_input_dialect_selector_exposes_all_supported_source_dialects(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    selector = window.input_dialect_selector
+
+    assert [selector.itemText(index) for index in range(selector.count())] == [
+        "DuckDB",
+        "Spark",
+        "Azure SQL",
+        "Oracle",
+        "PostgreSQL",
+    ]
+    assert [selector.itemData(index) for index in range(selector.count())] == [
+        "duckdb",
+        "spark",
+        "tsql",
+        "oracle",
+        "postgres",
+    ]
+
+
 def test_bare_main_window_does_not_touch_user_history(qtbot, monkeypatch, tmp_path: Path) -> None:
     """Default construction must use pytest-isolated persistence, never ~/.wherewolf."""
     user_history_path = Path.home() / ".wherewolf" / "history.json"
