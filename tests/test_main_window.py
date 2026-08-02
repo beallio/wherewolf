@@ -62,6 +62,8 @@ def test_main_window_structure(qtbot) -> None:
     for toolbar in window.findChildren(QToolBar):
         assert toolbar.objectName()
 
+    assert len(window.findChildren(QToolBar)) == 1
+
     for dock in window.findChildren(QDockWidget):
         assert dock.objectName()
 
@@ -85,7 +87,8 @@ def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypat
 
     assert shown["title"] == "About Wherewolf"
     assert "GPL-3.0-only" in shown["text"]
-    assert "MIT-pre-0.6.txt" in shown["text"]
+    assert "build" in shown["text"]
+    assert "MIT" not in shown["text"]
 
 
 def test_engine_selector_disables_missing_spark_with_installation_guidance(
@@ -207,6 +210,9 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Toggle Comment",
     ]
     assert actions[:5] == list(window.editor.edit_actions[:5])
+    assert window.select_all_action.shortcut().toString() == "Ctrl+A"
+    assert window.find_replace_action.shortcut().toString() == "Ctrl+F"
+    assert window.editor.edit_actions[-1].shortcut().toString() == "Ctrl+/"
 
 
 def test_main_window_find_replace_dialog_changes_editor_text(qtbot) -> None:
@@ -373,6 +379,20 @@ def test_main_window_help_actions_and_catalog_reveal_command(qtbot, tmp_path: Pa
     }
     command = window.catalog.reveal_command(source)
     assert str(source.parent) in command or str(source) in command
+
+
+def test_main_window_about_identifies_gpl_build_without_mit(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    shown: list[str] = []
+    monkeypatch.setattr(main_window.QMessageBox, "about", lambda _p, _t, text: shown.append(text))
+
+    window._show_about()
+
+    assert "wherewolf" in shown[0]
+    assert "build" in shown[0]
+    assert "GPL-3.0-only" in shown[0]
+    assert "MIT" not in shown[0]
 
 
 def test_main_window_schema_panel_shows_schema_after_adding_dataset(tmp_path: Path, qtbot) -> None:

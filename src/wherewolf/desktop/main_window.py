@@ -8,7 +8,15 @@ from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
-from PyQt6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStandardItemModel
+from PyQt6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QDragEnterEvent,
+    QDropEvent,
+    QFont,
+    QKeySequence,
+    QStandardItemModel,
+)
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -23,7 +31,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -34,6 +41,7 @@ from PyQt6.QtWidgets import (
 )
 from sqlglot.dialects import DIALECT_MODULE_NAMES
 
+from wherewolf import build_identifier
 from wherewolf.constants import DIALECT_MAPPING
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
@@ -109,9 +117,12 @@ class PreferencesDialog(QDialog):
         self.completion_threshold = QSpinBox(self)
         self.completion_threshold.setRange(1, 20)
         self.completion_threshold.setValue(settings_service.restore_completion_threshold())
+        self.update_check_enabled = QCheckBox("Check for updates on startup", self)
+        self.update_check_enabled.setChecked(settings_service.restore_update_check_enabled())
         layout.addRow("Editor font size", self.font_size)
         layout.addRow(self.completion_enabled)
         layout.addRow("Completion threshold", self.completion_threshold)
+        layout.addRow(self.update_check_enabled)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
         )
@@ -220,24 +231,9 @@ class MainWindow(QMainWindow):
         return toolbar
 
     def _build_query_controls_toolbar(self) -> QToolBar:
-        """Keep labelled query controls on their own toolbar row.
-
-        Separating configuration from query actions prevents the controls from extending past
-        the right edge of the primary toolbar. The horizontal scroll area keeps every labelled
-        control reachable when the window is narrower than the controls' natural width.
-        """
-        toolbar = QToolBar("Query Controls", self)
-        toolbar.setObjectName("query_controls_toolbar")
-        toolbar.setMovable(False)
-        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
-        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
-
-        controls_scroll = QScrollArea(toolbar)
-        controls_scroll.setObjectName("query_controls_scroll_area")
-        controls_scroll.setWidgetResizable(False)
-        controls_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        controls_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        controls = QWidget(controls_scroll)
+        """Add labelled controls to the primary toolbar; Qt supplies its overflow extension."""
+        toolbar = self.main_toolbar
+        controls = QWidget(toolbar)
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(4, 0, 4, 0)
         controls_layout.setSpacing(8)
@@ -305,10 +301,8 @@ class MainWindow(QMainWindow):
             self.editor_theme_selector,
             "Choose the colour theme used by the SQL editor.",
         )
-        controls.setFixedSize(controls.sizeHint())
-        controls_scroll.setWidget(controls)
-        controls_scroll.setFixedWidth(min(controls.sizeHint().width(), 480))
-        toolbar.addWidget(controls_scroll)
+        toolbar.addSeparator()
+        toolbar.addWidget(controls)
         return toolbar
 
     @staticmethod
@@ -786,8 +780,10 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(copy)
         edit_menu.addAction(paste)
         self.select_all_action = QAction("Select All", self)
+        self.select_all_action.setShortcut(QKeySequence.StandardKey.SelectAll)
         self.select_all_action.triggered.connect(self.editor.selectAll)
         self.find_replace_action = QAction("Find / Replace…", self)
+        self.find_replace_action.setShortcut(QKeySequence("Ctrl+F"))
         self.find_replace_action.triggered.connect(self._show_find_replace)
         edit_menu.addAction(self.select_all_action)
         edit_menu.addAction(self.find_replace_action)
@@ -836,8 +832,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About Wherewolf",
-            "Wherewolf is licensed under GPL-3.0-only.\n\n"
-            "Pre-0.6 MIT terms are retained in LICENSES/MIT-pre-0.6.txt.",
+            f"{build_identifier()}\n\nWherewolf is licensed under GPL-3.0-only.",
         )
 
     def _show_licenses(self) -> None:
@@ -858,6 +853,7 @@ class MainWindow(QMainWindow):
         dialog = self.preferences_dialog
         self._settings_service.save_completion_enabled(dialog.completion_enabled.isChecked())
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
+        self._settings_service.save_update_check_enabled(dialog.update_check_enabled.isChecked())
         self.editor.set_font_size(dialog.font_size.value())
 
     def _on_editor_diagnostics(self, payload: tuple) -> None:

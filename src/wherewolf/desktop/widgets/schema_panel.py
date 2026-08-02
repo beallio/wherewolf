@@ -46,8 +46,8 @@ class SchemaPanel(QWidget):
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
 
-        self._table_widget = QTableWidget(0, 2, self)
-        self._table_widget.setHorizontalHeaderLabels(["Name", "Type"])
+        self._table_widget = QTableWidget(0, 4, self)
+        self._table_widget.setHorizontalHeaderLabels(["Name", "Type", "Nullable", "Position"])
         header = self._table_widget.horizontalHeader()
         if header is not None:
             header.setStretchLastSection(True)
@@ -166,7 +166,10 @@ class SchemaPanel(QWidget):
                 if alias is None:
                     self._status_label.setText(f"Schema ({len(columns)} columns):")
                 else:
-                    self._status_label.setText(f"{alias} — {len(columns)} columns")
+                    assert self._entry is not None
+                    self._status_label.setText(
+                        f"{alias} — {self._entry.path} ({self._entry.source_format.value}) — {len(columns)} columns"
+                    )
                 self._status_label.show()
 
             self._table_widget.show()
@@ -174,5 +177,11 @@ class SchemaPanel(QWidget):
             for r, col in enumerate(columns):
                 name_item = QTableWidgetItem(col.name)
                 type_item = QTableWidgetItem(col.data_type)
+                nullable_item = QTableWidgetItem(
+                    "Yes" if col.nullable is True else "No" if col.nullable is False else "Unknown"
+                )
+                position_item = QTableWidgetItem(str(r + 1))
                 self._table_widget.setItem(r, 0, name_item)
                 self._table_widget.setItem(r, 1, type_item)
+                self._table_widget.setItem(r, 2, nullable_item)
+                self._table_widget.setItem(r, 3, position_item)

@@ -27,38 +27,46 @@ class DesktopActions:
 def build_actions(parent: QWidget | None = None) -> DesktopActions:
     run = QAction("Run", parent)
     run.setShortcut(QKeySequence("Ctrl+Return"))
+    run.setToolTip("Run query (Ctrl+Return)")
     run.setEnabled(True)
 
     cancel = QAction("Cancel", parent)
     cancel.setShortcut(QKeySequence("Ctrl+."))
+    cancel.setToolTip("Cancel query (Ctrl+.)")
     cancel.setEnabled(False)
 
     format_sql = QAction("Format SQL", parent)
     format_sql.setEnabled(True)
     format_sql.setShortcut(QKeySequence("Ctrl+Shift+F"))
-    format_sql.setToolTip("")
+    format_sql.setToolTip("Format SQL (Ctrl+Shift+F)")
 
     add_datasets = QAction("Add Datasets…", parent)
     add_datasets.setEnabled(True)
     add_datasets.setShortcut(QKeySequence.StandardKey.Open)
-    add_datasets.setToolTip("")
+    add_datasets.setToolTip("Add datasets (Ctrl+O)")
 
     show_completion = QAction("Show Completion", parent)
     show_completion.setEnabled(True)
     show_completion.setShortcut(QKeySequence("Ctrl+Space"))
+    show_completion.setToolTip("Show SQL completion (Ctrl+Space)")
 
     reset_layout = QAction("Reset Layout", parent)
     reset_layout.setEnabled(True)
+    reset_layout.setToolTip("Reset the window layout")
 
     clear_history = QAction("Clear History", parent)
     clear_history.setEnabled(True)
+    clear_history.setToolTip("Clear query history")
 
     export_preview = QAction("Export Preview…", parent)
     export_preview.setEnabled(False)
+    export_preview.setToolTip("Export preview rows")
     export_full = QAction("Export Full Results…", parent)
     export_full.setEnabled(False)
+    export_full.setToolTip("Export full query results")
     export_selection = QAction("Export Selection…", parent)
     export_selection.setEnabled(False)
+    export_selection.setToolTip("Export selected result cells")
 
     return DesktopActions(
         run=run,

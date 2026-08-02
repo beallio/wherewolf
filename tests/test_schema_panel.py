@@ -53,6 +53,27 @@ def test_schema_panel_displays_columns_and_types(qtbot: QtBot) -> None:
     assert panel.cell_text(1, 1) == "VARCHAR"
 
 
+def test_schema_panel_displays_nullable_state_and_ordinal(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="users",
+        path=Path("users.parquet"),
+        source_format=SourceFormat.PARQUET,
+        schema=(
+            ColumnSchema("allows_null", "VARCHAR", True),
+            ColumnSchema("required", "BIGINT", False),
+            ColumnSchema("unknown", "BOOLEAN", None),
+        ),
+    )
+    panel.set_entry(entry)
+
+    assert [panel.cell_text(row, 2) for row in range(3)] == ["Yes", "No", "Unknown"]
+    assert [panel.cell_text(row, 3) for row in range(3)] == ["1", "2", "3"]
+    assert "users.parquet" in panel.status_text()
+
+
 def test_schema_panel_error_display(qtbot: QtBot) -> None:
     panel = SchemaPanel()
     qtbot.addWidget(panel)
