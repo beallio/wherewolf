@@ -665,8 +665,11 @@ class MainWindow(QMainWindow):
         self.translation_target_selector.setToolTip(
             "Choose the SQL dialect rendered in the Translation tab."
         )
+        display_names = {dialect: label for label, dialect in DIALECT_MAPPING.items()}
         for dialect in sorted(DIALECT_MODULE_NAMES):
-            self.translation_target_selector.addItem(dialect, dialect)
+            self.translation_target_selector.addItem(
+                display_names.get(dialect, dialect.title()), dialect
+            )
         spark_index = self.translation_target_selector.findData("spark")
         self.translation_target_selector.setCurrentIndex(max(spark_index, 0))
         translation_target_label = QLabel("Translation target", translation_page)

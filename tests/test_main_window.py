@@ -398,6 +398,23 @@ def test_main_window_translation_tab_transpiles_current_editor_text(qtbot) -> No
     assert window.translation_panel.translated_text() == "SELECT\n  COALESCE(value, 0)\nFROM users"
 
 
+def test_main_window_translation_target_uses_friendly_dialect_names(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    target = window.translation_target_selector
+    azure_sql_index = target.findText("Azure SQL")
+
+    assert azure_sql_index >= 0
+    assert target.itemData(azure_sql_index) == "tsql"
+    assert target.itemText(target.findData("duckdb")) == "DuckDB"
+
+    target.setCurrentIndex(azure_sql_index)
+    window.editor.setText("SELECT * FROM users LIMIT 1")
+
+    assert "TOP 1" in window.translation_panel.translated_text().upper()
+
+
 def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, monkeypatch) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
