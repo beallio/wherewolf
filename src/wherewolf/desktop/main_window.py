@@ -18,6 +18,7 @@ from PyQt6.QtGui import (
     QStandardItemModel,
 )
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -763,6 +764,20 @@ class MainWindow(QMainWindow):
         self.editor.setText(ordered_sql)
         self._on_run_triggered()
 
+    def _dispatch_focused_edit_action(self, operation: str) -> None:
+        """Invoke an edit operation on the focused widget or one of its parents."""
+        widget = QApplication.focusWidget()
+        while widget is not None:
+            if operation == "copy" and isinstance(widget, ResultTableView):
+                widget.copy_selection()
+                return
+
+            method = getattr(widget, operation, None)
+            if callable(method):
+                method()
+                return
+            widget = widget.parentWidget()
+
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
         assert menu_bar is not None
@@ -772,16 +787,33 @@ class MainWindow(QMainWindow):
 
         edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
         edit_menu.setObjectName("edit_menu")
-        undo, redo, cut, copy, paste, toggle_comment = self.editor.edit_actions
+        undo, redo, _cut, _copy, _paste, toggle_comment = self.editor.edit_actions
         edit_menu.addAction(undo)
         edit_menu.addAction(redo)
         edit_menu.addSeparator()
-        edit_menu.addAction(cut)
-        edit_menu.addAction(copy)
-        edit_menu.addAction(paste)
+
+        self.cut_action = QAction("Cut", self)
+        self.cut_action.setShortcut(QKeySequence.StandardKey.Cut)
+        self.copy_action = QAction("Copy", self)
+        self.copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        self.paste_action = QAction("Paste", self)
+        self.paste_action.setShortcut(QKeySequence.StandardKey.Paste)
         self.select_all_action = QAction("Select All", self)
         self.select_all_action.setShortcut(QKeySequence.StandardKey.SelectAll)
-        self.select_all_action.triggered.connect(self.editor.selectAll)
+        for action, operation in (
+            (self.cut_action, "cut"),
+            (self.copy_action, "copy"),
+            (self.paste_action, "paste"),
+            (self.select_all_action, "selectAll"),
+        ):
+            action.triggered.connect(
+                lambda _checked=False, operation=operation: self._dispatch_focused_edit_action(
+                    operation
+                )
+            )
+        edit_menu.addAction(self.cut_action)
+        edit_menu.addAction(self.copy_action)
+        edit_menu.addAction(self.paste_action)
         self.find_replace_action = QAction("Find / Replace…", self)
         self.find_replace_action.setShortcut(QKeySequence("Ctrl+F"))
         self.find_replace_action.triggered.connect(self._show_find_replace)

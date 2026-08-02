@@ -13,10 +13,13 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
     QMainWindow,
+    QPlainTextEdit,
+    QScrollArea,
     QSplitter,
     QStatusBar,
     QTabWidget,
     QToolBar,
+    QWidget,
 )
 
 from wherewolf.desktop import main_window
@@ -69,6 +72,21 @@ def test_main_window_structure(qtbot) -> None:
 
     menu_titles = [action.text() for action in menu_bar.actions()]
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+
+
+def test_main_window_query_controls_share_the_primary_toolbar_without_a_scroll_area(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not window.main_toolbar.findChildren(QScrollArea)
+    for object_name in (
+        "engine_selector",
+        "input_dialect_selector",
+        "export_format_selector",
+        "preview_limit_selector",
+        "editor_theme_selector",
+    ):
+        assert window.findChild(QWidget, object_name) is not None
 
 
 def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:
@@ -209,7 +227,9 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Find / Replace…",
         "Toggle Comment",
     ]
-    assert actions[:5] == list(window.editor.edit_actions[:5])
+    assert actions[:2] == list(window.editor.edit_actions[:2])
+    assert actions[2:5] == [window.cut_action, window.copy_action, window.paste_action]
+    assert window.copy_action is not window.editor.edit_actions[3]
     assert window.select_all_action.shortcut().toString() == "Ctrl+A"
     assert window.find_replace_action.shortcut().toString() == "Ctrl+F"
     assert window.editor.edit_actions[-1].shortcut().toString() == "Ctrl+/"
@@ -440,6 +460,42 @@ def test_main_window_translation_tab_transpiles_current_editor_text(qtbot) -> No
     window.editor.setText("SELECT IFNULL(value, 0) FROM users")
 
     assert window.translation_panel.translated_text() == "SELECT\n  COALESCE(value, 0)\nFROM users"
+
+
+def test_main_window_copy_shortcut_uses_the_focused_translation_or_editor_widget(qtbot) -> None:
+    """Ctrl+C must copy from the actual focused widget, not always the SQL editor."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(1)
+
+    window.editor.setText("EDITOR SQL HERE")
+    tabs = window.findChild(QTabWidget, "results_tabs")
+    translation_edit = window.translation_panel.findChild(QPlainTextEdit)
+    clipboard = QApplication.clipboard()
+
+    assert tabs is not None
+    assert translation_edit is not None
+    assert clipboard is not None
+    menu_copy_action = next(
+        action for action in window.edit_menu.actions() if action.text() == "Copy"
+    )
+    assert menu_copy_action is not window.editor.edit_actions[3]
+
+    tabs.setCurrentIndex(tabs.indexOf(window.translation_panel.parentWidget()))
+    translation_edit.setPlainText("TRANSLATED SQL HERE")
+    translation_edit.selectAll()
+    translation_edit.setFocus(Qt.FocusReason.MouseFocusReason)
+    assert QApplication.focusWidget() is translation_edit
+    qtbot.keyClick(translation_edit, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    assert clipboard.text() == "TRANSLATED SQL HERE"
+    assert clipboard.text() != "EDITOR SQL HERE"
+
+    window.editor.selectAll()
+    window.editor.setFocus(Qt.FocusReason.MouseFocusReason)
+    assert QApplication.focusWidget() is window.editor
+    qtbot.keyClick(window.editor, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    assert clipboard.text() == "EDITOR SQL HERE"
 
 
 def test_main_window_translation_target_uses_friendly_dialect_names(qtbot) -> None:
