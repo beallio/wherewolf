@@ -12,8 +12,6 @@ from wherewolf.storage import HistoryManager
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-APPTEST_TIMEOUT = 30
-
 
 @pytest.fixture(scope="session")
 def spark_session() -> Iterator[Any]:

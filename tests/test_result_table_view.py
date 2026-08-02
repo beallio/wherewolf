@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 from PyQt6.QtCore import QItemSelection, QItemSelectionModel, Qt
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
@@ -32,6 +33,15 @@ def test_result_table_view_selection_and_copy(qtbot):
 
     cb = QApplication.clipboard()
     assert cb is not None
+    assert cb.text() == "10\tx\n20\ty"
+
+    table_view.keyPressEvent(
+        QKeyEvent(
+            QKeyEvent.Type.KeyPress,
+            Qt.Key.Key_C,
+            Qt.KeyboardModifier.ControlModifier,
+        )
+    )
     assert cb.text() == "10\tx\n20\ty"
 
 
@@ -76,6 +86,7 @@ def test_result_table_view_header_context_menu_actions(qtbot):
     assert "Clear Sort" in actions
     assert "Copy Header Name" in actions
     assert "Copy Quoted Header" in actions
+    assert "Copy All Visible Column Names" in actions
     assert "Insert Header into Editor" in actions
 
     # Sort Ascending action
@@ -102,6 +113,12 @@ def test_result_table_view_header_context_menu_actions(qtbot):
     # Copy Quoted Header action
     actions["Copy Quoted Header"].trigger()
     assert cb.text() == '"col_a"'
+
+    # All-visible copy follows the current visual order and excludes hidden columns.
+    table_view.move_column(1, 0)
+    table_view.hide_column(0)
+    actions["Copy All Visible Column Names"].trigger()
+    assert cb.text() == "col_b"
 
     # Insert Header into Editor signal
     inserted: list[str] = []
@@ -189,6 +206,9 @@ def test_result_table_view_column_operations(qtbot):
     assert header.visualIndex(0) == 0
     assert header.visualIndex(1) == 1
 
+    table_view.auto_size_columns()
+    assert all(header.sectionSize(column) > 0 for column in range(3))
+
 
 def test_header_context_menu_apply_order(qtbot) -> None:
     table_view = ResultTableView()
@@ -254,3 +274,22 @@ def test_local_sort_does_not_rerun_query(qtbot, monkeypatch) -> None:
 
     # Local sort must NOT submit any new executions through QueryController
     assert executed_count == 0
+
+
+def test_active_local_sort_discloses_that_only_the_preview_is_sorted(qtbot) -> None:
+    from wherewolf.desktop.main_window import MainWindow
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.result_table_view.set_frame(pl.DataFrame({"a": [3, 1, 2]}))
+
+    assert window.result_sort_notice.isHidden()
+
+    window.result_table_view.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+
+    assert not window.result_sort_notice.isHidden()
+    assert window.result_sort_notice.text() == "Sorted preview only."
+
+    window.result_table_view.sortByColumn(-1, Qt.SortOrder.AscendingOrder)
+
+    assert window.result_sort_notice.isHidden()

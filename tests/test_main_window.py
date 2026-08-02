@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QToolBar,
 )
 
+from wherewolf.desktop import main_window
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.domain import (
     CatalogBinding,
@@ -63,6 +64,25 @@ def test_main_window_structure(qtbot) -> None:
 
     menu_titles = [action.text() for action in menu_bar.actions()]
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+
+
+def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    shown: dict[str, str] = {}
+
+    def capture_about(_parent, title: str, text: str) -> None:
+        shown["title"] = title
+        shown["text"] = text
+
+    monkeypatch.setattr(main_window.QMessageBox, "about", capture_about)
+    about_action = next(action for action in window.help_menu.actions() if action.text() == "About")
+
+    about_action.trigger()
+
+    assert shown["title"] == "About Wherewolf"
+    assert "GPL-3.0-only" in shown["text"]
+    assert "MIT-pre-0.6.txt" in shown["text"]
 
 
 def test_engine_selector_disables_missing_spark_with_installation_guidance(
@@ -253,6 +273,9 @@ def test_main_window_restores_geometry_dock_layout_and_splitter_state(
     )
     original_sizes = original._central_splitter.sizes()
     restored_sizes = restored._central_splitter.sizes()
+    # Qt constrains restored width to dock minimum widths offscreen, but the persisted geometry
+    # still restores the requested window height alongside the dock/splitter state.
+    assert restored.height() == original.height()
     assert restored_sizes[0] / sum(restored_sizes) == pytest.approx(
         original_sizes[0] / sum(original_sizes), abs=0.001
     )
@@ -527,6 +550,19 @@ def test_main_window_query_result_details_and_metrics(qtbot) -> None:
     assert "spark" in status_bar.currentMessage().lower()
     assert "0.42s" in status_bar.currentMessage()
     assert "3" in status_bar.currentMessage()
+
+    truncated = QueryResult(
+        request_id=req.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=df,
+        execution_seconds=0.42,
+        preview_row_count=3,
+        total_row_count=None,
+        truncated=True,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(truncated, req)
+    assert "truncated" in status_bar.currentMessage().lower()
 
     # 2. Failed result
     res_failed = QueryResult(

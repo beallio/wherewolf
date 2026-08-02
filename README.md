@@ -1,10 +1,10 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=19" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=20" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=19)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=19)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=19)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=20)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=20)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=20)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
 
@@ -27,7 +27,7 @@ A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) 
 - **Export:** The desktop shell exports the preview (bounded by the preview limit) to CSV, XLSX, or Parquet. Full CSV and Parquet export re-executes the captured query and streams through DuckDB directly to disk; it does not materialize the complete result in Python. Full XLSX is intentionally limited to 100,000 rows because XLSX has no streaming writer; choose CSV or Parquet for larger results.
 - **Execution Metrics:** Tracks row count, status, and execution time in the status bar and Messages panel.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=18)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=20)
 
 ## Installation
 
@@ -61,12 +61,13 @@ uv sync
 ```
 
 ## Usage
-The default `wherewolf` command starts the Streamlit UI.
-The native desktop shell is launched with `wherewolf-desktop` and features full multi-file DuckDB query execution off the GUI thread.
+`wherewolf` now opens the native Qt desktop window. `wherewolf-desktop` remains an equivalent
+alias for existing invocations. This is a breaking change: the browser-based interface is no
+longer included or supported.
 
 If running from source:
 ```bash
-uv run wherewolf-desktop
+uv run wherewolf
 ```
 
 To run the Spark integration tier locally after installing the extra and Java:
@@ -85,7 +86,14 @@ uv run pytest -m spark
    historical dataset files are restored; unavailable paths are reported in the status bar.
 8. Use **View → Reset Layout** to restore the default dock arrangement, or **File → Clear History**
    to empty the persisted history safely.
-7. Click **Format SQL** (`Ctrl+Shift+F`) to normalize syntax.
+9. Click **Format SQL** (`Ctrl+Shift+F`) to normalize syntax.
+
+### Manual release checks
+
+Before a release, a human must verify the native window starts without a browser or local web
+server, the platform multi-file dialog and clipboard behavior, responsiveness during a running
+query, and the workflow on supported Windows, macOS, and Linux desktops. Spark full export is
+not implemented and is not claimed by the DuckDB export path.
 
 
 
@@ -113,7 +121,8 @@ ruff format .
 ```
 
 ## Dependencies
-- `streamlit`
+- `PyQt6`
+- `PyQt6-QScintilla`
 - `duckdb`
 - `sqlglot`
 - `pyarrow`

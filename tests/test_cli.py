@@ -3,6 +3,7 @@ import sys
 import tomllib
 
 import wherewolf
+import wherewolf.cli
 import wherewolf.desktop.application
 from wherewolf.desktop.application import main
 
@@ -13,11 +14,16 @@ def _project_toml_path() -> str:
     return data["project"]["scripts"]["wherewolf-desktop"]
 
 
-def test_desktop_script_and_streamlit_entrypoint() -> None:
+def test_console_scripts_target_desktop_entrypoints() -> None:
     assert _project_toml_path() == "wherewolf.desktop.application:main"
     with open("pyproject.toml", "rb") as handle:
         data = tomllib.load(handle)
     assert data["project"]["scripts"]["wherewolf"] == "wherewolf.cli:main"
+
+
+def test_cli_delegates_to_desktop_main(monkeypatch) -> None:
+    monkeypatch.setattr(wherewolf.cli, "desktop_main", lambda: 23)
+    assert wherewolf.cli.main() == 23
 
 
 def test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched(monkeypatch) -> None:
@@ -46,11 +52,11 @@ def test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched(monkeypa
     assert created["count"] == 2
 
 
-def test_importing_desktop_application_is_free_of_streamlit_and_pyspark() -> None:
+def test_importing_desktop_application_is_free_of_pyspark() -> None:
     code = (
         "import sys\n"
         "import wherewolf.desktop.application\n"
-        "bad = [name for name in ('streamlit', 'pyspark') if name in sys.modules]\n"
+        "bad = [name for name in ('pyspark',) if name in sys.modules]\n"
         "if bad:\n"
         "    raise SystemExit('forbidden modules loaded: ' + ','.join(bad))\n"
     )

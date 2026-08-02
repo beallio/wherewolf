@@ -31,6 +31,29 @@ def test_complete_from_suggests_catalog_aliases() -> None:
     assert "customers" in labels
 
 
+def test_complete_join_suggests_catalog_aliases() -> None:
+    service = SqlCompletionService()
+    catalog = (_make_catalog_entry("orders"), _make_catalog_entry("customers"))
+    sql = "SELECT * FROM orders JOIN "
+    items = service.complete(
+        CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=catalog)
+    )
+    labels = [item.label for item in items if item.kind == CompletionKind.TABLE]
+    assert labels == ["customers", "orders"]
+
+
+def test_complete_suggests_dialect_keywords_and_functions() -> None:
+    service = SqlCompletionService()
+    sql = "SELECT co"
+    items = service.complete(
+        CompletionContext(sql=sql, cursor_offset=len(sql), dialect="duckdb", catalog=())
+    )
+    labels = {item.label.upper() for item in items}
+    kinds = {item.kind for item in items}
+    assert "COALESCE" in labels
+    assert CompletionKind.FUNCTION in kinds
+
+
 def test_complete_from_prefix_filtering_case_insensitive() -> None:
     service = SqlCompletionService()
     catalog = (_make_catalog_entry("orders"), _make_catalog_entry("customers"))

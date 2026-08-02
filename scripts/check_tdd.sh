@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-files=$(git diff --cached --name-only | grep "^src/.*\.py$" || true)
+files=$(git diff --cached --diff-filter=AM --name-only | grep "^src/.*\.py$" || true)
 
 for f in $files; do
   base=$(basename "$f" .py)

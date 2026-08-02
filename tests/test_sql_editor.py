@@ -287,5 +287,10 @@ def test_sql_editor_gui_thread_never_blocked_with_none_schema(qtbot) -> None:
     editor.setText("SELECT o. FROM orders o")
     editor.setCursorPosition(0, 9)
 
-    # Trigger completion - must return promptly and show no columns without raising or blocking
+    # Trigger completion while schema work is incomplete. A bounded elapsed time proves the GUI
+    # call does not wait for schema inspection; no column completion may be fabricated.
+    import time
+
+    started = time.monotonic()
     editor.request_completion(forced=True)
+    assert time.monotonic() - started < 0.5

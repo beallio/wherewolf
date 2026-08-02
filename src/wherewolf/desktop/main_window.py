@@ -10,12 +10,16 @@ from PyQt6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStanda
 from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QSplitter,
     QStatusBar,
     QTabWidget,
     QToolBar,
+    QVBoxLayout,
+    QWidget,
 )
 
 from wherewolf.desktop.actions import DesktopActions, build_actions
@@ -356,7 +360,16 @@ class MainWindow(QMainWindow):
         self.result_table_view.setObjectName("result_table_view")
         self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
         self.result_table_view.apply_query_order_requested.connect(self._on_apply_query_order)
-        results.addTab(self.result_table_view, "Results")
+        self.result_table_view.local_sort_changed.connect(self._set_local_sort_notice_visible)
+        results_page = QWidget(results)
+        results_layout = QVBoxLayout(results_page)
+        results_layout.setContentsMargins(0, 0, 0, 0)
+        self.result_sort_notice = QLabel("Sorted preview only.", results_page)
+        self.result_sort_notice.setObjectName("result_sort_notice")
+        self.result_sort_notice.setVisible(False)
+        results_layout.addWidget(self.result_sort_notice)
+        results_layout.addWidget(self.result_table_view)
+        results.addTab(results_page, "Results")
         self.messages_panel = MessagesPanel(self)
         self.messages_panel.setObjectName("messages_panel")
         results.addTab(self.messages_panel, "Messages")
@@ -366,6 +379,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(editor)
         splitter.addWidget(results)
         return splitter
+
+    def _set_local_sort_notice_visible(self, is_sorted: bool) -> None:
+        self.result_sort_notice.setVisible(is_sorted)
 
     def editor_insert_text(self, alias: str) -> None:
         self.editor.insert(alias)
@@ -446,12 +462,23 @@ class MainWindow(QMainWindow):
 
         help_menu = cast(QMenu, menu_bar.addMenu("Help"))
         help_menu.setObjectName("help_menu")
+        self.about_action = help_menu.addAction("About")
+        assert self.about_action is not None
+        self.about_action.triggered.connect(self._show_about)
 
         self.file_menu = file_menu
         self.edit_menu = edit_menu
         self.query_menu = query_menu
         self.view_menu = view_menu
         self.help_menu = help_menu
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Wherewolf",
+            "Wherewolf is licensed under GPL-3.0-only.\n\n"
+            "Pre-0.6 MIT terms are retained in LICENSES/MIT-pre-0.6.txt.",
+        )
 
     def _restore_state(self) -> None:
         geometry = self._settings_service.restore_window_geometry()

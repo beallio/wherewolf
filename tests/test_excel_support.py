@@ -34,6 +34,5 @@ def test_excel_support_spark(tmp_path, spark_session):
 
 
 def test_ui_extension_recognition():
-    # This is a bit hard to test without full streamlit, but we can check the extension set
-    # if it's exposed or by mocking. Let's rely on integration tests or manual check if needed.
+    # Native dialog filter behavior is covered by the desktop file-dialog tests.
     pass
