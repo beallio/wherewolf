@@ -24,7 +24,8 @@ def _installs_spark(sync_lines: list[str]) -> bool:
 def test_ci_install_contracts_match_the_tooling_each_leg_runs() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
     jobs = {
-        name: _job_block(workflow, name) for name in ("lint", "test-duckdb", "test-spark", "build")
+        name: _job_block(workflow, name)
+        for name in ("lint", "test-duckdb", "test-spark", "build", "qt-smoke")
     }
 
     # Do not restore --locked: the maintainer's relative exclude-newer-span makes the
@@ -50,3 +51,18 @@ def test_ci_install_contracts_match_the_tooling_each_leg_runs() -> None:
     assert any("--dev" in line for line in build_sync)
     assert not _installs_spark(build_sync)
     assert "smoke_installed_wheel.py" in jobs["build"]
+
+    qt_smoke_sync = _sync_lines(jobs["qt-smoke"])
+    assert any("--dev" in line for line in qt_smoke_sync)
+    assert not _installs_spark(qt_smoke_sync)
+    assert "ubuntu-latest" in jobs["qt-smoke"]
+    assert "macos-latest" in jobs["qt-smoke"]
+    assert "windows-latest" in jobs["qt-smoke"]
+    assert "tests/test_qt_stack.py" in jobs["qt-smoke"]
+    assert "tests/test_desktop_duckdb_flow.py" in jobs["qt-smoke"]
+    assert "./run.sh" not in jobs["qt-smoke"]
+    assert "UV_PROJECT_ENVIRONMENT" in jobs["qt-smoke"]
+    assert "UV_CACHE_DIR" in jobs["qt-smoke"]
+    assert "XDG_CACHE_HOME" in jobs["qt-smoke"]
+    assert "PYTHONPYCACHEPREFIX" in jobs["qt-smoke"]
+    assert "TMPDIR" in jobs["qt-smoke"]

@@ -125,3 +125,39 @@ jobs:
         run: ./run.sh uv sync --dev --python 3.14
       - name: Build and smoke test installed wheel
         run: ./run.sh uv run --python 3.14 python scripts/smoke_installed_wheel.py
+
+  qt-smoke:
+    name: qt-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      QT_QPA_PLATFORM: offscreen
+      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/wherewolf-venv
+      UV_CACHE_DIR: ${{ runner.temp }}/wherewolf-uv-cache
+      XDG_CACHE_HOME: ${{ runner.temp }}/wherewolf-cache
+      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/wherewolf-pycache
+      TMPDIR: ${{ runner.temp }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Install Qt offscreen system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+      - name: Install dependencies
+        run: uv sync --dev --python 3.14
+      - name: Run offscreen Qt widget and integration smoke tests
+        run: >-
+          uv run --python 3.14 pytest -q --no-cov
+          -o cache_dir=${{ runner.temp }}/wherewolf-pytest-cache
+          tests/test_qt_stack.py tests/test_desktop_duckdb_flow.py
