@@ -23,6 +23,7 @@ class SettingsService:
     DEFAULT_COMPLETION_ENABLED: Final = True
     DEFAULT_PREVIEW_LIMIT: Final = 100
     DEFAULT_EDITOR_THEME: Final = "Dark"
+    DEFAULT_UPDATE_CHECK_ENABLED: Final = False
 
     def __init__(self, settings: QSettings | None = None):
         self._settings = settings or QSettings(self.ORGANIZATION, self.APPLICATION)
@@ -63,6 +64,10 @@ class SettingsService:
     def _editor_theme_key(schema_version: str) -> str:
         return f"{schema_version}/editor/theme"
 
+    @staticmethod
+    def _update_check_enabled_key(schema_version: str) -> str:
+        return f"{schema_version}/updates/check_enabled"
+
     @property
     def namespace_prefix(self) -> str:
         return f"{self.SCHEMA_VERSION}"
@@ -102,6 +107,10 @@ class SettingsService:
     @property
     def editor_theme_key(self) -> str:
         return self._editor_theme_key(self.namespace_prefix)
+
+    @property
+    def update_check_enabled_key(self) -> str:
+        return self._update_check_enabled_key(self.namespace_prefix)
 
     def restore_window_geometry(self) -> bytes:
         return self._read_bytes(self.window_geometry_key, b"")
@@ -177,6 +186,15 @@ class SettingsService:
 
     def save_editor_theme(self, theme: str) -> None:
         self._settings.setValue(self.editor_theme_key, str(theme))
+
+    def restore_update_check_enabled(self) -> bool:
+        value = self._settings.value(
+            self.update_check_enabled_key, self.DEFAULT_UPDATE_CHECK_ENABLED
+        )
+        return value if isinstance(value, bool) else self.DEFAULT_UPDATE_CHECK_ENABLED
+
+    def save_update_check_enabled(self, enabled: bool) -> None:
+        self._settings.setValue(self.update_check_enabled_key, bool(enabled))
 
     def _read_bytes(self, key: str, default: bytes) -> bytes:
         value = self._settings.value(key, default)

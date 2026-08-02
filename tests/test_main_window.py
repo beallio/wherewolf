@@ -13,10 +13,13 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
     QMainWindow,
+    QPlainTextEdit,
+    QScrollArea,
     QSplitter,
     QStatusBar,
     QTabWidget,
     QToolBar,
+    QWidget,
 )
 
 from wherewolf.desktop import main_window
@@ -24,13 +27,15 @@ from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.domain import (
     CatalogBinding,
+    ColumnSchema,
     EngineKind,
     ExecutionRequest,
     ExecutionStatus,
     QueryResult,
+    SchemaResult,
     SourceFormat,
 )
-from wherewolf.services import ExportFormat, SettingsService
+from wherewolf.services import CatalogService, ExportFormat, SettingsService
 from wherewolf.storage import HistoryManager
 
 
@@ -60,11 +65,28 @@ def test_main_window_structure(qtbot) -> None:
     for toolbar in window.findChildren(QToolBar):
         assert toolbar.objectName()
 
+    assert len(window.findChildren(QToolBar)) == 1
+
     for dock in window.findChildren(QDockWidget):
         assert dock.objectName()
 
     menu_titles = [action.text() for action in menu_bar.actions()]
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+
+
+def test_main_window_query_controls_share_the_primary_toolbar_without_a_scroll_area(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not window.main_toolbar.findChildren(QScrollArea)
+    for object_name in (
+        "engine_selector",
+        "input_dialect_selector",
+        "export_format_selector",
+        "preview_limit_selector",
+        "editor_theme_selector",
+    ):
+        assert window.findChild(QWidget, object_name) is not None
 
 
 def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:
@@ -83,7 +105,8 @@ def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypat
 
     assert shown["title"] == "About Wherewolf"
     assert "GPL-3.0-only" in shown["text"]
-    assert "MIT-pre-0.6.txt" in shown["text"]
+    assert "build" in shown["text"]
+    assert "MIT" not in shown["text"]
 
 
 def test_engine_selector_disables_missing_spark_with_installation_guidance(
@@ -204,7 +227,12 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Find / Replace…",
         "Toggle Comment",
     ]
-    assert actions[:5] == list(window.editor.edit_actions[:5])
+    assert actions[:2] == list(window.editor.edit_actions[:2])
+    assert actions[2:5] == [window.cut_action, window.copy_action, window.paste_action]
+    assert window.copy_action is not window.editor.edit_actions[3]
+    assert window.select_all_action.shortcut().toString() == "Ctrl+A"
+    assert window.find_replace_action.shortcut().toString() == "Ctrl+F"
+    assert window.editor.edit_actions[-1].shortcut().toString() == "Ctrl+/"
 
 
 def test_main_window_find_replace_dialog_changes_editor_text(qtbot) -> None:
@@ -373,6 +401,20 @@ def test_main_window_help_actions_and_catalog_reveal_command(qtbot, tmp_path: Pa
     assert str(source.parent) in command or str(source) in command
 
 
+def test_main_window_about_identifies_gpl_build_without_mit(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    shown: list[str] = []
+    monkeypatch.setattr(main_window.QMessageBox, "about", lambda _p, _t, text: shown.append(text))
+
+    window._show_about()
+
+    assert "wherewolf" in shown[0]
+    assert "build" in shown[0]
+    assert "GPL-3.0-only" in shown[0]
+    assert "MIT" not in shown[0]
+
+
 def test_main_window_schema_panel_shows_schema_after_adding_dataset(tmp_path: Path, qtbot) -> None:
     csv_file = tmp_path / "people.csv"
     csv_file.write_text("id,name\n1,Ada\n")
@@ -386,6 +428,28 @@ def test_main_window_schema_panel_shows_schema_after_adding_dataset(tmp_path: Pa
     assert [window.schema_panel.cell_text(row, 1) for row in range(2)] == ["BIGINT", "VARCHAR"]
 
 
+def test_main_window_schema_selector_switches_between_loaded_datasets(
+    tmp_path: Path, qtbot
+) -> None:
+    first_path = tmp_path / "customers.csv"
+    second_path = tmp_path / "loans.csv"
+    first_path.write_text("id\n1\n")
+    second_path.write_text("amount\n100\n")
+    service = CatalogService()
+    added = service.add_paths((first_path, second_path)).added
+    window = MainWindow(catalog_service=service)
+    qtbot.addWidget(window)
+
+    window._on_schema_result(SchemaResult(added[0].id, (ColumnSchema("id", "BIGINT"),)))
+    window._on_schema_result(SchemaResult(added[1].id, (ColumnSchema("amount", "DOUBLE"),)))
+
+    selector = window.schema_panel.dataset_selector
+    selector.setCurrentText(added[0].alias)
+    assert window.schema_panel.cell_text(0, 0) == "id"
+    selector.setCurrentText(added[1].alias)
+    assert window.schema_panel.cell_text(0, 0) == "amount"
+
+
 def test_main_window_translation_tab_transpiles_current_editor_text(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
@@ -396,6 +460,59 @@ def test_main_window_translation_tab_transpiles_current_editor_text(qtbot) -> No
     window.editor.setText("SELECT IFNULL(value, 0) FROM users")
 
     assert window.translation_panel.translated_text() == "SELECT\n  COALESCE(value, 0)\nFROM users"
+
+
+def test_main_window_copy_shortcut_uses_the_focused_translation_or_editor_widget(qtbot) -> None:
+    """Ctrl+C must copy from the actual focused widget, not always the SQL editor."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(1)
+
+    window.editor.setText("EDITOR SQL HERE")
+    tabs = window.findChild(QTabWidget, "results_tabs")
+    translation_edit = window.translation_panel.findChild(QPlainTextEdit)
+    clipboard = QApplication.clipboard()
+
+    assert tabs is not None
+    assert translation_edit is not None
+    assert clipboard is not None
+    menu_copy_action = next(
+        action for action in window.edit_menu.actions() if action.text() == "Copy"
+    )
+    assert menu_copy_action is not window.editor.edit_actions[3]
+
+    tabs.setCurrentIndex(tabs.indexOf(window.translation_panel.parentWidget()))
+    translation_edit.setPlainText("TRANSLATED SQL HERE")
+    translation_edit.selectAll()
+    translation_edit.setFocus(Qt.FocusReason.MouseFocusReason)
+    assert QApplication.focusWidget() is translation_edit
+    qtbot.keyClick(translation_edit, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    assert clipboard.text() == "TRANSLATED SQL HERE"
+    assert clipboard.text() != "EDITOR SQL HERE"
+
+    window.editor.selectAll()
+    window.editor.setFocus(Qt.FocusReason.MouseFocusReason)
+    assert QApplication.focusWidget() is window.editor
+    qtbot.keyClick(window.editor, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+    assert clipboard.text() == "EDITOR SQL HERE"
+
+
+def test_main_window_translation_target_uses_friendly_dialect_names(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    target = window.translation_target_selector
+    azure_sql_index = target.findText("Azure SQL")
+
+    assert azure_sql_index >= 0
+    assert target.itemData(azure_sql_index) == "tsql"
+    assert target.itemText(target.findData("duckdb")) == "DuckDB"
+
+    target.setCurrentIndex(azure_sql_index)
+    window.editor.setText("SELECT * FROM users LIMIT 1")
+
+    assert "TOP 1" in window.translation_panel.translated_text().upper()
 
 
 def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, monkeypatch) -> None:
@@ -722,12 +839,12 @@ def test_clear_history_action_empties_store_and_history_dock(tmp_path: Path, qtb
     history.add_entry("duckdb", "SELECT to_clear")
     window = MainWindow(history_manager=history)
     qtbot.addWidget(window)
-    assert window.history_dock.history_list.count() == 1
+    assert window.history_dock.history_table.topLevelItemCount() == 1
 
     window.desktop_actions.clear_history.trigger()
 
     assert history.get_all() == []
-    assert window.history_dock.history_list.count() == 0
+    assert window.history_dock.history_table.topLevelItemCount() == 0
     assert json.loads(history_path.read_text()) == []
 
 

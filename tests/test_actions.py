@@ -33,6 +33,7 @@ def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
 
     assert actions.reset_layout.text() == "Reset Layout"
     assert actions.clear_history.text() == "Clear History"
+    assert all(action.toolTip().strip() for action in actions.__dict__.values())
 
 
 def test_add_datasets_action_adds_catalog_paths(tmp_path, qtbot) -> None:

@@ -8,8 +8,17 @@ from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
-from PyQt6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStandardItemModel
+from PyQt6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QDragEnterEvent,
+    QDropEvent,
+    QFont,
+    QKeySequence,
+    QStandardItemModel,
+)
 from PyQt6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -23,7 +32,6 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -34,6 +42,7 @@ from PyQt6.QtWidgets import (
 )
 from sqlglot.dialects import DIALECT_MODULE_NAMES
 
+from wherewolf import build_identifier
 from wherewolf.constants import DIALECT_MAPPING
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
@@ -109,9 +118,12 @@ class PreferencesDialog(QDialog):
         self.completion_threshold = QSpinBox(self)
         self.completion_threshold.setRange(1, 20)
         self.completion_threshold.setValue(settings_service.restore_completion_threshold())
+        self.update_check_enabled = QCheckBox("Check for updates on startup", self)
+        self.update_check_enabled.setChecked(settings_service.restore_update_check_enabled())
         layout.addRow("Editor font size", self.font_size)
         layout.addRow(self.completion_enabled)
         layout.addRow("Completion threshold", self.completion_threshold)
+        layout.addRow(self.update_check_enabled)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
         )
@@ -220,24 +232,9 @@ class MainWindow(QMainWindow):
         return toolbar
 
     def _build_query_controls_toolbar(self) -> QToolBar:
-        """Keep labelled query controls on their own toolbar row.
-
-        Separating configuration from query actions prevents the controls from extending past
-        the right edge of the primary toolbar. The horizontal scroll area keeps every labelled
-        control reachable when the window is narrower than the controls' natural width.
-        """
-        toolbar = QToolBar("Query Controls", self)
-        toolbar.setObjectName("query_controls_toolbar")
-        toolbar.setMovable(False)
-        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
-        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
-
-        controls_scroll = QScrollArea(toolbar)
-        controls_scroll.setObjectName("query_controls_scroll_area")
-        controls_scroll.setWidgetResizable(False)
-        controls_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        controls_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        controls = QWidget(controls_scroll)
+        """Add labelled controls to the primary toolbar; Qt supplies its overflow extension."""
+        toolbar = self.main_toolbar
+        controls = QWidget(toolbar)
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(4, 0, 4, 0)
         controls_layout.setSpacing(8)
@@ -305,10 +302,8 @@ class MainWindow(QMainWindow):
             self.editor_theme_selector,
             "Choose the colour theme used by the SQL editor.",
         )
-        controls.setFixedSize(controls.sizeHint())
-        controls_scroll.setWidget(controls)
-        controls_scroll.setFixedWidth(min(controls.sizeHint().width(), 480))
-        toolbar.addWidget(controls_scroll)
+        toolbar.addSeparator()
+        toolbar.addWidget(controls)
         return toolbar
 
     @staticmethod
@@ -605,7 +600,7 @@ class MainWindow(QMainWindow):
         if entry is None:
             self.schema_panel.set_schema_result(schema_result)
         else:
-            self.schema_panel.set_entry(entry)
+            self.schema_panel.set_entries(self._catalog_service.entries, entry.alias)
 
     def _build_central_area(self) -> QSplitter:
         editor = SqlEditor(
@@ -665,8 +660,11 @@ class MainWindow(QMainWindow):
         self.translation_target_selector.setToolTip(
             "Choose the SQL dialect rendered in the Translation tab."
         )
+        display_names = {dialect: label for label, dialect in DIALECT_MAPPING.items()}
         for dialect in sorted(DIALECT_MODULE_NAMES):
-            self.translation_target_selector.addItem(dialect, dialect)
+            self.translation_target_selector.addItem(
+                display_names.get(dialect, dialect.title()), dialect
+            )
         spark_index = self.translation_target_selector.findData("spark")
         self.translation_target_selector.setCurrentIndex(max(spark_index, 0))
         translation_target_label = QLabel("Translation target", translation_page)
@@ -766,6 +764,20 @@ class MainWindow(QMainWindow):
         self.editor.setText(ordered_sql)
         self._on_run_triggered()
 
+    def _dispatch_focused_edit_action(self, operation: str) -> None:
+        """Invoke an edit operation on the focused widget or one of its parents."""
+        widget = QApplication.focusWidget()
+        while widget is not None:
+            if operation == "copy" and isinstance(widget, ResultTableView):
+                widget.copy_selection()
+                return
+
+            method = getattr(widget, operation, None)
+            if callable(method):
+                method()
+                return
+            widget = widget.parentWidget()
+
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
         assert menu_bar is not None
@@ -775,16 +787,35 @@ class MainWindow(QMainWindow):
 
         edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
         edit_menu.setObjectName("edit_menu")
-        undo, redo, cut, copy, paste, toggle_comment = self.editor.edit_actions
+        undo, redo, _cut, _copy, _paste, toggle_comment = self.editor.edit_actions
         edit_menu.addAction(undo)
         edit_menu.addAction(redo)
         edit_menu.addSeparator()
-        edit_menu.addAction(cut)
-        edit_menu.addAction(copy)
-        edit_menu.addAction(paste)
+
+        self.cut_action = QAction("Cut", self)
+        self.cut_action.setShortcut(QKeySequence.StandardKey.Cut)
+        self.copy_action = QAction("Copy", self)
+        self.copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        self.paste_action = QAction("Paste", self)
+        self.paste_action.setShortcut(QKeySequence.StandardKey.Paste)
         self.select_all_action = QAction("Select All", self)
-        self.select_all_action.triggered.connect(self.editor.selectAll)
+        self.select_all_action.setShortcut(QKeySequence.StandardKey.SelectAll)
+        for action, operation in (
+            (self.cut_action, "cut"),
+            (self.copy_action, "copy"),
+            (self.paste_action, "paste"),
+            (self.select_all_action, "selectAll"),
+        ):
+            action.triggered.connect(
+                lambda _checked=False, operation=operation: self._dispatch_focused_edit_action(
+                    operation
+                )
+            )
+        edit_menu.addAction(self.cut_action)
+        edit_menu.addAction(self.copy_action)
+        edit_menu.addAction(self.paste_action)
         self.find_replace_action = QAction("Find / Replace…", self)
+        self.find_replace_action.setShortcut(QKeySequence("Ctrl+F"))
         self.find_replace_action.triggered.connect(self._show_find_replace)
         edit_menu.addAction(self.select_all_action)
         edit_menu.addAction(self.find_replace_action)
@@ -833,8 +864,7 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self,
             "About Wherewolf",
-            "Wherewolf is licensed under GPL-3.0-only.\n\n"
-            "Pre-0.6 MIT terms are retained in LICENSES/MIT-pre-0.6.txt.",
+            f"{build_identifier()}\n\nWherewolf is licensed under GPL-3.0-only.",
         )
 
     def _show_licenses(self) -> None:
@@ -855,6 +885,7 @@ class MainWindow(QMainWindow):
         dialog = self.preferences_dialog
         self._settings_service.save_completion_enabled(dialog.completion_enabled.isChecked())
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
+        self._settings_service.save_update_check_enabled(dialog.update_check_enabled.isChecked())
         self.editor.set_font_size(dialog.font_size.value())
 
     def _on_editor_diagnostics(self, payload: tuple) -> None:

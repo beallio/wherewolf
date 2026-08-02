@@ -170,25 +170,32 @@ class SqlEditor(QsciScintilla):
 
         self._undo_action = QAction("Undo", self)
         self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self._undo_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._undo_action.triggered.connect(self.undo)
 
         self._redo_action = QAction("Redo", self)
         self._redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        self._redo_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._redo_action.triggered.connect(self.redo)
 
         self._cut_action = QAction("Cut", self)
         self._cut_action.setShortcut(QKeySequence.StandardKey.Cut)
+        self._cut_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._cut_action.triggered.connect(self.cut)
 
         self._copy_action = QAction("Copy", self)
         self._copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        self._copy_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._copy_action.triggered.connect(self.copy)
 
         self._paste_action = QAction("Paste", self)
         self._paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        self._paste_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._paste_action.triggered.connect(self.paste)
 
         self._toggle_comment_action = QAction("Toggle Comment", self)
+        self._toggle_comment_action.setShortcut(QKeySequence("Ctrl+/"))
+        self._toggle_comment_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._toggle_comment_action.triggered.connect(self.toggle_comment)
 
         if self._format_action is not None:

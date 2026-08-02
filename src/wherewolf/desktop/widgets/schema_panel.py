@@ -1,8 +1,9 @@
 """Widget for displaying schema columns, data types, inspection states, and errors."""
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QSignalBlocker, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QHeaderView,
     QLabel,
     QTableWidget,
@@ -29,17 +30,24 @@ class SchemaPanel(QWidget):
 
         self._entry: CatalogEntry | None = None
         self._schema_result: SchemaResult | None = None
+        self._entries_by_alias: dict[str, CatalogEntry] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
+        self.dataset_selector = QComboBox(self)
+        self.dataset_selector.setObjectName("schema_dataset_selector")
+        self.dataset_selector.setToolTip("Choose the dataset whose schema is displayed.")
+        self.dataset_selector.currentTextChanged.connect(self._on_dataset_selected)
+        layout.addWidget(self.dataset_selector)
+
         self._status_label = QLabel("No table selected", self)
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
 
-        self._table_widget = QTableWidget(0, 2, self)
-        self._table_widget.setHorizontalHeaderLabels(["Name", "Type"])
+        self._table_widget = QTableWidget(0, 4, self)
+        self._table_widget.setHorizontalHeaderLabels(["Name", "Type", "Nullable", "Position"])
         header = self._table_widget.horizontalHeader()
         if header is not None:
             header.setStretchLastSection(True)
@@ -57,6 +65,16 @@ class SchemaPanel(QWidget):
         self._entry = entry
         self._schema_result = None
         self._update_view()
+
+    def set_entries(self, entries: tuple[CatalogEntry, ...], selected_alias: str | None) -> None:
+        """Populate the dataset selector and display the requested catalog entry."""
+        self._entries_by_alias = {entry.alias: entry for entry in entries}
+        with QSignalBlocker(self.dataset_selector):
+            self.dataset_selector.clear()
+            self.dataset_selector.addItems(self._entries_by_alias)
+            if selected_alias is not None:
+                self.dataset_selector.setCurrentText(selected_alias)
+        self.set_entry(self._entries_by_alias.get(self.dataset_selector.currentText()))
 
     def set_schema_result(self, result: SchemaResult) -> None:
         """Update display using a SchemaResult directly."""
@@ -109,6 +127,9 @@ class SchemaPanel(QWidget):
     def _on_item_double_clicked(self, item: QTableWidgetItem) -> None:
         self.emit_selected_columns_insert()
 
+    def _on_dataset_selected(self, alias: str) -> None:
+        self.set_entry(self._entries_by_alias.get(alias))
+
     def _update_view(self) -> None:
         columns: tuple[ColumnSchema, ...] | None = None
         error_msg: str | None = None
@@ -145,7 +166,10 @@ class SchemaPanel(QWidget):
                 if alias is None:
                     self._status_label.setText(f"Schema ({len(columns)} columns):")
                 else:
-                    self._status_label.setText(f"{alias} — {len(columns)} columns")
+                    assert self._entry is not None
+                    self._status_label.setText(
+                        f"{alias} — {self._entry.path} ({self._entry.source_format.value}) — {len(columns)} columns"
+                    )
                 self._status_label.show()
 
             self._table_widget.show()
@@ -153,5 +177,11 @@ class SchemaPanel(QWidget):
             for r, col in enumerate(columns):
                 name_item = QTableWidgetItem(col.name)
                 type_item = QTableWidgetItem(col.data_type)
+                nullable_item = QTableWidgetItem(
+                    "Yes" if col.nullable is True else "No" if col.nullable is False else "Unknown"
+                )
+                position_item = QTableWidgetItem(str(r + 1))
                 self._table_widget.setItem(r, 0, name_item)
                 self._table_widget.setItem(r, 1, type_item)
+                self._table_widget.setItem(r, 2, nullable_item)
+                self._table_widget.setItem(r, 3, position_item)
