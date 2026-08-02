@@ -64,7 +64,8 @@ class QtFileDialogService:
             str(default_directory or ""),
             export_file_filter(),
             f"*.{export_format.value}",
-            QFileDialog.Option.DontConfirmOverwrite,
+            # No DontConfirmOverwrite: let the native dialog prompt before replacing an
+            # existing file. Suppressing it made exports destroy files silently.
         )
         return normalise_destination(Path(name), export_format) if name else None
 

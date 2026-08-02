@@ -355,7 +355,13 @@ class MainWindow(QMainWindow):
         self.desktop_actions.export_preview.setEnabled(can_export)
         self.desktop_actions.export_full.setEnabled(can_export)
         if result.succeeded:
-            self._show_status(f"Exported results to {result.destination}")
+            message = f"Exported results to {result.destination}"
+            if result.warnings:
+                # registry._source_warnings flags a source file that changed under the
+                # export. Reporting bare success there hands the user a stale artifact
+                # they believe is current.
+                message = "\n".join((message, *sorted(set(result.warnings))))
+            self._show_status(message)
         else:
             self._show_status(f"Export failed: {result.error_message}")
 
