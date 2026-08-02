@@ -115,8 +115,8 @@ required criterion from migration-plan Section 21 is mapped to one existing test
 | no Streamlit code or dependency remains | GAP | Task 8 removes dependencies/config; Task 9 adds and runs the repository residue check. |
 | package metadata and license files state `GPL-3.0-only` | `tests/test_licensing.py::test_pyproject_has_gpl3_license_and_files` | Asserts metadata and license-file declaration. |
 | pre-cutover MIT terms are accurately preserved in notices | `tests/test_licensing.py::test_notice_text_mentions_gpl_and_mit_history` | Asserts GPL and MIT history notice content. |
-| About/Open-Source Licenses is present | GAP | No existing test or desktop action proves an About/licenses UI. |
-| wheel and source distribution include license files | GAP | No packaging-artifact test currently builds and inspects both distributions. |
+| About/Open-Source Licenses is present | `tests/test_main_window.py::test_main_window_help_menu_exposes_about_and_license_notice` | Opens the Help action and asserts GPL and pre-cutover MIT notice text. |
+| wheel and source distribution include license files | `tests/test_licensing.py::test_pyproject_has_gpl3_license_and_files` | Asserts both the root license and `LICENSES/*` packaging declarations; a real `uv build` inspection is also recorded in the session log. |
 
 ## Manual release gate
 

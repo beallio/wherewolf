@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
     QToolBar,
 )
 
+from wherewolf.desktop import main_window
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.domain import (
     CatalogBinding,
@@ -63,6 +64,25 @@ def test_main_window_structure(qtbot) -> None:
 
     menu_titles = [action.text() for action in menu_bar.actions()]
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+
+
+def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    shown: dict[str, str] = {}
+
+    def capture_about(_parent, title: str, text: str) -> None:
+        shown["title"] = title
+        shown["text"] = text
+
+    monkeypatch.setattr(main_window.QMessageBox, "about", capture_about)
+    about_action = next(action for action in window.help_menu.actions() if action.text() == "About")
+
+    about_action.trigger()
+
+    assert shown["title"] == "About Wherewolf"
+    assert "GPL-3.0-only" in shown["text"]
+    assert "MIT-pre-0.6.txt" in shown["text"]
 
 
 def test_engine_selector_disables_missing_spark_with_installation_guidance(

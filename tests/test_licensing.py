@@ -23,6 +23,7 @@ def test_pyproject_has_gpl3_license_and_files() -> None:
     assert project["license"] == "GPL-3.0-only"
     assert "license-files" in project
     assert "LICENSE" in project["license-files"]
+    assert "LICENSES/*" in project["license-files"]
 
 
 def test_notice_text_mentions_gpl_and_mit_history() -> None:

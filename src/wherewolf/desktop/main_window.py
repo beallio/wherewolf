@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QDockWidget,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QSplitter,
     QStatusBar,
     QTabWidget,
@@ -446,12 +447,23 @@ class MainWindow(QMainWindow):
 
         help_menu = cast(QMenu, menu_bar.addMenu("Help"))
         help_menu.setObjectName("help_menu")
+        self.about_action = help_menu.addAction("About")
+        assert self.about_action is not None
+        self.about_action.triggered.connect(self._show_about)
 
         self.file_menu = file_menu
         self.edit_menu = edit_menu
         self.query_menu = query_menu
         self.view_menu = view_menu
         self.help_menu = help_menu
+
+    def _show_about(self) -> None:
+        QMessageBox.about(
+            self,
+            "About Wherewolf",
+            "Wherewolf is licensed under GPL-3.0-only.\n\n"
+            "Pre-0.6 MIT terms are retained in LICENSES/MIT-pre-0.6.txt.",
+        )
 
     def _restore_state(self) -> None:
         geometry = self._settings_service.restore_window_geometry()
