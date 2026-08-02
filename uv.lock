@@ -11,7 +11,7 @@ resolution-markers = [
 ]
 
 [options]
-exclude-newer = "2026-07-26T07:00:00Z"
+exclude-newer = "2026-07-26T00:00:00Z"
 
 [options.exclude-newer-package]
 polars-runtime-64 = false
