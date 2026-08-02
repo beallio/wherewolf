@@ -9,9 +9,9 @@ records the exact remainder rather than overstating coverage.
 
 | Required criterion | Evidence | Reason |
 | --- | --- | --- |
-| `wherewolf` opens one native desktop window | GAP | The current console target still reaches `wherewolf.cli:main`, which launches Streamlit; Task 4 supplies the red/green entry-point test. |
+| `wherewolf` opens one native desktop window | `tests/test_cli.py::test_console_scripts_target_desktop_entrypoints`; `tests/test_cli.py::test_cli_delegates_to_desktop_main`; `tests/test_cli.py::test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched` | Console target delegates to the desktop main, whose QApplication and MainWindow are instantiated once. |
 | no browser tab or local web server is started | MANUAL | Offscreen tests cannot prove that a real launch starts neither browser nor server. |
-| `python -m wherewolf` opens the same application | GAP | `wherewolf.__main__` does not exist yet; Task 4 supplies the red/green entry-point test. |
+| `python -m wherewolf` opens the same application | `tests/test___main__.py::test_module_entrypoint_delegates_to_desktop_main` | Module entrypoint delegates to desktop main. |
 | window geometry, docks, and splitter positions persist | PARTIAL | `test_main_window_restores_geometry_dock_layout_and_splitter_state` proves persisted dock, splitter, and height restoration; offscreen Qt constrains width and cannot prove real-screen position. |
 | closing the main window shuts down workers cleanly or prompts when cancellation cannot complete immediately | `tests/test_main_window.py::test_main_window_close_waits_for_running_schema_workers`; `tests/test_main_window.py::test_main_window_close_calls_query_controller_shutdown` | Closes schema workers and invokes the query shutdown boundary. |
 | normal DuckDB startup does not import/start Spark | `tests/test_cli.py::test_importing_desktop_application_is_free_of_pyspark` | An isolated subprocess asserts importing the desktop application loads no PySpark. |
@@ -113,7 +113,7 @@ records the exact remainder rather than overstating coverage.
 
 | Required criterion | Evidence | Reason |
 | --- | --- | --- |
-| no Streamlit code or dependency remains | GAP | Task 8 removes dependencies/config; Task 9 adds and runs the repository residue check. |
+| no Streamlit code or dependency remains | `tests/test_streamlit_removal.py::test_runtime_and_ci_inputs_contain_no_streamlit_residue` | Scans supported source, tests, project metadata, and CI inputs for the retired runtime name. |
 | package metadata and license files state `GPL-3.0-only` | `tests/test_licensing.py::test_license_file_is_gpl3`; `tests/test_licensing.py::test_pyproject_has_gpl3_license_and_files` | Separately checks GPL text and metadata/declarations. |
 | pre-cutover MIT terms are accurately preserved in notices | MANUAL | Legal accuracy against the pre-cutover source cannot be proven by substring checks; human license review remains required. |
 | About/Open-Source Licenses is present | `tests/test_main_window.py::test_main_window_help_menu_exposes_about_and_license_notice` | Opens the Help action and asserts GPL and pre-cutover MIT notice text. |

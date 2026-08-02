@@ -83,3 +83,16 @@ runtime code. The README wording is updated separately in Task 11.
   translation, and unloaded-schema completion.
 - Collected-node verification recorded all new/repaired node IDs. The 3.14 default suite measured
   `350 passed, 7 deselected`; full gates are recorded in the review-round commit.
+
+## Review round 02 verification
+
+- Mutation evidence: changing the sorted-preview disclosure, disabling JOIN table completion, and
+  making alias uniqueness case-sensitive each produced a failing cited regression test; each
+  mutation was reverted before validation.
+- Collected all 65 cited node IDs across the default and Spark-selected collections; no cited node
+  is phantom. Parameterized test bases are valid pytest selectors and were checked against their
+  collected parameterized children.
+- CI install contract remains explicit: lint synchronizes all extras/dev dependencies for `ruff`
+  and `ty`; DuckDB tests synchronize dev dependencies without requiring Spark; Spark tests use
+  the `spark` extra plus Java in CI. Local quality gates and the default Python 3.12 suite passed;
+  the shared environment was restored to Python 3.14 with all extras and dev dependencies.
