@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 )
 from sqlglot.dialects import DIALECT_MODULE_NAMES
 
+from wherewolf.constants import DIALECT_MAPPING
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.export_controller import ExportController, ExportResult
@@ -159,6 +160,11 @@ class MainWindow(QMainWindow):
             assert item is not None
             item.setEnabled(descriptor.available)
         toolbar.addWidget(self.engine_selector)
+        self.input_dialect_selector = QComboBox(toolbar)
+        self.input_dialect_selector.setObjectName("input_dialect_selector")
+        for label, dialect in DIALECT_MAPPING.items():
+            self.input_dialect_selector.addItem(label, dialect)
+        toolbar.addWidget(self.input_dialect_selector)
         return toolbar
 
     def _build_catalog_dock(self) -> QDockWidget:
@@ -217,9 +223,12 @@ class MainWindow(QMainWindow):
 
         try:
             engine = cast(EngineKind, self.engine_selector.currentData())
+            source_dialect = self.input_dialect_selector.currentData()
+            if not isinstance(source_dialect, str):
+                raise TypeError("No input dialect is selected")
             request = ExecutionRequestBuilder.build(
                 sql=sql,
-                source_dialect="duckdb" if engine is EngineKind.DUCKDB else "spark",
+                source_dialect=source_dialect,
                 engine=engine,
                 catalog_service=self._catalog_service,
             )
@@ -418,6 +427,7 @@ class MainWindow(QMainWindow):
         self.translation_panel.setObjectName("translation_panel")
         translation_layout.addWidget(self.translation_panel)
         self.translation_target_selector.currentTextChanged.connect(self._refresh_translation)
+        self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._refresh_translation)
         results.addTab(translation_page, "Translation")
 
@@ -434,8 +444,11 @@ class MainWindow(QMainWindow):
         target_dialect = self.translation_target_selector.currentData()
         if not isinstance(target_dialect, str):
             return
+        source_dialect = self.input_dialect_selector.currentData()
+        if not isinstance(source_dialect, str):
+            return
         self.translation_panel.update_translation(
-            self.editor.text(), source_dialect="duckdb", target_dialect=target_dialect
+            self.editor.text(), source_dialect=source_dialect, target_dialect=target_dialect
         )
 
     def editor_insert_text(self, alias: str) -> None:

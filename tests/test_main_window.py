@@ -195,6 +195,24 @@ def test_main_window_translation_tab_transpiles_current_editor_text(qtbot) -> No
     assert window.translation_panel.translated_text() == "SELECT\n  COALESCE(value, 0)\nFROM users"
 
 
+def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", submitted.append)
+    window.editor.setText("SELECT TOP 10 * FROM users")
+
+    source_index = window.input_dialect_selector.findData("tsql")
+    assert source_index >= 0
+    window.input_dialect_selector.setCurrentIndex(source_index)
+    window.desktop_actions.run.trigger()
+
+    assert len(submitted) == 1
+    assert submitted[0].source_dialect == "tsql"
+    assert submitted[0].executable_sql != submitted[0].original_sql
+    assert "LIMIT 10" in submitted[0].executable_sql
+
+
 def test_format_action_is_shared_with_editor_context_action(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
