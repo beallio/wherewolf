@@ -65,7 +65,7 @@ def test_main_window_structure(qtbot) -> None:
     for toolbar in window.findChildren(QToolBar):
         assert toolbar.objectName()
 
-    assert len(window.findChildren(QToolBar)) == 1
+    assert len(window.findChildren(QToolBar)) == 2
 
     for dock in window.findChildren(QDockWidget):
         assert dock.objectName()
@@ -74,19 +74,27 @@ def test_main_window_structure(qtbot) -> None:
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
 
 
-def test_main_window_query_controls_share_the_primary_toolbar_without_a_scroll_area(qtbot) -> None:
+def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_widths(
+    qtbot,
+) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
 
     assert not window.main_toolbar.findChildren(QScrollArea)
-    for object_name in (
-        "engine_selector",
-        "input_dialect_selector",
-        "export_format_selector",
-        "preview_limit_selector",
-        "editor_theme_selector",
-    ):
-        assert window.findChild(QWidget, object_name) is not None
+    window.show()
+    for width in (1024, 1280, 1440, 1600):
+        window.resize(width, 768)
+        qtbot.wait(20)
+        for object_name in (
+            "engine_selector",
+            "input_dialect_selector",
+            "export_format_selector",
+            "preview_limit_selector",
+            "editor_theme_selector",
+        ):
+            control = window.findChild(QWidget, object_name)
+            assert control is not None
+            assert control.isVisible(), f"{object_name} is hidden at {width}px"
 
 
 def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:
@@ -732,26 +740,32 @@ def test_history_record_restore_updates_editor_without_execution_or_catalog(
     assert window._catalog_service.entries == initial_catalog
 
 
-def test_history_catalog_restore_loads_available_files_and_reports_missing_ones(
-    tmp_path: Path, qtbot
+def test_history_record_restore_leaves_existing_catalog_and_schema_work_untouched(
+    tmp_path: Path, qtbot, monkeypatch
 ) -> None:
-    existing = tmp_path / "available.csv"
-    existing.write_text("id\n1\n")
-    missing = tmp_path / "missing.csv"
+    initial = tmp_path / "already_loaded.csv"
+    initial.write_text("id\n1\n")
+    historical = tmp_path / "historical.csv"
+    historical.write_text("id\n2\n")
     history = HistoryManager(storage_path=tmp_path / "history.json")
     history.add_entry(
         "duckdb",
-        "SELECT * FROM available",
-        catalog={"available": str(existing), "missing": str(missing)},
+        "SELECT restored_query",
+        catalog={"historical": str(historical)},
     )
-    window = MainWindow(history_manager=history)
+    catalog_service = CatalogService()
+    catalog_service.add_paths((initial,))
+    window = MainWindow(history_manager=history, catalog_service=catalog_service)
     qtbot.addWidget(window)
+    entries_before = window._catalog_service.entries
+    queued_schema_work: list[CatalogBinding] = []
+    monkeypatch.setattr(window, "_queue_schema_work", queued_schema_work.append)
 
     window.history_dock.record_selected.emit(history.get_all()[0])
 
-    qtbot.waitUntil(lambda: len(window._catalog_service.entries) == 1)
-    assert window._catalog_service.entries[0].path == existing.resolve()
-    assert str(missing) in window.status_bar.currentMessage()
+    assert window.editor.text() == "SELECT restored_query"
+    assert window._catalog_service.entries == entries_before
+    assert queued_schema_work == []
 
 
 def test_main_window_restores_geometry_dock_layout_and_splitter_state(
@@ -917,6 +931,8 @@ def test_main_window_close_calls_query_controller_shutdown(qtbot, monkeypatch) -
 def test_main_window_result_grid_integration(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(20)
 
     df = pl.DataFrame({"x": [100, 200], "y": ["alpha", "beta"]})
 
@@ -970,9 +986,16 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
+    assert window.result_error_message.isVisible()
+    assert "near SELECT" in window.result_error_message.text()
     msg, severity = window.messages_panel.message_at(0)
     assert "Error (SyntaxError): near SELECT" in msg
     assert severity == "error"
+
+    # A following success replaces the error in the results area.
+    window._on_query_result_ready(res_success, request)
+    assert not window.result_error_message.isVisible()
+    assert window.result_error_message.text() == ""
 
     # 3. Cancelled result: grid cleared
     res_cancelled = QueryResult(

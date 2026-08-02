@@ -63,12 +63,21 @@ expected result.
 - [ ] Platform: __________  Date: __________  UI legibility at the maintainer's working width
   - Steps: With 5, 50, then 500 SQL lines, change the editor font size and confirm every line
     number remains fully readable against the dark editor paper. Load `customers`, then `loans`, and
-    inspect the Schema dock header after each. Resize the window narrower than the query controls,
-    use the horizontal control strip to reach every labelled setting, and inspect the tooltip for
+    inspect the Schema dock header after each. Resize the window to 1024px wide, inspect both toolbar
+    rows, and inspect the tooltip for
     Execution engine, Input dialect, Export format, Preview rows, Editor theme, and Translation target.
   - Expected: The margin fits its digits without a light strip, each schema header identifies the
     current alias, and every control has a visible caption plus an explanatory tooltip. Narrow
-    windows scroll the controls instead of clipping them past the right edge.
+    windows keep every toolbar control visible without an overflow button.
+  - Result / issue: _________________________________________________________________
+
+- [ ] Platform: __________  Date: __________  UI follow-ups composition
+  - Steps: Load `customers`, type `cus` after a `FROM` clause, then inspect keyword/function
+    suggestions. Resize the History timestamp column and select a stored query with a different
+    catalog. Run an invalid query, then a valid query.
+  - Expected: Completion popup placement and styling are usable; history selection restores only SQL;
+    the timestamp omits fractional seconds but preserves the full value on hover; query errors appear
+    in Results and clear after the next successful query.
   - Result / issue: _________________________________________________________________
 
 - [ ] Platform: __________  Date: __________  Query responsiveness and cancellation

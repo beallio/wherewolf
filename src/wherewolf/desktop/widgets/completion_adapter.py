@@ -66,7 +66,11 @@ class CompletionAdapter:
         self._active_items = {item.label: item for item in items}
 
         formatted = [f"{item.label}?{KIND_IMAGE_IDS.get(item.kind, 1)}" for item in items]
-        self._editor.showUserList(COMPLETION_LIST_ID, formatted)
+        self._editor.SendScintilla(
+            self._editor.SCI_AUTOCSHOW,
+            len(self._prefix),
+            " ".join(formatted).encode(),
+        )
 
     def on_item_activated(self, list_id: int, text: str) -> None:
         if list_id != COMPLETION_LIST_ID:

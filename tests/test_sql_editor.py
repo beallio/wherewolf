@@ -286,6 +286,44 @@ def test_sql_editor_completion_custom_threshold(qtbot, tmp_path) -> None:
     assert spy_service.calls == 1
 
 
+def test_sql_editor_typing_shows_catalog_keyword_and_function_completions(qtbot) -> None:
+    from pathlib import Path
+    from uuid import uuid4
+
+    from wherewolf.domain.enums import SourceFormat
+    from wherewolf.domain.models import CatalogEntry
+
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.set_catalog(
+        (
+            CatalogEntry(
+                id=uuid4(),
+                alias="customers",
+                path=Path("customers.csv"),
+                source_format=SourceFormat.CSV,
+                schema=(),
+            ),
+        )
+    )
+    editor.show()
+    editor.setFocus()
+    qtbot.keyClicks(editor, "SELECT * FROM ")
+    qtbot.keyClicks(editor, "cus")
+
+    qtbot.waitUntil(editor.isListActive)
+    assert "customers" in editor._completion_adapter._active_items
+
+    editor.cancelList()
+    editor.setText("SELECT ")
+    editor.setCursorPosition(0, 7)
+    editor.setFocus()
+    editor.request_completion(forced=True)
+    qtbot.waitUntil(editor.isListActive)
+    assert "SELECT" in editor._completion_adapter._active_items
+    assert "COUNT" in editor._completion_adapter._active_items
+
+
 def test_main_window_show_completion_action_is_same_object_in_query_menu_and_editor(qtbot) -> None:
     from wherewolf.desktop import MainWindow
 

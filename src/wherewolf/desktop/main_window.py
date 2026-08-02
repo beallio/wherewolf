@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import webbrowser
 from importlib.metadata import version
-from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
@@ -232,8 +231,15 @@ class MainWindow(QMainWindow):
         return toolbar
 
     def _build_query_controls_toolbar(self) -> QToolBar:
-        """Add labelled controls to the primary toolbar; Qt supplies its overflow extension."""
-        toolbar = self.main_toolbar
+        """Place compact query controls on their own toolbar row.
+
+        Keeping controls on a dedicated row prevents Qt's toolbar overflow menu
+        from hiding them at normal desktop window widths.
+        """
+        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
+        toolbar = self.addToolBar("Query Controls")
+        assert toolbar is not None
+        toolbar.setObjectName("query_controls_toolbar")
         controls = QWidget(toolbar)
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(4, 0, 4, 0)
@@ -302,7 +308,6 @@ class MainWindow(QMainWindow):
             self.editor_theme_selector,
             "Choose the colour theme used by the SQL editor.",
         )
-        toolbar.addSeparator()
         toolbar.addWidget(controls)
         return toolbar
 
@@ -432,6 +437,14 @@ class MainWindow(QMainWindow):
             self.result_table_view.set_frame(result.frame)
         else:
             self.result_table_view.set_frame(None)
+        if result.status is ExecutionStatus.FAILED:
+            self.result_error_message.setText(
+                f"Query failed: {result.error_message or 'Unknown error'}"
+            )
+            self.result_error_message.setVisible(True)
+        else:
+            self.result_error_message.clear()
+            self.result_error_message.setVisible(False)
         self.result_truncation_notice.setVisible(
             result.status is ExecutionStatus.SUCCEEDED and result.truncated
         )
@@ -637,6 +650,11 @@ class MainWindow(QMainWindow):
         self.result_truncation_notice.setObjectName("result_truncation_notice")
         self.result_truncation_notice.setVisible(False)
         results_layout.addWidget(self.result_truncation_notice)
+        self.result_error_message = QLabel(results_page)
+        self.result_error_message.setObjectName("result_error_message")
+        self.result_error_message.setWordWrap(True)
+        self.result_error_message.setVisible(False)
+        results_layout.addWidget(self.result_error_message)
         self.preview_filter_input = QLineEdit(results_page)
         self.preview_filter_input.setObjectName("preview_filter_input")
         self.preview_filter_input.setPlaceholderText("Filter preview rows")
@@ -716,43 +734,6 @@ class MainWindow(QMainWindow):
         query = record.get("query")
         if isinstance(query, str):
             self.editor.setText(query)
-        self._restore_history_catalog(record)
-
-    def _restore_history_catalog(self, record: dict) -> None:
-        """Restore available historical datasets and make unavailable paths visible."""
-        catalog = record.get("catalog")
-        if not isinstance(catalog, dict):
-            return
-
-        available_paths: list[Path] = []
-        missing_paths: list[Path] = []
-        for raw_path in catalog.values():
-            if not isinstance(raw_path, str) or not raw_path:
-                continue
-            path = Path(raw_path)
-            if path.exists():
-                available_paths.append(path)
-            else:
-                missing_paths.append(path)
-
-        if available_paths:
-            result = self._catalog_service.add_paths(tuple(available_paths))
-            for entry in result.added:
-                self._queue_schema_work(
-                    CatalogBinding(
-                        entry_id=entry.id,
-                        alias=entry.alias,
-                        path=entry.path,
-                        source_format=entry.source_format,
-                    )
-                )
-            self.editor.set_catalog(self._catalog_service.entries)
-
-        if missing_paths:
-            self._show_status(
-                "Missing history dataset(s): " + ", ".join(str(path) for path in missing_paths),
-                10000,
-            )
 
     def _on_apply_query_order(self, column_name: str, direction: str) -> None:
         if not self.result_table_view.has_result():
