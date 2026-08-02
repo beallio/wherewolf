@@ -10,6 +10,7 @@ from PyQt6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStanda
 from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -17,6 +18,8 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QTabWidget,
     QToolBar,
+    QVBoxLayout,
+    QWidget,
 )
 
 from wherewolf.desktop.actions import DesktopActions, build_actions
@@ -357,7 +360,16 @@ class MainWindow(QMainWindow):
         self.result_table_view.setObjectName("result_table_view")
         self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
         self.result_table_view.apply_query_order_requested.connect(self._on_apply_query_order)
-        results.addTab(self.result_table_view, "Results")
+        self.result_table_view.local_sort_changed.connect(self._set_local_sort_notice_visible)
+        results_page = QWidget(results)
+        results_layout = QVBoxLayout(results_page)
+        results_layout.setContentsMargins(0, 0, 0, 0)
+        self.result_sort_notice = QLabel("Sorted preview only.", results_page)
+        self.result_sort_notice.setObjectName("result_sort_notice")
+        self.result_sort_notice.setVisible(False)
+        results_layout.addWidget(self.result_sort_notice)
+        results_layout.addWidget(self.result_table_view)
+        results.addTab(results_page, "Results")
         self.messages_panel = MessagesPanel(self)
         self.messages_panel.setObjectName("messages_panel")
         results.addTab(self.messages_panel, "Messages")
@@ -367,6 +379,9 @@ class MainWindow(QMainWindow):
         splitter.addWidget(editor)
         splitter.addWidget(results)
         return splitter
+
+    def _set_local_sort_notice_visible(self, is_sorted: bool) -> None:
+        self.result_sort_notice.setVisible(is_sorted)
 
     def editor_insert_text(self, alias: str) -> None:
         self.editor.insert(alias)

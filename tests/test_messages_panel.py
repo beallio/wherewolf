@@ -68,3 +68,16 @@ def test_messages_panel_show_execution_cancelled(qtbot: QtBot) -> None:
     msg, severity = panel.message_at(0)
     assert "cancelled" in msg.lower()
     assert severity in ("cancelled", "warning")
+
+
+def test_messages_panel_retains_parse_translation_and_export_diagnostics(qtbot: QtBot) -> None:
+    panel = MessagesPanel()
+    qtbot.addWidget(panel)
+    panel.add_diagnostic(SqlDiagnostic("parse failed", "error", 1, 1))
+    panel.add_message("translation failed", severity="error")
+    panel.add_message("export failed", severity="error")
+
+    messages = [panel.message_at(index)[0] for index in range(panel.message_count())]
+    assert "parse failed" in messages[0]
+    assert "translation failed" in messages[1]
+    assert "export failed" in messages[2]

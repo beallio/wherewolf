@@ -237,6 +237,30 @@ def test_catalog_context_menu_rename_error_message(qtbot, tmp_path: Path, monkey
     assert "must be a SQL identifier" in messages[0]
 
 
+def test_catalog_context_menu_rename_updates_alias_and_rejects_casefold_duplicate(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    service = CatalogService()
+    first, second = tmp_path / "first.csv", tmp_path / "second.csv"
+    first.write_text("a\n1")
+    second.write_text("a\n1")
+    window = MainWindow(catalog_service=service)
+    qtbot.addWidget(window)
+    window.catalog.add_paths((first, second))
+    qtbot.waitUntil(lambda: window.catalog.model.rowCount() == 2)
+    window.catalog.view.selectRow(0)
+
+    monkeypatch.setattr(
+        "wherewolf.desktop.widgets.catalog_dock.QInputDialog.getText",
+        lambda *_args, **_kwargs: ("Renamed", True),
+    )
+    window.catalog._rename_action.trigger()
+    assert service.entries[0].alias == "Renamed"
+
+    with pytest.raises(ValueError, match="already exists"):
+        service.rename(service.entries[1].id, "renamed")
+
+
 def test_catalog_context_menu_refresh_schema_emits_binding(qtbot, tmp_path: Path) -> None:
     service = CatalogService()
     service.update_schema = Mock(wraps=service.update_schema)

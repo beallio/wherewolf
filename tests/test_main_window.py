@@ -273,6 +273,9 @@ def test_main_window_restores_geometry_dock_layout_and_splitter_state(
     )
     original_sizes = original._central_splitter.sizes()
     restored_sizes = restored._central_splitter.sizes()
+    # Qt constrains restored width to dock minimum widths offscreen, but the persisted geometry
+    # still restores the requested window height alongside the dock/splitter state.
+    assert restored.height() == original.height()
     assert restored_sizes[0] / sum(restored_sizes) == pytest.approx(
         original_sizes[0] / sum(original_sizes), abs=0.001
     )
@@ -547,6 +550,19 @@ def test_main_window_query_result_details_and_metrics(qtbot) -> None:
     assert "spark" in status_bar.currentMessage().lower()
     assert "0.42s" in status_bar.currentMessage()
     assert "3" in status_bar.currentMessage()
+
+    truncated = QueryResult(
+        request_id=req.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=df,
+        execution_seconds=0.42,
+        preview_row_count=3,
+        total_row_count=None,
+        truncated=True,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(truncated, req)
+    assert "truncated" in status_bar.currentMessage().lower()
 
     # 2. Failed result
     res_failed = QueryResult(

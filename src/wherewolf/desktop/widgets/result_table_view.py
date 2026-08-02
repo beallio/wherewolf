@@ -17,6 +17,7 @@ class ResultTableView(QTableView):
 
     insert_header_requested = pyqtSignal(str)
     apply_query_order_requested = pyqtSignal(str, str)
+    local_sort_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -43,6 +44,7 @@ class ResultTableView(QTableView):
     def set_frame(self, frame: pl.DataFrame | None) -> None:
         self._source_model.set_frame(frame)
         self._proxy_model.sort(-1, Qt.SortOrder.AscendingOrder)
+        self.local_sort_changed.emit(False)
 
     def frame(self) -> pl.DataFrame:
         return self._source_model.frame()
@@ -69,6 +71,14 @@ class ResultTableView(QTableView):
     def auto_size_columns(self) -> None:
         self.resizeColumnsToContents()
 
+    def sortByColumn(self, column: int, order: Qt.SortOrder) -> None:
+        """Sort the in-memory preview and disclose when query order is unchanged."""
+        self._proxy_model.sort(column, order)
+        self.local_sort_changed.emit(column >= 0)
+
+    def _sort_locally(self, column: int, order: Qt.SortOrder) -> None:
+        self.sortByColumn(column, order)
+
     def reset_columns_default(self) -> None:
         header = self.horizontalHeader()
         if header is None:
@@ -85,6 +95,30 @@ class ResultTableView(QTableView):
         if cb is not None:
             cb.setText(text)
 
+    def copy_all_visible_column_names(self) -> None:
+        """Copy the visible headers in their current left-to-right order."""
+        header = self.horizontalHeader()
+        if header is None:
+            return
+        columns = sorted(
+            (
+                (header.visualIndex(column), column)
+                for column in range(self._proxy_model.columnCount())
+                if not self.isColumnHidden(column)
+            ),
+            key=lambda pair: pair[0],
+        )
+        names = [
+            str(
+                self._proxy_model.headerData(
+                    column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole
+                )
+                or ""
+            )
+            for _visual_index, column in columns
+        ]
+        self._set_clipboard_text("\t".join(names))
+
     def create_header_context_menu(self, column: int) -> QMenu:
         menu = QMenu(self)
         h_name = str(
@@ -96,15 +130,15 @@ class ResultTableView(QTableView):
 
         menu.addAction(
             "Sort Ascending",
-            lambda: self.proxy_model().sort(column, Qt.SortOrder.AscendingOrder),
+            lambda: self._sort_locally(column, Qt.SortOrder.AscendingOrder),
         )
         menu.addAction(
             "Sort Descending",
-            lambda: self.proxy_model().sort(column, Qt.SortOrder.DescendingOrder),
+            lambda: self._sort_locally(column, Qt.SortOrder.DescendingOrder),
         )
         menu.addAction(
             "Clear Sort",
-            lambda: self.proxy_model().sort(-1, Qt.SortOrder.AscendingOrder),
+            lambda: self._sort_locally(-1, Qt.SortOrder.AscendingOrder),
         )
         menu.addSeparator()
 
@@ -130,6 +164,7 @@ class ResultTableView(QTableView):
             "Copy Quoted Header",
             lambda: self._set_clipboard_text(format_header_name(h_name, quote=True)),
         )
+        menu.addAction("Copy All Visible Column Names", self.copy_all_visible_column_names)
         menu.addSeparator()
         menu.addAction(
             "Insert Header into Editor",
