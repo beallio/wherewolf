@@ -17,3 +17,4 @@ orchestration.conf.local
 
 # Local codex CLI project config (machine-specific MCP paths)
 .codex/
+_build_info.py

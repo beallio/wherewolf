@@ -22,8 +22,8 @@ def test_console_scripts_target_desktop_entrypoints() -> None:
 
 
 def test_cli_delegates_to_desktop_main(monkeypatch) -> None:
-    monkeypatch.setattr(wherewolf.cli, "desktop_main", lambda: 23)
-    assert wherewolf.cli.main() == 23
+    monkeypatch.setattr("wherewolf.desktop.application.main", lambda: 23)
+    assert wherewolf.cli.main([]) == 23
 
 
 def test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched(monkeypatch) -> None:
