@@ -135,11 +135,13 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     env:
       QT_QPA_PLATFORM: offscreen
-      UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/wherewolf-venv
-      UV_CACHE_DIR: ${{ runner.temp }}/wherewolf-uv-cache
-      XDG_CACHE_HOME: ${{ runner.temp }}/wherewolf-cache
-      PYTHONPYCACHEPREFIX: ${{ runner.temp }}/wherewolf-pycache
-      TMPDIR: ${{ runner.temp }}
+      # `runner` is unavailable at job scope. Keep these isolated from the
+      # checked-out project while using a context GitHub accepts for this scope.
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.wherewolf-qt-smoke-venv
+      UV_CACHE_DIR: ${{ github.workspace }}/.wherewolf-qt-smoke-uv-cache
+      XDG_CACHE_HOME: ${{ github.workspace }}/.wherewolf-qt-smoke-cache
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/.wherewolf-qt-smoke-pycache
+      TMPDIR: ${{ github.workspace }}/.wherewolf-qt-smoke-tmp
     steps:
       - uses: actions/checkout@v6
       - name: Install uv

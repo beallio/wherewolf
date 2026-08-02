@@ -61,6 +61,12 @@ def test_ci_install_contracts_match_the_tooling_each_leg_runs() -> None:
     assert "tests/test_qt_stack.py" in jobs["qt-smoke"]
     assert "tests/test_desktop_duckdb_flow.py" in jobs["qt-smoke"]
     assert "./run.sh" not in jobs["qt-smoke"]
+
+    # GitHub's runner context is only available inside steps. Referencing it from
+    # jobs.<id>.env prevents GitHub from parsing the entire workflow.
+    qt_smoke_job_env = jobs["qt-smoke"].split("    steps:\n", maxsplit=1)[0]
+    assert "${{ runner." not in qt_smoke_job_env
+    assert "${{ github.workspace }}" in qt_smoke_job_env
     assert "UV_PROJECT_ENVIRONMENT" in jobs["qt-smoke"]
     assert "UV_CACHE_DIR" in jobs["qt-smoke"]
     assert "XDG_CACHE_HOME" in jobs["qt-smoke"]
