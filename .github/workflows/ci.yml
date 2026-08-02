@@ -27,7 +27,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
       - name: Install dependencies
-        run: ./run.sh uv sync --dev
+        # Include the spark extra: ty must resolve pyspark to type-check the optional
+        # engine. The test-duckdb leg is what proves a DuckDB-only install works.
+        run: ./run.sh uv sync --extra spark --dev
       - name: Lint with ruff
         run: |
           ./run.sh uv run ruff check .
