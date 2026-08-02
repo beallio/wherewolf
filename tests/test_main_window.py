@@ -65,7 +65,7 @@ def test_main_window_structure(qtbot) -> None:
     for toolbar in window.findChildren(QToolBar):
         assert toolbar.objectName()
 
-    assert len(window.findChildren(QToolBar)) == 1
+    assert len(window.findChildren(QToolBar)) == 2
 
     for dock in window.findChildren(QDockWidget):
         assert dock.objectName()
@@ -74,19 +74,27 @@ def test_main_window_structure(qtbot) -> None:
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
 
 
-def test_main_window_query_controls_share_the_primary_toolbar_without_a_scroll_area(qtbot) -> None:
+def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_widths(
+    qtbot,
+) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
 
     assert not window.main_toolbar.findChildren(QScrollArea)
-    for object_name in (
-        "engine_selector",
-        "input_dialect_selector",
-        "export_format_selector",
-        "preview_limit_selector",
-        "editor_theme_selector",
-    ):
-        assert window.findChild(QWidget, object_name) is not None
+    window.show()
+    for width in (1024, 1280, 1440, 1600):
+        window.resize(width, 768)
+        qtbot.wait(20)
+        for object_name in (
+            "engine_selector",
+            "input_dialect_selector",
+            "export_format_selector",
+            "preview_limit_selector",
+            "editor_theme_selector",
+        ):
+            control = window.findChild(QWidget, object_name)
+            assert control is not None
+            assert control.isVisible(), f"{object_name} is hidden at {width}px"
 
 
 def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:

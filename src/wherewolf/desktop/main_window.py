@@ -232,8 +232,15 @@ class MainWindow(QMainWindow):
         return toolbar
 
     def _build_query_controls_toolbar(self) -> QToolBar:
-        """Add labelled controls to the primary toolbar; Qt supplies its overflow extension."""
-        toolbar = self.main_toolbar
+        """Place compact query controls on their own toolbar row.
+
+        Keeping controls on a dedicated row prevents Qt's toolbar overflow menu
+        from hiding them at normal desktop window widths.
+        """
+        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
+        toolbar = self.addToolBar("Query Controls")
+        assert toolbar is not None
+        toolbar.setObjectName("query_controls_toolbar")
         controls = QWidget(toolbar)
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(4, 0, 4, 0)
@@ -302,7 +309,6 @@ class MainWindow(QMainWindow):
             self.editor_theme_selector,
             "Choose the colour theme used by the SQL editor.",
         )
-        toolbar.addSeparator()
         toolbar.addWidget(controls)
         return toolbar
 
