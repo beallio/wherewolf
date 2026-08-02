@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QSpinBox,
     QSplitter,
     QStatusBar,
     QTabWidget,
@@ -174,6 +175,17 @@ class MainWindow(QMainWindow):
         ):
             self.export_format_selector.addItem(label, export_format)
         toolbar.addWidget(self.export_format_selector)
+        self.preview_limit_selector = QSpinBox(toolbar)
+        self.preview_limit_selector.setObjectName("preview_limit_selector")
+        self.preview_limit_selector.setRange(10, 1000)
+        self.preview_limit_selector.setValue(self._settings_service.restore_preview_limit())
+        self.preview_limit_selector.valueChanged.connect(self._settings_service.save_preview_limit)
+        toolbar.addWidget(self.preview_limit_selector)
+        self.editor_theme_selector = QComboBox(toolbar)
+        self.editor_theme_selector.setObjectName("editor_theme_selector")
+        self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
+        self.editor_theme_selector.setCurrentText(self._settings_service.restore_editor_theme())
+        toolbar.addWidget(self.editor_theme_selector)
         return toolbar
 
     def _build_catalog_dock(self) -> QDockWidget:
@@ -240,6 +252,7 @@ class MainWindow(QMainWindow):
                 source_dialect=source_dialect,
                 engine=engine,
                 catalog_service=self._catalog_service,
+                preview_limit=self.preview_limit_selector.value(),
             )
         except Exception as exc:  # noqa: BLE001  # Request creation boundary
             self._show_status(f"Failed to prepare query: {exc}", 5000)
@@ -441,6 +454,7 @@ class MainWindow(QMainWindow):
         translation_layout.addWidget(self.translation_panel)
         self.translation_target_selector.currentTextChanged.connect(self._refresh_translation)
         self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
+        self.editor_theme_selector.currentTextChanged.connect(editor.set_theme)
         editor.textChanged.connect(self._refresh_translation)
         results.addTab(translation_page, "Translation")
 

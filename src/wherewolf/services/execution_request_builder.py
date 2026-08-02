@@ -18,7 +18,7 @@ class ExecutionRequestBuilder:
         source_dialect: str,
         engine: EngineKind,
         catalog_service: CatalogService,
-        preview_limit: int = 1000,
+        preview_limit: int = 100,
     ) -> ExecutionRequest:
         cleaned_sql = sql.strip()
         if not cleaned_sql:

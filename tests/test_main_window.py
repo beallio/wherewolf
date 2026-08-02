@@ -213,6 +213,25 @@ def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, m
     assert "LIMIT 10" in submitted[0].executable_sql
 
 
+def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "preferences")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", submitted.append)
+    window.preview_limit_selector.setValue(250)
+    window.editor_theme_selector.setCurrentText("Light")
+    window.editor.setText("SELECT 1")
+
+    window.desktop_actions.run.trigger()
+
+    assert submitted[0].preview_limit == 250
+    assert settings.restore_preview_limit() == 250
+    assert settings.restore_editor_theme() == "Light"
+
+
 @pytest.mark.parametrize("export_format", (ExportFormat.PARQUET, ExportFormat.XLSX))
 def test_main_window_exports_selected_format_to_readable_artifact(
     tmp_path: Path, qtbot, export_format: ExportFormat

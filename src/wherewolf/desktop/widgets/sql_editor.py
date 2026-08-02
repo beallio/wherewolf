@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import ClassVar
+
 from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence
@@ -23,11 +25,11 @@ class SqlEditor(QsciScintilla):
     """QScintilla-based SQL editor with minimal desktop actions."""
 
     diagnostics_reported = pyqtSignal(list)
-    _PAPER = QColor("#1E1E1E")
-    _TEXT = QColor("#D4D4D4")
-    _KEYWORD = QColor("#569CD6")
-    _NUMBER = QColor("#B5CEA8")
-    _STRING = QColor("#CE9178")
+    THEME_NAMES = ("Dark", "Light")
+    _THEMES: ClassVar[dict[str, tuple[str, str, str, str, str]]] = {
+        "Dark": ("#1E1E1E", "#D4D4D4", "#569CD6", "#B5CEA8", "#CE9178"),
+        "Light": ("#FFFFFF", "#202020", "#003D99", "#005F5F", "#8B2F00"),
+    }
 
     def __init__(
         self,
@@ -58,6 +60,10 @@ class SqlEditor(QsciScintilla):
         self._completion_adapter = CompletionAdapter(self, self._completion_service)
         self._diagnostic_indicator = 1
         self._font_size = self._settings_service.restore_editor_font_size()
+        self._theme_name = self._settings_service.restore_editor_theme()
+        if self._theme_name not in self._THEMES:
+            self._theme_name = SettingsService.DEFAULT_EDITOR_THEME
+        self._set_theme_colours(self._theme_name)
 
         self._setup_editor()
         self._setup_actions()
@@ -100,6 +106,10 @@ class SqlEditor(QsciScintilla):
     def caret_line_background(self) -> QColor:
         """Return the rendered caret-line background colour."""
         return QColor(self._caret_line_background)
+
+    @property
+    def theme_name(self) -> str:
+        return self._theme_name
 
     def set_catalog(self, catalog: tuple[CatalogEntry, ...]) -> None:
         self._catalog = tuple(catalog)
@@ -192,6 +202,30 @@ class SqlEditor(QsciScintilla):
         lexer.setColor(self._NUMBER, QsciLexerSQL.Number)
         lexer.setColor(self._STRING, QsciLexerSQL.SingleQuotedString)
         lexer.setColor(self._STRING, QsciLexerSQL.DoubleQuotedString)
+
+    def _set_theme_colours(self, theme: str) -> None:
+        paper, text, keyword, number, string = self._THEMES[theme]
+        self._PAPER = QColor(paper)
+        self._TEXT = QColor(text)
+        self._KEYWORD = QColor(keyword)
+        self._NUMBER = QColor(number)
+        self._STRING = QColor(string)
+
+    def set_theme(self, theme: str) -> None:
+        """Apply and persist a supported editor colour theme."""
+        if theme not in self._THEMES:
+            return
+        self._theme_name = theme
+        self._set_theme_colours(theme)
+        lexer = self.lexer()
+        if isinstance(lexer, QsciLexerSQL):
+            self._apply_lexer_colours(lexer)
+            self._caret_line_background = lexer.paper(QsciLexerSQL.Default).lighter(115)
+            self.setCaretLineBackgroundColor(self._caret_line_background)
+        self.setPaper(self._PAPER)
+        self.setColor(self._TEXT)
+        self.setCaretForegroundColor(self._TEXT)
+        self._settings_service.save_editor_theme(theme)
 
     def _setup_actions(self) -> None:
         self.setCaretLineVisible(True)
