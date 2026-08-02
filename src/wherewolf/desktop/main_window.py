@@ -437,6 +437,14 @@ class MainWindow(QMainWindow):
             self.result_table_view.set_frame(result.frame)
         else:
             self.result_table_view.set_frame(None)
+        if result.status is ExecutionStatus.FAILED:
+            self.result_error_message.setText(
+                f"Query failed: {result.error_message or 'Unknown error'}"
+            )
+            self.result_error_message.setVisible(True)
+        else:
+            self.result_error_message.clear()
+            self.result_error_message.setVisible(False)
         self.result_truncation_notice.setVisible(
             result.status is ExecutionStatus.SUCCEEDED and result.truncated
         )
@@ -642,6 +650,11 @@ class MainWindow(QMainWindow):
         self.result_truncation_notice.setObjectName("result_truncation_notice")
         self.result_truncation_notice.setVisible(False)
         results_layout.addWidget(self.result_truncation_notice)
+        self.result_error_message = QLabel(results_page)
+        self.result_error_message.setObjectName("result_error_message")
+        self.result_error_message.setWordWrap(True)
+        self.result_error_message.setVisible(False)
+        results_layout.addWidget(self.result_error_message)
         self.preview_filter_input = QLineEdit(results_page)
         self.preview_filter_input.setObjectName("preview_filter_input")
         self.preview_filter_input.setPlaceholderText("Filter preview rows")

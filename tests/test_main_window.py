@@ -931,6 +931,8 @@ def test_main_window_close_calls_query_controller_shutdown(qtbot, monkeypatch) -
 def test_main_window_result_grid_integration(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(20)
 
     df = pl.DataFrame({"x": [100, 200], "y": ["alpha", "beta"]})
 
@@ -984,9 +986,16 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
+    assert window.result_error_message.isVisible()
+    assert "near SELECT" in window.result_error_message.text()
     msg, severity = window.messages_panel.message_at(0)
     assert "Error (SyntaxError): near SELECT" in msg
     assert severity == "error"
+
+    # A following success replaces the error in the results area.
+    window._on_query_result_ready(res_success, request)
+    assert not window.result_error_message.isVisible()
+    assert window.result_error_message.text() == ""
 
     # 3. Cancelled result: grid cleared
     res_cancelled = QueryResult(
