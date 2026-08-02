@@ -105,6 +105,19 @@ def test_engine_selector_disables_missing_spark_with_installation_guidance(
     assert selector.currentData() is EngineKind.DUCKDB
 
 
+def test_main_window_engine_selector_offers_only_execution_backends(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    selector = window.engine_selector
+
+    assert tuple(EngineKind) == (EngineKind.DUCKDB, EngineKind.SPARK)
+    assert [selector.itemData(index) for index in range(selector.count())] == [
+        EngineKind.DUCKDB,
+        EngineKind.SPARK,
+    ]
+
+
 def test_input_dialect_selector_exposes_all_supported_source_dialects(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
