@@ -105,3 +105,61 @@ jobs:
           test "$actual" = "${{ matrix.python-version }}" || { echo "FAIL: expected ${{ matrix.python-version }}, got $actual"; exit 1; }
       - name: Run Spark tests
         run: ./run.sh uv run --python ${{ matrix.python-version }} pytest -m spark
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+      - name: Install dependencies
+        run: ./run.sh uv sync --dev --python 3.14
+      - name: Build and smoke test installed wheel
+        run: ./run.sh uv run --python 3.14 python scripts/smoke_installed_wheel.py
+
+  qt-smoke:
+    name: qt-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      QT_QPA_PLATFORM: offscreen
+      # `runner` is unavailable at job scope. Keep these isolated from the
+      # checked-out project while using a context GitHub accepts for this scope.
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.wherewolf-qt-smoke-venv
+      UV_CACHE_DIR: ${{ github.workspace }}/.wherewolf-qt-smoke-uv-cache
+      XDG_CACHE_HOME: ${{ github.workspace }}/.wherewolf-qt-smoke-cache
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/.wherewolf-qt-smoke-pycache
+      TMPDIR: ${{ github.workspace }}/.wherewolf-qt-smoke-tmp
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Install Qt offscreen system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+      - name: Install dependencies
+        run: uv sync --dev --python 3.14
+      - name: Run offscreen Qt widget and integration smoke tests
+        run: >-
+          uv run --python 3.14 pytest -q --no-cov
+          -o cache_dir=${{ runner.temp }}/wherewolf-pytest-cache
+          tests/test_qt_stack.py tests/test_desktop_duckdb_flow.py

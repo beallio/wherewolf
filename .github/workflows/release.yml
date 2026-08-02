@@ -23,9 +23,15 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.14
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
       - name: Install dependencies
-        run: ./run.sh uv sync --all-extras --dev
+        # ty resolves the optional Spark engine; do not use --locked because the
+        # maintainer's relative exclude-newer-span cannot be reproduced by CI.
+        run: ./run.sh uv sync --extra spark --dev --python 3.14
       - name: Lint with ruff
         run: |
           ./run.sh uv run ruff check .
@@ -37,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - name: Install uv
@@ -47,10 +53,14 @@ jobs:
           cache-dependency-glob: "uv.lock"
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
       - name: Install dependencies
-        run: ./run.sh uv sync --all-extras --dev
+        run: ./run.sh uv sync --dev --python ${{ matrix.python-version }}
       - name: Run tests
-        run: ./run.sh uv run pytest
+        run: ./run.sh uv run --python ${{ matrix.python-version }} pytest
 
   build:
     needs: [lint, test]
@@ -63,8 +73,16 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
       - name: Set up Python
-        run: uv python install 3.12
-      - name: Build package
+        run: uv python install 3.14
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+      - name: Install dependencies
+        run: ./run.sh uv sync --dev --python 3.14
+      - name: Build and smoke test installed wheel
+        run: ./run.sh uv run --python 3.14 python scripts/smoke_installed_wheel.py
+      - name: Build release artifacts
         run: ./run.sh uv build
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

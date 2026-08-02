@@ -1,145 +1,104 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=20" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=21" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=20)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=20)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=20)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=21)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=21)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=21)](https://www.gnu.org/licenses/gpl-3.0.html)
 
-A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
+Wherewolf is a local SQL workbench for CSV, Parquet, JSON, JSON Lines, and XLSX files. It opens
+a native PyQt6 desktop window and runs queries with DuckDB by default. There is no browser UI and
+no local web server.
 
-## Features
-- **Multi-Engine Support:** Execute SQL via DuckDB (default) or the optional, memory-bounded local Spark engine (`local[1]`). Native support for CSV, Parquet, JSON, JSON Lines, and Excel (`.xlsx`, `.xls`).
-- **📁 Dataset Catalog:** Improved catalog in the desktop shell with native dialogs and drag-and-drop file intake.
-- **🧰 Desktop SQL Editor:** QScintilla-based editor with line numbers, brace matching, SQL formatting, function call tips, and intelligent SQL completion (`Ctrl+Space` shortcut and configurable auto-trigger threshold).
-- **🔢 PyQt6 Result Grid:** High-performance tabular results view powered by Polars, with strict type preservation (`UserRole`), typed sorting (`TypedSortProxyModel`), case-insensitive multi-column search filtering, visual column reordering and hiding, and TSV clipboard serialization (`Ctrl+C`, custom context menus).
-- **🔗 Multi-Table Queries:** Perform JOINs, unions, and subqueries across different file formats in a single session.
-- **📊 Schema Panel HUD:** Dedicated dock widget displaying columns, data types, pending schema inspection states, error details, and double-click column identifier insertion.
-- **🌐 Translation Panel:** Multi-statement SQL dialect translation (DuckDB <-> SparkSQL) with diagnostic message views.
-- **💬 Messages Panel:** Structured execution results, detailed metrics (duration, preview row counts), and formatted error tracebacks replacing raw text placeholders.
-- **🔀 Full-Query Ordering:** Context menu actions for applying ascending or descending `ORDER BY` clauses to full queries without disturbing local table proxy sorting.
-- **Safe Preview:** Scrollable results limited to 1000 rows.
-- **Versioned Query History:** Persists the newest 100 queries in `~/.wherewolf/history.json`,
-  automatically migrates prior history safely, and keeps each record's stable ID for unambiguous
-  desktop selection.
-- **Persistent Desktop Preferences:** Window geometry, dock layout, splitter proportions, editor
-  font size, recent dataset directory, and completion preferences survive desktop restarts.
-- **Export:** The desktop shell exports the preview (bounded by the preview limit) to CSV, XLSX, or Parquet. Full CSV and Parquet export re-executes the captured query and streams through DuckDB directly to disk; it does not materialize the complete result in Python. Full XLSX is intentionally limited to 100,000 rows because XLSX has no streaming writer; choose CSV or Parquet for larger results.
-- **Execution Metrics:** Tracks row count, status, and execution time in the status bar and Messages panel.
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=21)
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=20)
+## Install
 
-## Installation
+Wherewolf requires Python 3.12 or newer.
 
-Ensure you have Python 3.12+ and [uv](https://github.com/astral-sh/uv) installed.
-
-### From PyPI (Recommended)
 ```bash
 uv tool install wherewolf
 wherewolf
 ```
 
+`wherewolf-desktop` is an equivalent entry point. Both commands open the native desktop window.
+
 ### Optional Spark engine
 
-The default installation is DuckDB-only and does not install or import PySpark. To use Spark,
-install the optional extra and a compatible Java runtime:
+The default installation is DuckDB-only: it neither installs nor imports PySpark. To enable the
+local Spark engine, install the extra and a Java runtime compatible with PySpark (CI uses Java
+21):
 
 ```bash
-pip install 'wherewolf[spark]'
+uv tool install 'wherewolf[spark]'
 ```
 
-From a source checkout, use `uv sync --extra spark`. The desktop engine selector reports this
-requirement and leaves Spark unavailable until it is installed. Spark integration is verified on
-Linux with one JDK only; other JDK versions, macOS, Windows, and cluster/remote Spark are
-unverified.
+Spark runs locally as `local[1]` with bounded driver memory. It is not a remote- or cluster-Spark
+client.
 
-### From Source
+### From source
+
 ```bash
 git clone https://github.com/beallio/wherewolf.git
 cd wherewolf
-uv sync
+./run.sh uv sync
+./run.sh uv run wherewolf
 ```
 
-## Usage
-`wherewolf` now opens the native Qt desktop window. `wherewolf-desktop` remains an equivalent
-alias for existing invocations. This is a breaking change: the browser-based interface is no
-longer included or supported.
+For the optional Spark engine from a source checkout, run `./run.sh uv sync --extra spark` after
+installing Java.
 
-If running from source:
-```bash
-uv run wherewolf
-```
+## Desktop workflow
 
-To run the Spark integration tier locally after installing the extra and Java:
+1. Choose **Add Datasets…** or drag supported local files into the Dataset Catalog. The command
+   opens the operating system's native multi-file dialog where Qt supports it.
+2. Each file receives a table alias. Rename it from the catalog context menu when needed, then
+   use the alias in SQL. The Schema dock reports discovered columns and any schema error.
+3. Write SQL in the editor and press **Ctrl+Return** to run the selection or current statement.
+   **Ctrl+Space** opens completion, and **Ctrl+Shift+F** formats SQL. On macOS, use the platform's
+   equivalent shortcut conventions.
+4. Press **Ctrl+.** to request cancellation of the active query. The status bar and Messages tab
+   report state, timing, preview rows, truncation, and errors.
+5. History records successful queries in `~/.wherewolf/history.json`. Selecting a history entry
+   restores its SQL and available datasets without immediately running it. Use **File → Clear
+   History** to remove saved entries or **View → Reset Layout** to restore the default layout.
 
-```bash
-uv run pytest -m spark
-```
+Window geometry, docks, splitter proportions, editor font size, recent dataset directory, and
+completion preferences are persisted between desktop sessions.
 
-1. Use the **Dataset Catalog** in the desktop shell to browse and add files via native dialogs or drag-and-drop.
-2. Each file is assigned a table alias (e.g., `users`, `orders`).
-3. Write SQL in the QScintilla editor with SQL IntelliSense (`Ctrl+Space` for completion, table/CTE alias resolution, qualified column completion, function call tips).
-4. Click **Run** or press `Ctrl+Return` to execute queries asynchronously using DuckDB.
-5. Click **Cancel** or press `Ctrl+.` to cancel active query execution.
-6. Execution uses request-scoped isolated DuckDB connections, limit+1 truncation detection, and automatic query history persistence in `~/.wherewolf/history.json`.
-7. In the desktop shell, activate a History entry to restore its SQL without executing it. Available
-   historical dataset files are restored; unavailable paths are reported in the status bar.
-8. Use **View → Reset Layout** to restore the default dock arrangement, or **File → Clear History**
-   to empty the persisted history safely.
-9. Click **Format SQL** (`Ctrl+Shift+F`) to normalize syntax.
+## Results grid and ordering
 
-### Manual release checks
+The grid displays a bounded preview (up to 1,000 rows), preserves values for typed sorting, and
+supports selection, spreadsheet-compatible TSV copy, search/filtering, column reordering,
+hiding, auto-sizing, and reset. Right-click a header to copy or insert its name, adjust columns,
+or choose an ordering action.
 
-Before a release, a human must verify the native window starts without a browser or local web
-server, the platform multi-file dialog and clipboard behavior, responsiveness during a running
-query, and the workflow on supported Windows, macOS, and Linux desktops. Spark full export is
-not implemented and is not claimed by the DuckDB export path.
+Clicking a header only sorts the local preview. While a local sort is active, Wherewolf labels it
+**Sorted preview only.** It does not rerun or alter your query. To change the result order of the
+query itself, use **Apply Ascending Order to Query** or **Apply Descending Order to Query** from
+that header's context menu, then run the resulting SQL.
 
+## Export
 
-
-## Development
-
-Run tests:
-```bash
-uv run pytest
-```
-
-To run an on-demand regression check for native Qt/coverage crashes across multiple test runs:
-```bash
-./scripts/check_flake.sh [runs]
-```
-
-There is also a manual GitHub Actions probe workflow (`.github/workflows/flake-probe.yml`) that dispatches
-parallel Python 3.14 test runs with the same Qt/coverage configuration as CI (gated to probe configuration pushes or manual `workflow_dispatch`).
-
-Use it to measure CI-only flake rates without affecting normal branch push/pull_request budgets.
-
-Lint/Format:
-```bash
-ruff check . --fix
-ruff format .
-```
-
-## Dependencies
-- `PyQt6`
-- `PyQt6-QScintilla`
-- `duckdb`
-- `sqlglot`
-- `pyarrow`
-- `polars`
-- `fastexcel`
-- `xlsxwriter`
-
-Optional:
-
-- `pyspark` via `wherewolf[spark]` (requires Java)
+**Export Preview…** writes the currently displayed, bounded preview. **Export Full Results…**
+re-executes the captured query rather than exporting only the preview. For DuckDB, full CSV and
+Parquet exports stream directly to disk without materializing the entire result in Python; full
+XLSX export is intentionally capped at 100,000 rows. The desktop export action currently selects
+CSV destinations. Spark has no desktop full-export adapter, so full Spark export is not available.
 
 ## License
 
-Wherewolf is transitioning to `GPL-3.0-only` for future releases.
-Releases through `0.5.2` remain available under `MIT`.
-The original MIT text is retained in `LICENSES/MIT-pre-0.6.txt` and those grants remain valid.
+Wherewolf is licensed under **GPL-3.0-only**. Releases through 0.5.2 remain available under MIT;
+their original text is retained in `LICENSES/MIT-pre-0.6.txt`, and those prior grants remain
+valid.
 
-## Contributing
+## Development
 
-Contributions are accepted under `GPL-3.0-only`.
+Run the test suite from a source checkout:
+
+```bash
+./run.sh uv run pytest
+```
+
+The project uses `uv`, `ruff`, and `ty`; see [AGENTS.md](AGENTS.md) for the project execution and
+cache-isolation contract.
