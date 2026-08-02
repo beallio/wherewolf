@@ -23,6 +23,11 @@ class SqlEditor(QsciScintilla):
     """QScintilla-based SQL editor with minimal desktop actions."""
 
     diagnostics_reported = pyqtSignal(list)
+    _PAPER = QColor("#1E1E1E")
+    _TEXT = QColor("#D4D4D4")
+    _KEYWORD = QColor("#569CD6")
+    _NUMBER = QColor("#B5CEA8")
+    _STRING = QColor("#CE9178")
 
     def __init__(
         self,
@@ -91,6 +96,11 @@ class SqlEditor(QsciScintilla):
     def completion_enabled(self) -> bool:
         return self._settings_service.restore_completion_enabled()
 
+    @property
+    def caret_line_background(self) -> QColor:
+        """Return the rendered caret-line background colour."""
+        return QColor(self._caret_line_background)
+
     def set_catalog(self, catalog: tuple[CatalogEntry, ...]) -> None:
         self._catalog = tuple(catalog)
 
@@ -118,14 +128,20 @@ class SqlEditor(QsciScintilla):
         self.request_completion(forced=False)
 
     def _setup_editor(self) -> None:
-        self.setLexer(QsciLexerSQL(self))
+        lexer = QsciLexerSQL(self)
+        self._apply_lexer_colours(lexer)
+        self.setLexer(lexer)
+        self.setPaper(self._PAPER)
+        self.setColor(self._TEXT)
         self.setAutoIndent(True)
         self.setIndentationGuides(True)
         self.setIndentationWidth(2)
         self.setTabWidth(2)
         self.setBraceMatching(QsciScintilla.BraceMatch.SloppyBraceMatch)
         self.setCaretLineVisible(True)
-        self.setCaretLineBackgroundColor(QColor("#f5f5f5"))
+        self._caret_line_background = lexer.paper(QsciLexerSQL.Default).lighter(115)
+        self.setCaretLineBackgroundColor(self._caret_line_background)
+        self.setCaretForegroundColor(self._TEXT)
         self.setMarginLineNumbers(0, True)
         self.setWrapMode(QsciScintilla.WrapMode.WrapNone)
 
@@ -163,6 +179,19 @@ class SqlEditor(QsciScintilla):
 
         if self._format_action is not None:
             self._format_action.triggered.connect(self.format_selection_or_statement)
+
+    def _apply_lexer_colours(self, lexer: QsciLexerSQL) -> None:
+        """Apply explicit text and paper colours for every SQL lexer style."""
+        for style in range(QsciLexerSQL.Default, QsciLexerSQL.QuotedOperator + 1):
+            lexer.setColor(self._TEXT, style)
+            lexer.setPaper(self._PAPER, style)
+        lexer.setDefaultColor(self._TEXT)
+        lexer.setDefaultPaper(self._PAPER)
+        lexer.setColor(self._KEYWORD, QsciLexerSQL.Keyword)
+        lexer.setColor(self._KEYWORD, QsciLexerSQL.PlusKeyword)
+        lexer.setColor(self._NUMBER, QsciLexerSQL.Number)
+        lexer.setColor(self._STRING, QsciLexerSQL.SingleQuotedString)
+        lexer.setColor(self._STRING, QsciLexerSQL.DoubleQuotedString)
 
     def _setup_actions(self) -> None:
         self.setCaretLineVisible(True)
