@@ -60,6 +60,17 @@ expected result.
     requested artifact; the starter query appears only for an empty editor after the first dataset.
   - Result / issue: _________________________________________________________________
 
+- [ ] Platform: __________  Date: __________  UI legibility at the maintainer's working width
+  - Steps: With 5, 50, then 500 SQL lines, change the editor font size and confirm every line
+    number remains fully readable against the dark editor paper. Load `customers`, then `loans`, and
+    inspect the Schema dock header after each. Resize the window narrower than the query controls,
+    use the horizontal control strip to reach every labelled setting, and inspect the tooltip for
+    Execution engine, Input dialect, Export format, Preview rows, Editor theme, and Translation target.
+  - Expected: The margin fits its digits without a light strip, each schema header identifies the
+    current alias, and every control has a visible caption plus an explanatory tooltip. Narrow
+    windows scroll the controls instead of clipping them past the right edge.
+  - Result / issue: _________________________________________________________________
+
 - [ ] Platform: __________  Date: __________  Query responsiveness and cancellation
   - Steps: Run a query that takes long enough to interact with the app while it is active. Switch
     docks, select editor text, then choose **Cancel** or press **Ctrl+.**.

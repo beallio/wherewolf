@@ -1,0 +1,52 @@
+{
+  "date": "2026-08-02",
+  "task_objective": "Implement the ui-legibility plan for readable SQL line numbers, named schema headers, and labelled query controls.",
+  "files_modified": [
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "src/wherewolf/desktop/widgets/schema_panel.py",
+    "src/wherewolf/desktop/main_window.py",
+    "tests/test_ui_legibility_line_margin.py",
+    "tests/test_ui_legibility_schema.py",
+    "tests/test_ui_legibility_toolbar.py",
+    "docs/review/manual-acceptance-checklist.md"
+  ],
+  "tests_added": [
+    "MainWindow line-margin geometry test at 5, 50, and 500 lines plus a 24pt font change.",
+    "MainWindow schema test that switches from customers to loans.",
+    "Loop-driven MainWindow control-label and tooltip test for all six named controls."
+  ],
+  "design_decisions": [
+    "Margin zero uses QFontMetrics over the widest digit string plus one digit of padding, and refreshes after every font-size change.",
+    "Schema-result handling resolves the updated CatalogEntry before rendering so the panel has the active alias.",
+    "Query configuration moved to a dedicated second toolbar row with a horizontal scroll area, keeping every labelled setting reachable at narrow widths."
+  ],
+  "verification": {
+    "baseline": "398 passed, 7 deselected",
+    "full_suite": "401 passed, 7 deselected",
+    "typecheck": "./run.sh uv run ty check . passed after syncing the declared spark extra into /tmp/wherewolf/.venv",
+    "line_margin_geometry": {
+      "5_lines": "margin=18px, required=9px",
+      "50_lines": "margin=27px, required=18px",
+      "500_lines": "margin=36px, required=27px",
+      "500_lines_at_24pt": "margin=73px, required=55px"
+    },
+    "schema_headers": [
+      "customers — 1 columns",
+      "loans — 1 columns"
+    ],
+    "toolbar_controls": [
+      "engine_selector: Execution engine — Choose where the query runs: DuckDB or Spark.",
+      "input_dialect_selector: Input dialect — Choose the SQL dialect you are writing; it is transpiled to the execution engine.",
+      "export_format_selector: Export format — Choose the file format for exported query results.",
+      "preview_limit_selector: Preview rows — Choose the maximum number of rows shown in a query preview.",
+      "editor_theme_selector: Editor theme — Choose the colour theme used by the SQL editor.",
+      "translation_target_selector: Translation target — Choose the SQL dialect rendered in the Translation tab."
+    ],
+    "toolbar_geometry": "query_controls_toolbar sizeHint=488px; MainWindow sizeHint=1093px",
+    "negative_controls": [
+      "Restoring space-based sizing failed test_ui_legibility_line_margin.py: assert 28 >= 55.",
+      "Blanking the execution-engine tooltip failed test_ui_legibility_toolbar.py: assert ''."
+    ],
+    "deferred_manual": "Native visual composition, dark-theme margin styling, and narrow-window scroll usability are listed in docs/review/manual-acceptance-checklist.md."
+  }
+}
