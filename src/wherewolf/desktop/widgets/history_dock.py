@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
@@ -39,8 +41,14 @@ class HistoryDock(QWidget):
         for record in self._history_manager.get_all():
             query = str(record["query"]).replace("\n", " ")
             truncated = query[:80] + ("…" if len(query) > 80 else "")
-            item = QTreeWidgetItem([str(record["timestamp"]), truncated])
+            raw_timestamp = str(record["timestamp"])
+            try:
+                timestamp = datetime.fromisoformat(raw_timestamp).replace(microsecond=0).isoformat()
+            except ValueError:
+                timestamp = raw_timestamp
+            item = QTreeWidgetItem([timestamp, truncated])
             item.setData(0, Qt.ItemDataRole.UserRole, record["id"])
+            item.setToolTip(0, raw_timestamp)
             item.setToolTip(1, str(record["query"]))
             self.history_table.addTopLevelItem(item)
 

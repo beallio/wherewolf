@@ -76,3 +76,26 @@ def test_history_timestamp_column_is_resizable(tmp_path, qtbot):
     before = header.sectionSize(0)
     header.resizeSection(0, before + 75)
     assert header.sectionSize(0) == before + 75
+
+
+def test_history_timestamp_hides_microseconds_and_keeps_raw_value_in_tooltip(tmp_path, qtbot):
+    record = {
+        "schema_version": 2,
+        "id": "d1df60ca-c254-4601-b143-3643642a8e7e",
+        "timestamp": "2026-08-02T12:34:56.789123+00:00",
+        "engine": "duckdb",
+        "query": "SELECT 1",
+        "catalog": {},
+    }
+    history_file = tmp_path / "history.json"
+    history_file.write_text(json.dumps([record]))
+
+    from wherewolf.desktop.widgets.history_dock import HistoryDock
+
+    dock = HistoryDock(HistoryManager(storage_path=history_file))
+    qtbot.addWidget(dock)
+    item = dock.history_table.topLevelItem(0)
+    assert item is not None
+
+    assert item.text(0) == "2026-08-02T12:34:56+00:00"
+    assert item.toolTip(0) == record["timestamp"]
