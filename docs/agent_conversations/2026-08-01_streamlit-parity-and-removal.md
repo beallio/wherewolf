@@ -69,3 +69,17 @@ runtime code. The README wording is updated separately in Task 11.
   PySpark; Spark Python 3.12 synced with PySpark available.
 - Manual release gates remain: no browser/server, native multi-file dialog, real-window and
   clipboard behavior, query responsiveness, Windows/macOS coverage, and Spark full export.
+
+## Review round 02 — parity-audit correction
+
+- Rechecked every audit mapping identified by `streamlit-parity-and-removal-review-01.md` against
+  its collected test node. The audit now uses `PARTIAL` with the untested remainder and `MANUAL`
+  for real-window geometry, legal-notice accuracy, and final package-artifact inspection instead
+  of treating adjacent tests as proof.
+- Added an explicit, visible `Sorted preview only.` disclosure whenever the result grid has a
+  local sort, plus `Copy All Visible Column Names` in the header menu.
+- Added focused regression assertions for JOIN completion, dialect completion, case-insensitive
+  alias rename, keyboard copy, truncation visibility, message categories, exact executable
+  translation, and unloaded-schema completion.
+- Collected-node verification recorded all new/repaired node IDs. The 3.14 default suite measured
+  `350 passed, 7 deselected`; full gates are recorded in the review-round commit.
