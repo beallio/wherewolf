@@ -51,6 +51,8 @@ from wherewolf.domain import (
     ExecutionStatus,
     QueryResult,
     SchemaResult,
+    SqlDiagnostic,
+    TranslationError,
 )
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import (
@@ -320,6 +322,18 @@ class MainWindow(QMainWindow):
                 catalog_service=self._catalog_service,
                 preview_limit=self.preview_limit_selector.value(),
             )
+        except TranslationError as exc:
+            self._on_editor_diagnostics(
+                (
+                    SqlDiagnostic(
+                        message=str(exc),
+                        severity="error",
+                        start_line=1,
+                        start_column=1,
+                    ),
+                )
+            )
+            return
         except Exception as exc:  # noqa: BLE001  # Request creation boundary
             self._show_status(f"Failed to prepare query: {exc}", 5000)
             return

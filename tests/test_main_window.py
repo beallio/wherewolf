@@ -404,6 +404,36 @@ def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, m
     assert "LIMIT 10" in submitted[0].executable_sql
 
 
+@pytest.mark.parametrize(
+    ("sql", "construct"),
+    (
+        ("SELECT name FROM people WHERE ROWNUM <= 3", "ROWNUM"),
+        ("SELECT SYSDATE FROM DUAL", "DUAL"),
+    ),
+)
+def test_main_window_reports_unsupported_oracle_constructs(
+    qtbot, monkeypatch, sql, construct
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", submitted.append)
+    window.editor.setText(sql)
+    window.desktop_actions.run.setEnabled(True)
+
+    source_index = window.input_dialect_selector.findData("oracle")
+    assert source_index >= 0
+    window.input_dialect_selector.setCurrentIndex(source_index)
+    window.desktop_actions.run.trigger()
+
+    assert submitted == []
+    message, severity = window.messages_panel.message_at(0)
+    assert severity == "error"
+    assert construct in message
+    assert "Oracle" in message
+    assert "cannot run" in message
+
+
 def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
