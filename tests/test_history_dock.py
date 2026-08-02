@@ -1,5 +1,7 @@
 import json
 
+from PyQt6.QtWidgets import QHeaderView
+
 from wherewolf.storage.history import HistoryManager
 
 
@@ -47,3 +49,30 @@ def test_history_dock_selects_duplicate_labels_by_stable_id(tmp_path, qtbot):
         dock.history_table.itemActivated.emit(second_item, 1)
 
     assert selected.args == [records[1]]
+
+
+def test_history_timestamp_column_is_resizable(tmp_path, qtbot):
+    record = {
+        "schema_version": 2,
+        "id": "d1df60ca-c254-4601-b143-3643642a8e7e",
+        "timestamp": "2026-08-02T12:34:56.789123+00:00",
+        "engine": "duckdb",
+        "query": "SELECT 1",
+        "catalog": {},
+    }
+    history_file = tmp_path / "history.json"
+    history_file.write_text(json.dumps([record]))
+
+    from wherewolf.desktop.widgets.history_dock import HistoryDock
+
+    dock = HistoryDock(HistoryManager(storage_path=history_file))
+    qtbot.addWidget(dock)
+    item = dock.history_table.topLevelItem(0)
+    assert item is not None
+    header = dock.history_table.header()
+    assert header is not None
+
+    assert header.sectionResizeMode(0) is QHeaderView.ResizeMode.Interactive
+    before = header.sectionSize(0)
+    header.resizeSection(0, before + 75)
+    assert header.sectionSize(0) == before + 75
