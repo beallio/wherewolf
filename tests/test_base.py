@@ -97,14 +97,14 @@ def test_missing_close_fails_protocol_assertion() -> None:
     assert not isinstance(MissingClose(), ExecutionEngine)
 
 
-def test_base_module_import_does_not_import_streamlit_or_pyspark_or_qt() -> None:
+def test_base_module_import_does_not_import_pyspark_or_qt() -> None:
     import subprocess
     import sys
 
     code = (
         "import sys\n"
         "import wherewolf.execution.base\n"
-        "forbidden = ('PyQt6', 'streamlit', 'pyspark')\n"
+        "forbidden = ('PyQt6', 'pyspark')\n"
         "present = [name for name in forbidden if name in sys.modules]\n"
         "if present:\n"
         "    raise SystemExit('forbidden modules loaded')\n"

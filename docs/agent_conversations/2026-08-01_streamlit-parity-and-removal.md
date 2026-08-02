@@ -46,3 +46,10 @@ does not use any memory claim to mark a parity criterion covered.
 ## Results
 
 - The default DuckDB suite passed on Python 3.12 and Python 3.14 before implementation began.
+
+## Residue sweep
+
+After removing the runtime, `grep -rn -E 'streamlit|streamlit_ace|AppTest'
+src/ tests/ pyproject.toml .github/` produced no matches. Historical mentions remain only under
+`docs/plans/`, `docs/review/`, and older session logs; they are durable audit records and are not
+runtime code. The README wording is updated separately in Task 11.

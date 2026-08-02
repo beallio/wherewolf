@@ -52,11 +52,11 @@ def test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched(monkeypa
     assert created["count"] == 2
 
 
-def test_importing_desktop_application_is_free_of_streamlit_and_pyspark() -> None:
+def test_importing_desktop_application_is_free_of_pyspark() -> None:
     code = (
         "import sys\n"
         "import wherewolf.desktop.application\n"
-        "bad = [name for name in ('streamlit', 'pyspark') if name in sys.modules]\n"
+        "bad = [name for name in ('pyspark',) if name in sys.modules]\n"
         "if bad:\n"
         "    raise SystemExit('forbidden modules loaded: ' + ','.join(bad))\n"
     )

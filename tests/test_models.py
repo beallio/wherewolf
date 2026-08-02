@@ -166,7 +166,7 @@ def test_domain_models_import_has_no_runtime_heavy_modules() -> None:
     code = (
         "import sys\n"
         "import wherewolf.domain.models\n"
-        "forbidden = ('PyQt6', 'streamlit', 'duckdb', 'pyspark')\n"
+        "forbidden = ('PyQt6', 'duckdb', 'pyspark')\n"
         "missing = [name for name in forbidden if name in sys.modules]\n"
         "if missing:\n"
         "    raise SystemExit(f\"unexpected modules loaded: {', '.join(missing)}\")\n"

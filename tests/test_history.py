@@ -47,7 +47,7 @@ def test_history_manager_clear(storage_dir):
     assert len(manager.get_all()) == 0
 
 
-def test_new_entries_have_versioned_stable_ids_and_streamlit_keys(storage_dir):
+def test_new_entries_have_versioned_stable_ids_and_legacy_keys(storage_dir):
     history_file = storage_dir / "history.json"
     manager = HistoryManager(storage_path=history_file)
 
@@ -229,7 +229,7 @@ def test_record_cap_evicts_the_oldest_v1_record_after_migration(storage_dir):
 
 
 @pytest.mark.parametrize("migrated", [False, True])
-def test_history_records_keep_the_exact_streamlit_read_shape(storage_dir, migrated):
+def test_history_records_keep_the_exact_legacy_read_shape(storage_dir, migrated):
     history_file = storage_dir / "history.json"
     if migrated:
         storage_dir.mkdir()
