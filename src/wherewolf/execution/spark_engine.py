@@ -1,16 +1,12 @@
 import time
+from importlib import import_module, util
 from typing import cast
 
 import polars as pl
 
 from .models import QueryResult
 
-try:
-    from pyspark.sql import SparkSession
-
-    SPARK_AVAILABLE = True
-except ImportError:
-    SPARK_AVAILABLE = False
+SPARK_AVAILABLE = util.find_spec("pyspark") is not None
 
 
 class SparkEngine:
@@ -25,10 +21,13 @@ class SparkEngine:
 
     def _get_session(self):
         if not self.spark:
+            if not SPARK_AVAILABLE:
+                raise RuntimeError("PySpark is not installed; install wherewolf[spark]")
+            spark_session = import_module("pyspark.sql").SparkSession
             self.spark = (
                 # pyspark 4.2 exposes `builder` as a `classproperty`, which ty
                 # cannot resolve through the stub. Runtime behavior is unchanged.
-                SparkSession.builder.appName("Wherewolf")  # ty: ignore[unresolved-attribute]
+                spark_session.builder.appName("Wherewolf")  # ty: ignore[unresolved-attribute]
                 .master("local[*]")
                 .config("spark.sql.execution.arrow.pyspark.enabled", "true")
                 .getOrCreate()

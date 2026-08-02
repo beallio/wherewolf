@@ -6,7 +6,8 @@ from wherewolf.execution.spark_engine import SparkEngine
 
 
 def test_spark_engine_optimization_no_full_count():
-    with patch("wherewolf.execution.spark_engine.SparkSession") as mock_spark_session:
+    with patch("wherewolf.execution.spark_engine.import_module") as mock_import_module:
+        mock_spark_session = mock_import_module.return_value.SparkSession
         mock_spark = MagicMock()
         mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = mock_spark
 
@@ -39,7 +40,8 @@ def test_spark_engine_optimization_no_full_count():
 
 
 def test_spark_engine_none_limit_fetches_full_result():
-    with patch("wherewolf.execution.spark_engine.SparkSession") as mock_spark_session:
+    with patch("wherewolf.execution.spark_engine.import_module") as mock_import_module:
+        mock_spark_session = mock_import_module.return_value.SparkSession
         mock_spark = MagicMock()
         mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = mock_spark
 
