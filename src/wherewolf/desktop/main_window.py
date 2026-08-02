@@ -523,7 +523,18 @@ class MainWindow(QMainWindow):
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
         self.editor.set_catalog(self._catalog_service.entries)
-        self.schema_panel.set_schema_result(schema_result)
+        entry = next(
+            (
+                entry
+                for entry in self._catalog_service.entries
+                if entry.id == schema_result.entry_id
+            ),
+            None,
+        )
+        if entry is None:
+            self.schema_panel.set_schema_result(schema_result)
+        else:
+            self.schema_panel.set_entry(entry)
 
     def _build_central_area(self) -> QSplitter:
         editor = SqlEditor(
