@@ -763,12 +763,12 @@ def test_clear_history_action_empties_store_and_history_dock(tmp_path: Path, qtb
     history.add_entry("duckdb", "SELECT to_clear")
     window = MainWindow(history_manager=history)
     qtbot.addWidget(window)
-    assert window.history_dock.history_list.count() == 1
+    assert window.history_dock.history_table.topLevelItemCount() == 1
 
     window.desktop_actions.clear_history.trigger()
 
     assert history.get_all() == []
-    assert window.history_dock.history_list.count() == 0
+    assert window.history_dock.history_table.topLevelItemCount() == 0
     assert json.loads(history_path.read_text()) == []
 
 
