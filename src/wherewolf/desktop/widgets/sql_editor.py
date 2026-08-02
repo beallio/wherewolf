@@ -6,8 +6,8 @@ from typing import ClassVar
 
 from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont, QKeySequence
-from PyQt6.QtWidgets import QMenu
+from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeySequence
+from PyQt6.QtWidgets import QMenu, QWidget
 
 from wherewolf.desktop.widgets.completion_adapter import CompletionAdapter
 from wherewolf.domain import CatalogEntry, SqlDiagnostic
@@ -155,6 +155,7 @@ class SqlEditor(QsciScintilla):
         self._caret_line_background = lexer.paper(QsciLexerSQL.Default).lighter(115)
         self.setCaretLineBackgroundColor(self._caret_line_background)
         self.setCaretForegroundColor(self._TEXT)
+        self._apply_margin_colours()
         self.setMarginLineNumbers(0, True)
         self.setWrapMode(QsciScintilla.WrapMode.WrapNone)
 
@@ -228,7 +229,13 @@ class SqlEditor(QsciScintilla):
         self.setPaper(self._PAPER)
         self.setColor(self._TEXT)
         self.setCaretForegroundColor(self._TEXT)
+        self._apply_margin_colours()
         self._settings_service.save_editor_theme(theme)
+
+    def _apply_margin_colours(self) -> None:
+        """Blend line numbers with the editor paper and caret-line treatment."""
+        self.setMarginsBackgroundColor(self._PAPER.lighter(115))
+        self.setMarginsForegroundColor(self._TEXT)
 
     def _setup_actions(self) -> None:
         self.setCaretLineVisible(True)
@@ -246,7 +253,7 @@ class SqlEditor(QsciScintilla):
         font = self.font()
         if isinstance(font, QFont):
             font.setPointSize(size)
-            self.setFont(font)
+            QWidget.setFont(self, font)
 
         lexer = self.lexer()
         if isinstance(lexer, QsciLexerSQL):
@@ -255,10 +262,15 @@ class SqlEditor(QsciScintilla):
                 lexer_font.setPointSize(size)
                 lexer.setDefaultFont(lexer_font)
 
+        self._refresh_line_margin()
+
     def _refresh_line_margin(self) -> None:
         line_count = max(self.lines(), 1)
-        width = len(str(line_count)) + 1
-        self.setMarginWidth(0, " " * width)
+        digit_count = len(str(line_count))
+        metrics = QFontMetrics(self.font())
+        digit_width = metrics.horizontalAdvance("9" * digit_count)
+        padding = metrics.horizontalAdvance("9")
+        self.setMarginWidth(0, digit_width + padding)
 
     def _update_status(self, message: str | None = None) -> None:
         if message is None:
