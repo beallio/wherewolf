@@ -232,6 +232,33 @@ def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
     assert settings.restore_editor_theme() == "Light"
 
 
+def test_main_window_fills_starter_query_for_first_dataset_when_editor_is_empty(
+    tmp_path: Path, qtbot
+) -> None:
+    csv_file = tmp_path / "select.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(file_dialog_service=FakeFileDialogService(paths=(csv_file,)))
+    qtbot.addWidget(window)
+
+    window.desktop_actions.add_datasets.trigger()
+
+    assert window.editor.text() == 'SELECT * FROM "select" LIMIT 10'
+
+
+def test_main_window_never_overwrites_existing_editor_text_when_adding_dataset(
+    tmp_path: Path, qtbot
+) -> None:
+    csv_file = tmp_path / "people.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(file_dialog_service=FakeFileDialogService(paths=(csv_file,)))
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT user_query")
+
+    window.desktop_actions.add_datasets.trigger()
+
+    assert window.editor.text() == "SELECT user_query"
+
+
 @pytest.mark.parametrize("export_format", (ExportFormat.PARQUET, ExportFormat.XLSX))
 def test_main_window_exports_selected_format_to_readable_artifact(
     tmp_path: Path, qtbot, export_format: ExportFormat

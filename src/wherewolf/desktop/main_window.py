@@ -51,6 +51,7 @@ from wherewolf.services import (
     ExportFormat,
     SettingsService,
 )
+from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.storage.history import HistoryManager
 
@@ -367,9 +368,12 @@ class MainWindow(QMainWindow):
         if not paths:
             return
 
+        was_empty_catalog = not self._catalog_service.entries
         result = self._catalog_service.add_paths(paths)
         if result.added:
             first = result.added[0]
+            if was_empty_catalog and not self.editor.text().strip():
+                self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)} LIMIT 10")
             self._settings_service.save_last_dataset_directory(first.path.parent)
             for entry in result.added:
                 self._queue_schema_work(
