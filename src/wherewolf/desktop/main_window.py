@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -154,6 +155,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"Wherewolf {version('wherewolf')}")
 
         self.main_toolbar = self._build_toolbar()
+        self.query_controls_toolbar = self._build_query_controls_toolbar()
         self._catalog_dock_widget = self._build_catalog_dock()
         self.dataset_catalog_dock = self._catalog_dock_widget
         self._schema_dock_widget = self._build_schema_dock()
@@ -215,6 +217,31 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.desktop_actions.export_preview)
         toolbar.addAction(self.desktop_actions.export_full)
         toolbar.addAction(self.desktop_actions.export_selection)
+        return toolbar
+
+    def _build_query_controls_toolbar(self) -> QToolBar:
+        """Keep labelled query controls on their own toolbar row.
+
+        Separating configuration from query actions prevents the controls from extending past
+        the right edge of the primary toolbar. The horizontal scroll area keeps every labelled
+        control reachable when the window is narrower than the controls' natural width.
+        """
+        toolbar = QToolBar("Query Controls", self)
+        toolbar.setObjectName("query_controls_toolbar")
+        toolbar.setMovable(False)
+        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, toolbar)
+
+        controls_scroll = QScrollArea(toolbar)
+        controls_scroll.setObjectName("query_controls_scroll_area")
+        controls_scroll.setWidgetResizable(False)
+        controls_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        controls_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        controls = QWidget(controls_scroll)
+        controls_layout = QHBoxLayout(controls)
+        controls_layout.setContentsMargins(4, 0, 4, 0)
+        controls_layout.setSpacing(8)
+
         self.engine_selector = QComboBox(toolbar)
         self.engine_selector.setObjectName("engine_selector")
         model = cast(QStandardItemModel, self.engine_selector.model())
@@ -227,12 +254,22 @@ class MainWindow(QMainWindow):
             item = model.item(self.engine_selector.count() - 1)
             assert item is not None
             item.setEnabled(descriptor.available)
-        toolbar.addWidget(self.engine_selector)
+        self._add_labelled_control(
+            controls_layout,
+            "Execution engine",
+            self.engine_selector,
+            "Choose where the query runs: DuckDB or Spark.",
+        )
         self.input_dialect_selector = QComboBox(toolbar)
         self.input_dialect_selector.setObjectName("input_dialect_selector")
         for label, dialect in DIALECT_MAPPING.items():
             self.input_dialect_selector.addItem(label, dialect)
-        toolbar.addWidget(self.input_dialect_selector)
+        self._add_labelled_control(
+            controls_layout,
+            "Input dialect",
+            self.input_dialect_selector,
+            "Choose the SQL dialect you are writing; it is transpiled to the execution engine.",
+        )
         self.export_format_selector = QComboBox(toolbar)
         self.export_format_selector.setObjectName("export_format_selector")
         for label, export_format in (
@@ -241,19 +278,53 @@ class MainWindow(QMainWindow):
             ("Parquet", ExportFormat.PARQUET),
         ):
             self.export_format_selector.addItem(label, export_format)
-        toolbar.addWidget(self.export_format_selector)
+        self._add_labelled_control(
+            controls_layout,
+            "Export format",
+            self.export_format_selector,
+            "Choose the file format for exported query results.",
+        )
         self.preview_limit_selector = QSpinBox(toolbar)
         self.preview_limit_selector.setObjectName("preview_limit_selector")
         self.preview_limit_selector.setRange(10, 1000)
         self.preview_limit_selector.setValue(self._settings_service.restore_preview_limit())
         self.preview_limit_selector.valueChanged.connect(self._settings_service.save_preview_limit)
-        toolbar.addWidget(self.preview_limit_selector)
+        self._add_labelled_control(
+            controls_layout,
+            "Preview rows",
+            self.preview_limit_selector,
+            "Choose the maximum number of rows shown in a query preview.",
+        )
         self.editor_theme_selector = QComboBox(toolbar)
         self.editor_theme_selector.setObjectName("editor_theme_selector")
         self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
         self.editor_theme_selector.setCurrentText(self._settings_service.restore_editor_theme())
-        toolbar.addWidget(self.editor_theme_selector)
+        self._add_labelled_control(
+            controls_layout,
+            "Editor theme",
+            self.editor_theme_selector,
+            "Choose the colour theme used by the SQL editor.",
+        )
+        controls.setFixedSize(controls.sizeHint())
+        controls_scroll.setWidget(controls)
+        controls_scroll.setFixedWidth(min(controls.sizeHint().width(), 480))
+        toolbar.addWidget(controls_scroll)
         return toolbar
+
+    @staticmethod
+    def _add_labelled_control(
+        layout: QHBoxLayout,
+        caption: str,
+        control: QWidget,
+        tooltip: str,
+    ) -> None:
+        control.setToolTip(tooltip)
+        label = QLabel(caption, control.parentWidget())
+        label.setObjectName(f"{control.objectName()}_label")
+        label.setToolTip(tooltip)
+        label.setBuddy(control)
+        layout.addWidget(label)
+        layout.addWidget(control)
 
     def _build_catalog_dock(self) -> QDockWidget:
         catalog = CatalogDock(self._catalog_service, self)
@@ -523,7 +594,18 @@ class MainWindow(QMainWindow):
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
         self.editor.set_catalog(self._catalog_service.entries)
-        self.schema_panel.set_schema_result(schema_result)
+        entry = next(
+            (
+                entry
+                for entry in self._catalog_service.entries
+                if entry.id == schema_result.entry_id
+            ),
+            None,
+        )
+        if entry is None:
+            self.schema_panel.set_schema_result(schema_result)
+        else:
+            self.schema_panel.set_entry(entry)
 
     def _build_central_area(self) -> QSplitter:
         editor = SqlEditor(
@@ -578,13 +660,20 @@ class MainWindow(QMainWindow):
         translation_page = QWidget(results)
         translation_layout = QVBoxLayout(translation_page)
         translation_controls = QHBoxLayout()
-        translation_controls.addWidget(QLabel("Target Dialect", translation_page))
         self.translation_target_selector = QComboBox(translation_page)
         self.translation_target_selector.setObjectName("translation_target_selector")
+        self.translation_target_selector.setToolTip(
+            "Choose the SQL dialect rendered in the Translation tab."
+        )
         for dialect in sorted(DIALECT_MODULE_NAMES):
             self.translation_target_selector.addItem(dialect, dialect)
         spark_index = self.translation_target_selector.findData("spark")
         self.translation_target_selector.setCurrentIndex(max(spark_index, 0))
+        translation_target_label = QLabel("Translation target", translation_page)
+        translation_target_label.setObjectName("translation_target_selector_label")
+        translation_target_label.setToolTip(self.translation_target_selector.toolTip())
+        translation_target_label.setBuddy(self.translation_target_selector)
+        translation_controls.addWidget(translation_target_label)
         translation_controls.addWidget(self.translation_target_selector)
         translation_layout.addLayout(translation_controls)
         self.translation_panel = TranslationPanel(translation_page)

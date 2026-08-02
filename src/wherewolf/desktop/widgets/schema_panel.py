@@ -112,6 +112,7 @@ class SchemaPanel(QWidget):
     def _update_view(self) -> None:
         columns: tuple[ColumnSchema, ...] | None = None
         error_msg: str | None = None
+        alias = self._entry.alias if self._entry is not None else None
 
         if self._schema_result is not None:
             columns = self._schema_result.columns
@@ -121,7 +122,8 @@ class SchemaPanel(QWidget):
             error_msg = self._entry.schema_error
 
         if error_msg is not None:
-            self._status_label.setText(f"Schema error: {error_msg}")
+            prefix = f"{alias} — " if alias is not None else ""
+            self._status_label.setText(f"{prefix}Schema error: {error_msg}")
             self._status_label.show()
             self._table_widget.setRowCount(0)
             self._table_widget.hide()
@@ -129,16 +131,21 @@ class SchemaPanel(QWidget):
             if self._entry is None and self._schema_result is None:
                 self._status_label.setText("No table selected")
             else:
-                self._status_label.setText("Schema inspection pending...")
+                prefix = f"{alias} — " if alias is not None else ""
+                self._status_label.setText(f"{prefix}Schema inspection pending...")
             self._status_label.show()
             self._table_widget.setRowCount(0)
             self._table_widget.hide()
         else:
             if len(columns) == 0:
-                self._status_label.setText("No columns found in table")
+                prefix = f"{alias} — " if alias is not None else ""
+                self._status_label.setText(f"{prefix}No columns found in table")
                 self._status_label.show()
             else:
-                self._status_label.setText(f"Schema ({len(columns)} columns):")
+                if alias is None:
+                    self._status_label.setText(f"Schema ({len(columns)} columns):")
+                else:
+                    self._status_label.setText(f"{alias} — {len(columns)} columns")
                 self._status_label.show()
 
             self._table_widget.show()
