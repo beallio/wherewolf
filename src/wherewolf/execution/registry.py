@@ -9,6 +9,19 @@ from uuid import UUID
 
 import polars as pl
 
+# LOAD-BEARING: do not remove, and do not make this lazy.
+#
+# DuckDB loads pyarrow on demand during `relation.pl()`. pyarrow's bundled mimalloc
+# initialises a thread-local heap on libarrow's first allocation, and if that first
+# allocation happens on a secondary thread, `mi_thread_init` segfaults for every
+# subsequent thread once that one exits. The desktop app runs each query on a fresh
+# QThread, so the *second* query killed the process.
+#
+# Importing pyarrow here — at module scope, on the main thread, at startup — pins that
+# initialisation to a thread that outlives every worker. A bare import is sufficient.
+# Guarded by tests/test_arrow_thread_init_crash.py.
+import pyarrow  # noqa: F401
+
 from wherewolf.domain import (
     CatalogEntry,
     ColumnSchema,
