@@ -30,7 +30,7 @@ from wherewolf.domain import (
     QueryResult,
     SourceFormat,
 )
-from wherewolf.services import SettingsService
+from wherewolf.services import ExportFormat, SettingsService
 from wherewolf.storage import HistoryManager
 
 
@@ -211,6 +211,50 @@ def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, m
     assert submitted[0].source_dialect == "tsql"
     assert submitted[0].executable_sql != submitted[0].original_sql
     assert "LIMIT 10" in submitted[0].executable_sql
+
+
+@pytest.mark.parametrize("export_format", (ExportFormat.PARQUET, ExportFormat.XLSX))
+def test_main_window_exports_selected_format_to_readable_artifact(
+    tmp_path: Path, qtbot, export_format: ExportFormat
+) -> None:
+    destination = tmp_path / "result"
+    window = MainWindow(
+        file_dialog_service=FakeFileDialogService(paths=(), export_path=destination)
+    )
+    qtbot.addWidget(window)
+    request_id = uuid4()
+    request = ExecutionRequest(
+        request_id=request_id,
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=100,
+        submitted_at=datetime.now(UTC),
+    )
+    result = QueryResult(
+        request_id=request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"id": [1, 2]}),
+        execution_seconds=0.01,
+        preview_row_count=2,
+        total_row_count=2,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(result, request)
+
+    format_index = window.export_format_selector.findData(export_format)
+    assert format_index >= 0
+    window.export_format_selector.setCurrentIndex(format_index)
+    with qtbot.waitSignal(window.export_controller.result_ready, timeout=3000):
+        window.desktop_actions.export_preview.trigger()
+
+    artifact = destination.with_suffix(f".{export_format.value}")
+    assert artifact.exists()
+    reader = pl.read_parquet if export_format is ExportFormat.PARQUET else pl.read_excel
+    assert reader(artifact).to_dicts() == [{"id": 1}, {"id": 2}]
 
 
 def test_format_action_is_shared_with_editor_context_action(qtbot) -> None:

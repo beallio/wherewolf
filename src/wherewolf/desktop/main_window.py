@@ -165,6 +165,15 @@ class MainWindow(QMainWindow):
         for label, dialect in DIALECT_MAPPING.items():
             self.input_dialect_selector.addItem(label, dialect)
         toolbar.addWidget(self.input_dialect_selector)
+        self.export_format_selector = QComboBox(toolbar)
+        self.export_format_selector.setObjectName("export_format_selector")
+        for label, export_format in (
+            ("CSV", ExportFormat.CSV),
+            ("Excel", ExportFormat.XLSX),
+            ("Parquet", ExportFormat.PARQUET),
+        ):
+            self.export_format_selector.addItem(label, export_format)
+        toolbar.addWidget(self.export_format_selector)
         return toolbar
 
     def _build_catalog_dock(self) -> QDockWidget:
@@ -306,13 +315,17 @@ class MainWindow(QMainWindow):
         if choose_export_path is None:
             self._show_status("Export dialog is unavailable", 5000)
             return
-        destination = choose_export_path(None, ExportFormat.CSV, self)
+        export_format = self.export_format_selector.currentData()
+        if not isinstance(export_format, ExportFormat):
+            self._show_status("No export format is selected", 5000)
+            return
+        destination = choose_export_path(None, export_format, self)
         if destination is not None:
             self.export_controller.export(
                 self._last_request,
                 self._last_result.frame,
                 destination,
-                ExportFormat.CSV,
+                export_format,
                 full_export,
             )
 
