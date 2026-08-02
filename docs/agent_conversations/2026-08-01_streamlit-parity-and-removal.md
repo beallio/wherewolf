@@ -53,3 +53,19 @@ After removing the runtime, `grep -rn -E 'streamlit|streamlit_ace|AppTest'
 src/ tests/ pyproject.toml .github/` produced no matches. Historical mentions remain only under
 `docs/plans/`, `docs/review/`, and older session logs; they are durable audit records and are not
 runtime code. The README wording is updated separately in Task 11.
+
+## Final implementation results
+
+- The native Qt entry point now serves `wherewolf`, `wherewolf-desktop`, and
+  `python -m wherewolf`.
+- Removed Streamlit UI modules, configuration, AppTest coverage, the cache factory, byte-based
+  exporter, obsolete browser screenshot script, and the Streamlit, Streamlit Ace, and Playwright
+  dependencies.
+- Retained and adapted shared history, model, Excel, and import-boundary tests rather than
+  deleting them because they once mentioned the old UI.
+- Added a Help → About notice covering GPL-3.0-only and the preserved pre-0.6 MIT text.
+- CI now uses the lockfile explicitly in the lint, DuckDB, and Spark install contracts. Measured
+  locally: lint synced the Spark extra and passed ruff/ty; DuckDB-only Python 3.12 synced without
+  PySpark; Spark Python 3.12 synced with PySpark available.
+- Manual release gates remain: no browser/server, native multi-file dialog, real-window and
+  clipboard behavior, query responsiveness, Windows/macOS coverage, and Spark full export.
