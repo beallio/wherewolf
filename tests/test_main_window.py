@@ -183,6 +183,18 @@ def test_main_window_schema_panel_shows_schema_after_adding_dataset(tmp_path: Pa
     assert [window.schema_panel.cell_text(row, 1) for row in range(2)] == ["BIGINT", "VARCHAR"]
 
 
+def test_main_window_translation_tab_transpiles_current_editor_text(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    target_index = window.translation_target_selector.findData("spark")
+    assert target_index >= 0
+    window.translation_target_selector.setCurrentIndex(target_index)
+    window.editor.setText("SELECT IFNULL(value, 0) FROM users")
+
+    assert window.translation_panel.translated_text() == "SELECT\n  COALESCE(value, 0)\nFROM users"
+
+
 def test_format_action_is_shared_with_editor_context_action(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

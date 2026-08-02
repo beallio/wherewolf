@@ -10,6 +10,7 @@ from PyQt6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStanda
 from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
@@ -21,6 +22,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from sqlglot.dialects import DIALECT_MODULE_NAMES
 
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
@@ -30,6 +32,7 @@ from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
+from wherewolf.desktop.widgets.translation_panel import TranslationPanel
 from wherewolf.desktop.workers import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
@@ -399,6 +402,25 @@ class MainWindow(QMainWindow):
         self.messages_panel.setObjectName("messages_panel")
         results.addTab(self.messages_panel, "Messages")
 
+        translation_page = QWidget(results)
+        translation_layout = QVBoxLayout(translation_page)
+        translation_controls = QHBoxLayout()
+        translation_controls.addWidget(QLabel("Target Dialect", translation_page))
+        self.translation_target_selector = QComboBox(translation_page)
+        self.translation_target_selector.setObjectName("translation_target_selector")
+        for dialect in sorted(DIALECT_MODULE_NAMES):
+            self.translation_target_selector.addItem(dialect, dialect)
+        spark_index = self.translation_target_selector.findData("spark")
+        self.translation_target_selector.setCurrentIndex(max(spark_index, 0))
+        translation_controls.addWidget(self.translation_target_selector)
+        translation_layout.addLayout(translation_controls)
+        self.translation_panel = TranslationPanel(translation_page)
+        self.translation_panel.setObjectName("translation_panel")
+        translation_layout.addWidget(self.translation_panel)
+        self.translation_target_selector.currentTextChanged.connect(self._refresh_translation)
+        editor.textChanged.connect(self._refresh_translation)
+        results.addTab(translation_page, "Translation")
+
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
         splitter.addWidget(editor)
@@ -407,6 +429,14 @@ class MainWindow(QMainWindow):
 
     def _set_local_sort_notice_visible(self, is_sorted: bool) -> None:
         self.result_sort_notice.setVisible(is_sorted)
+
+    def _refresh_translation(self) -> None:
+        target_dialect = self.translation_target_selector.currentData()
+        if not isinstance(target_dialect, str):
+            return
+        self.translation_panel.update_translation(
+            self.editor.text(), source_dialect="duckdb", target_dialect=target_dialect
+        )
 
     def editor_insert_text(self, alias: str) -> None:
         self.editor.insert(alias)

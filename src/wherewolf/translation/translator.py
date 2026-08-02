@@ -1,6 +1,7 @@
 from typing import ClassVar
 
 import sqlglot
+from sqlglot.dialects import DIALECT_MODULE_NAMES
 
 from wherewolf.domain.errors import TranslationError
 
@@ -8,7 +9,7 @@ from wherewolf.domain.errors import TranslationError
 class Translator:
     """Handles SQL dialect translation between DuckDB and SparkSQL."""
 
-    VALID_DIALECTS: ClassVar[set[str]] = {"duckdb", "spark", "tsql"}
+    VALID_DIALECTS: ClassVar[set[str]] = set(DIALECT_MODULE_NAMES)
 
     def translate(self, query: str, from_dialect: str, to_dialect: str) -> str:
         """Translates a SQL query from one dialect to another.
