@@ -1,13 +1,16 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 from uuid import uuid4
 
 import polars as pl
 import pytest
 from PyQt6.QtCore import QCoreApplication, QSettings, Qt
+from PyQt6.QtGui import QStandardItemModel
 from PyQt6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDockWidget,
     QMainWindow,
     QSplitter,
@@ -60,6 +63,25 @@ def test_main_window_structure(qtbot) -> None:
 
     menu_titles = [action.text() for action in menu_bar.actions()]
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+
+
+def test_engine_selector_disables_missing_spark_with_installation_guidance(
+    qtbot, monkeypatch
+) -> None:
+    monkeypatch.setattr("importlib.util.find_spec", lambda name: None)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    selector = window.findChild(QComboBox, "engine_selector")
+    assert selector is not None
+    spark_index = selector.findText("Spark", Qt.MatchFlag.MatchStartsWith)
+    assert spark_index >= 0
+    item = cast(QStandardItemModel, selector.model()).item(spark_index)
+    assert item is not None
+    assert item.isEnabled() is False
+    assert "wherewolf[spark]" in item.text()
+    assert selector.currentData() is EngineKind.DUCKDB
 
 
 def test_bare_main_window_does_not_touch_user_history(qtbot, monkeypatch, tmp_path: Path) -> None:

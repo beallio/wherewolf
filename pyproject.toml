@@ -14,11 +14,15 @@ dependencies = [
     "pyarrow>=24.0.0",
     "pyqt6>=6.8,<7",
     "pyqt6-qscintilla>=2.14,<3",
-    "pyspark>=4.1.2",
     "sqlglot>=30.11.0",
     "streamlit>=1.58.0",
     "streamlit-ace>=0.1.1",
     "xlsxwriter>=3.2.9",
+]
+
+[project.optional-dependencies]
+spark = [
+    "pyspark>=4.1.2",
 ]
 
 [build-system]
@@ -43,8 +47,11 @@ cache-dir = "/tmp/wherewolf/.ruff_cache"
 extend-exclude = ["docs"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=src --cov-report=term"
+addopts = "--cov=src --cov-report=term -m 'not spark'"
 cache_dir = "/tmp/wherewolf/.pytest_cache"
+markers = [
+    "spark: requires the optional Spark extra and a working Java runtime",
+]
 
 [tool.coverage.run]
 data_file = "/tmp/wherewolf/.coverage"

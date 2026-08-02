@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
+import polars as pl
 import pytest
 
 from wherewolf.domain import (
@@ -37,6 +38,7 @@ def test_spark_descriptor_reflects_find_spec(monkeypatch) -> None:
     assert spark_absent.available is False
     assert spark_absent.unavailable_reason is not None
     assert "pyspark" in spark_absent.unavailable_reason.lower()
+    assert "wherewolf[spark]" in spark_absent.unavailable_reason
 
 
 def test_registry_available_engines_does_not_import_pyspark_subprocess() -> None:
@@ -70,6 +72,43 @@ def test_registry_create_spark_unavailable_raises(monkeypatch) -> None:
 
     with pytest.raises(EngineUnavailableError):
         reg.create(EngineKind.SPARK, uuid4())
+
+
+def test_spark_schema_failure_is_distinguishable_from_an_empty_schema(
+    monkeypatch, tmp_path
+) -> None:
+    from wherewolf.domain import CatalogEntry, SourceFormat
+    from wherewolf.execution.spark_engine import SparkEngine
+
+    monkeypatch.setattr(EngineRegistry, "_is_spark_available", lambda self: True)
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="events",
+        path=tmp_path / "events.csv",
+        source_format=SourceFormat.CSV,
+    )
+    adapter = EngineRegistry().create(EngineKind.SPARK, uuid4())
+
+    monkeypatch.setattr(
+        SparkEngine,
+        "get_schema",
+        lambda self, path: (_ for _ in ()).throw(OSError("unreadable")),
+    )
+    failed = adapter.inspect_schema(entry)
+
+    monkeypatch.setattr(
+        SparkEngine,
+        "get_schema",
+        lambda self, path: pl.DataFrame(schema={"Column": pl.Utf8, "Type": pl.Utf8}),
+    )
+    empty = adapter.inspect_schema(entry)
+
+    assert failed.columns == ()
+    assert failed.error_type == "OSError"
+    assert failed.error_message == "unreadable"
+    assert empty.columns == ()
+    assert empty.error_type is None
+    assert empty.error_message is None
 
 
 def test_registry_create_duckdb_returns_request_scoped_instances() -> None:

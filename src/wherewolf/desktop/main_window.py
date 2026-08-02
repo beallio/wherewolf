@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
-from PyQt6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont
+from PyQt6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStandardItemModel
 from PyQt6.QtWidgets import (
+    QComboBox,
     QDockWidget,
     QMainWindow,
     QMenu,
@@ -126,6 +127,19 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.desktop_actions.add_datasets)
         toolbar.addAction(self.desktop_actions.export_preview)
         toolbar.addAction(self.desktop_actions.export_full)
+        self.engine_selector = QComboBox(toolbar)
+        self.engine_selector.setObjectName("engine_selector")
+        model = cast(QStandardItemModel, self.engine_selector.model())
+        for descriptor in self._engine_registry.available_engines():
+            label = descriptor.display_name
+            if not descriptor.available:
+                assert descriptor.unavailable_reason is not None
+                label = f"{label} (unavailable: {descriptor.unavailable_reason})"
+            self.engine_selector.addItem(label, descriptor.kind)
+            item = model.item(self.engine_selector.count() - 1)
+            assert item is not None
+            item.setEnabled(descriptor.available)
+        toolbar.addWidget(self.engine_selector)
         return toolbar
 
     def _build_catalog_dock(self) -> QDockWidget:
@@ -171,10 +185,11 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            engine = cast(EngineKind, self.engine_selector.currentData())
             request = ExecutionRequestBuilder.build(
                 sql=sql,
-                source_dialect="duckdb",
-                engine=EngineKind.DUCKDB,
+                source_dialect="duckdb" if engine is EngineKind.DUCKDB else "spark",
+                engine=engine,
                 catalog_service=self._catalog_service,
             )
         except Exception as exc:  # noqa: BLE001  # Request creation boundary

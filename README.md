@@ -1,15 +1,15 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=18" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=19" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=18)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=18)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=18)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=19)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=19)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=19)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark.
 
 ## Features
-- **Multi-Engine Support:** Execute SQL via DuckDB (local) or Spark (local[*]). Native support for CSV, Parquet, JSON, and Excel (`.xlsx`, `.xls`).
+- **Multi-Engine Support:** Execute SQL via DuckDB (default) or the optional, memory-bounded local Spark engine (`local[1]`). Native support for CSV, Parquet, JSON, JSON Lines, and Excel (`.xlsx`, `.xls`).
 - **📁 Dataset Catalog:** Improved catalog in the desktop shell with native dialogs and drag-and-drop file intake.
 - **🧰 Desktop SQL Editor:** QScintilla-based editor with line numbers, brace matching, SQL formatting, function call tips, and intelligent SQL completion (`Ctrl+Space` shortcut and configurable auto-trigger threshold).
 - **🔢 PyQt6 Result Grid:** High-performance tabular results view powered by Polars, with strict type preservation (`UserRole`), typed sorting (`TypedSortProxyModel`), case-insensitive multi-column search filtering, visual column reordering and hiding, and TSV clipboard serialization (`Ctrl+C`, custom context menus).
@@ -39,6 +39,20 @@ uv tool install wherewolf
 wherewolf
 ```
 
+### Optional Spark engine
+
+The default installation is DuckDB-only and does not install or import PySpark. To use Spark,
+install the optional extra and a compatible Java runtime:
+
+```bash
+pip install 'wherewolf[spark]'
+```
+
+From a source checkout, use `uv sync --extra spark`. The desktop engine selector reports this
+requirement and leaves Spark unavailable until it is installed. Spark integration is verified on
+Linux with one JDK only; other JDK versions, macOS, Windows, and cluster/remote Spark are
+unverified.
+
 ### From Source
 ```bash
 git clone https://github.com/beallio/wherewolf.git
@@ -53,6 +67,12 @@ The native desktop shell is launched with `wherewolf-desktop` and features full 
 If running from source:
 ```bash
 uv run wherewolf-desktop
+```
+
+To run the Spark integration tier locally after installing the extra and Java:
+
+```bash
+uv run pytest -m spark
 ```
 
 1. Use the **Dataset Catalog** in the desktop shell to browse and add files via native dialogs or drag-and-drop.
@@ -95,12 +115,15 @@ ruff format .
 ## Dependencies
 - `streamlit`
 - `duckdb`
-- `pyspark`
 - `sqlglot`
 - `pyarrow`
 - `polars`
 - `fastexcel`
 - `xlsxwriter`
+
+Optional:
+
+- `pyspark` via `wherewolf[spark]` (requires Java)
 
 ## License
 

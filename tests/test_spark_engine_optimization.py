@@ -6,15 +6,20 @@ from wherewolf.execution.spark_engine import SparkEngine
 
 
 def test_spark_engine_optimization_no_full_count():
-    with patch("wherewolf.execution.spark_engine.SparkSession") as mock_spark_session:
+    with (
+        patch("wherewolf.execution.spark_engine.SPARK_AVAILABLE", True),
+        patch("wherewolf.execution.spark_engine.import_module") as mock_import_module,
+    ):
+        mock_spark_session = mock_import_module.return_value.SparkSession
         mock_spark = MagicMock()
-        mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = mock_spark
+        (
+            mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.config.return_value.config.return_value.config.return_value.getOrCreate.return_value.newSession.return_value
+        ) = mock_spark
 
         engine = SparkEngine()
         mock_df = MagicMock()
         # Mock chained calls: spark.read.option(...).option(...).csv(...)
-        mock_spark.read.option.return_value = mock_spark.read
-        mock_spark.read.csv.return_value = mock_df
+        mock_spark.read.option.return_value.option.return_value.csv.return_value = mock_df
         mock_spark.read.parquet.return_value = mock_df
         mock_spark.read.json.return_value = mock_df
         mock_spark.sql.return_value = mock_df
@@ -39,14 +44,19 @@ def test_spark_engine_optimization_no_full_count():
 
 
 def test_spark_engine_none_limit_fetches_full_result():
-    with patch("wherewolf.execution.spark_engine.SparkSession") as mock_spark_session:
+    with (
+        patch("wherewolf.execution.spark_engine.SPARK_AVAILABLE", True),
+        patch("wherewolf.execution.spark_engine.import_module") as mock_import_module,
+    ):
+        mock_spark_session = mock_import_module.return_value.SparkSession
         mock_spark = MagicMock()
-        mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = mock_spark
+        (
+            mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.config.return_value.config.return_value.config.return_value.getOrCreate.return_value.newSession.return_value
+        ) = mock_spark
 
         engine = SparkEngine()
         mock_df = MagicMock()
-        mock_spark.read.option.return_value = mock_spark.read
-        mock_spark.read.csv.return_value = mock_df
+        mock_spark.read.option.return_value.option.return_value.csv.return_value = mock_df
         mock_spark.sql.return_value = mock_df
 
         mock_df.toArrow.return_value = pa.table({"a": [1, 2, 3]})

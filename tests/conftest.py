@@ -1,5 +1,8 @@
 import os
+from collections.abc import Iterator
+from importlib.util import find_spec
 from pathlib import Path
+from typing import Any
 
 import pytest
 from PyQt6.QtCore import QSettings
@@ -10,6 +13,36 @@ from wherewolf.storage import HistoryManager
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 APPTEST_TIMEOUT = 30
+
+
+@pytest.fixture(scope="session")
+def spark_session() -> Iterator[Any]:
+    """Provide one explicitly bounded local Spark session for the Spark tier."""
+    if find_spec("pyspark") is None:
+        pytest.skip("PySpark is not installed; install the spark extra")
+
+    spark_local_dir = Path("/tmp/wherewolf/spark-local")
+    spark_local_dir.mkdir(parents=True, exist_ok=True)
+    os.environ["SPARK_LOCAL_DIRS"] = str(spark_local_dir)
+
+    try:
+        from pyspark.sql import SparkSession
+
+        session = (
+            SparkSession.builder.appName("wherewolf-tests")  # ty: ignore[unresolved-attribute]
+            .master("local[1]")
+            .config("spark.driver.memory", "512m")
+            .config("spark.ui.enabled", "false")
+            .config("spark.sql.shuffle.partitions", "1")
+            .getOrCreate()
+        )
+    except Exception as error:  # noqa: BLE001
+        pytest.skip(f"Spark session cannot start; check Java and the spark extra: {error}")
+
+    try:
+        yield session
+    finally:
+        session.stop()
 
 
 @pytest.fixture(autouse=True)
