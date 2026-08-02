@@ -36,6 +36,14 @@ uv tool install 'wherewolf[spark]'
 Spark runs locally as `local[1]` with bounded driver memory. It is not a remote- or cluster-Spark
 client.
 
+### SQL source dialects
+
+The input-dialect selector accepts DuckDB, Spark, Azure SQL, Oracle, and PostgreSQL SQL and
+transpiles it to the selected local DuckDB or Spark engine. Oracle and PostgreSQL are source
+languages, not database connections. Dialect translation is provided by sqlglot, so not every
+vendor-specific construct can run locally; for example, Oracle `ROWNUM` and `DUAL` queries are
+reported before execution and must be rewritten for the selected engine.
+
 ### From source
 
 ```bash

@@ -105,6 +105,41 @@ def test_engine_selector_disables_missing_spark_with_installation_guidance(
     assert selector.currentData() is EngineKind.DUCKDB
 
 
+def test_main_window_engine_selector_offers_only_execution_backends(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    selector = window.engine_selector
+
+    assert tuple(EngineKind) == (EngineKind.DUCKDB, EngineKind.SPARK)
+    assert [selector.itemData(index) for index in range(selector.count())] == [
+        EngineKind.DUCKDB,
+        EngineKind.SPARK,
+    ]
+
+
+def test_input_dialect_selector_exposes_all_supported_source_dialects(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    selector = window.input_dialect_selector
+
+    assert [selector.itemText(index) for index in range(selector.count())] == [
+        "DuckDB",
+        "Spark",
+        "Azure SQL",
+        "Oracle",
+        "PostgreSQL",
+    ]
+    assert [selector.itemData(index) for index in range(selector.count())] == [
+        "duckdb",
+        "spark",
+        "tsql",
+        "oracle",
+        "postgres",
+    ]
+
+
 def test_bare_main_window_does_not_touch_user_history(qtbot, monkeypatch, tmp_path: Path) -> None:
     """Default construction must use pytest-isolated persistence, never ~/.wherewolf."""
     user_history_path = Path.home() / ".wherewolf" / "history.json"
@@ -380,6 +415,36 @@ def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, m
     assert submitted[0].source_dialect == "tsql"
     assert submitted[0].executable_sql != submitted[0].original_sql
     assert "LIMIT 10" in submitted[0].executable_sql
+
+
+@pytest.mark.parametrize(
+    ("sql", "construct"),
+    (
+        ("SELECT name FROM people WHERE ROWNUM <= 3", "ROWNUM"),
+        ("SELECT SYSDATE FROM DUAL", "DUAL"),
+    ),
+)
+def test_main_window_reports_unsupported_oracle_constructs(
+    qtbot, monkeypatch, sql, construct
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", submitted.append)
+    window.editor.setText(sql)
+    window.desktop_actions.run.setEnabled(True)
+
+    source_index = window.input_dialect_selector.findData("oracle")
+    assert source_index >= 0
+    window.input_dialect_selector.setCurrentIndex(source_index)
+    window.desktop_actions.run.trigger()
+
+    assert submitted == []
+    message, severity = window.messages_panel.message_at(0)
+    assert severity == "error"
+    assert construct in message
+    assert "Oracle" in message
+    assert "cannot run" in message
 
 
 def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(

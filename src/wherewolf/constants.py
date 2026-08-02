@@ -4,4 +4,10 @@
 SUPPORTED_EXTENSIONS = {".csv", ".parquet", ".json", ".xlsx", ".xls"}
 
 # UI engine/dialect display name -> sqlglot dialect identifier
-DIALECT_MAPPING = {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
+DIALECT_MAPPING = {
+    "DuckDB": "duckdb",
+    "Spark": "spark",
+    "Azure SQL": "tsql",
+    "Oracle": "oracle",
+    "PostgreSQL": "postgres",
+}

@@ -1,0 +1,47 @@
+{
+  "date": "2026-08-02",
+  "task_objective": "Add Oracle and PostgreSQL SQL source dialects without adding execution backends.",
+  "files_modified": [
+    "README.md",
+    "src/wherewolf/constants.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/services/execution_request_builder.py",
+    "tests/test_constants.py",
+    "tests/test_desktop_duckdb_flow.py",
+    "tests/test_execution_request_builder.py",
+    "tests/test_main_window.py"
+  ],
+  "tests_added": [
+    "Mapping values resolve to sqlglot dialects and the input selector exposes Oracle/postgres.",
+    "Oracle NVL and PostgreSQL casts transpile for DuckDB and Spark.",
+    "MainWindow executes Oracle and PostgreSQL source queries against a CSV with DuckDB.",
+    "Oracle ROWNUM and DUAL produce Messages panel diagnostics before execution.",
+    "EngineKind and MainWindow's engine selector contain only DuckDB and Spark."
+  ],
+  "design_decisions": [
+    "Oracle and PostgreSQL are source-language choices only; EngineKind remains unchanged.",
+    "Only ROWNUM and FROM DUAL are blocked because sqlglot emits them unchanged for local execution.",
+    "The existing MessagesPanel diagnostic path reports blocked Oracle constructs."
+  ],
+  "verification": {
+    "input_dialect_selector": [
+      {"label": "DuckDB", "itemData": "duckdb"},
+      {"label": "Spark", "itemData": "spark"},
+      {"label": "Azure SQL", "itemData": "tsql"},
+      {"label": "Oracle", "itemData": "oracle"},
+      {"label": "PostgreSQL", "itemData": "postgres"}
+    ],
+    "transpilation": {
+      "oracle_to_duckdb": "SELECT COALESCE(name, 'x') FROM emp",
+      "oracle_to_spark": "SELECT COALESCE(name, 'x') FROM emp",
+      "postgres_to_duckdb": "SELECT CAST(id AS TEXT) FROM t",
+      "postgres_to_spark": "SELECT CAST(id AS STRING) FROM t"
+    },
+    "end_to_end_rows": {
+      "oracle": [{"display_name": "Ada"}, {"display_name": "unknown"}],
+      "postgres": [{"id_text": "1"}, {"id_text": "2"}]
+    },
+    "diagnostic": "Oracle construct ROWNUM cannot run against the selected local engine. Rewrite the query without it before running."
+  },
+  "results": "The feature preserves the two local execution backends and passes the required quality gates."
+}

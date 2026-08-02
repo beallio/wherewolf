@@ -118,6 +118,38 @@ def test_build_different_dialect_translates_sql():
     assert "LIMIT 10" in req.executable_sql
 
 
+@pytest.mark.parametrize(
+    ("source_dialect", "sql", "expected_by_engine"),
+    (
+        (
+            "oracle",
+            "SELECT NVL(name, 'x') FROM emp",
+            {EngineKind.DUCKDB: "COALESCE(name, 'x')", EngineKind.SPARK: "COALESCE(name, 'x')"},
+        ),
+        (
+            "postgres",
+            "SELECT id::text FROM t",
+            {EngineKind.DUCKDB: "CAST(id AS TEXT)", EngineKind.SPARK: "CAST(id AS STRING)"},
+        ),
+    ),
+)
+def test_build_oracle_and_postgres_sql_transpiles_for_each_execution_engine(
+    source_dialect: str, sql: str, expected_by_engine: dict[EngineKind, str]
+) -> None:
+    catalog_service = CatalogService()
+
+    for engine, expected_sql in expected_by_engine.items():
+        request = ExecutionRequestBuilder.build(
+            sql=sql,
+            source_dialect=source_dialect,
+            engine=engine,
+            catalog_service=catalog_service,
+        )
+
+        assert request.executable_sql != request.original_sql
+        assert expected_sql in request.executable_sql
+
+
 def test_build_multi_statement_preserves_all_statements():
     catalog_service = CatalogService()
     sql = "SELECT 1; SELECT 2"
