@@ -605,7 +605,7 @@ class MainWindow(QMainWindow):
         if entry is None:
             self.schema_panel.set_schema_result(schema_result)
         else:
-            self.schema_panel.set_entry(entry)
+            self.schema_panel.set_entries(self._catalog_service.entries, entry.alias)
 
     def _build_central_area(self) -> QSplitter:
         editor = SqlEditor(

@@ -24,13 +24,15 @@ from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.domain import (
     CatalogBinding,
+    ColumnSchema,
     EngineKind,
     ExecutionRequest,
     ExecutionStatus,
     QueryResult,
+    SchemaResult,
     SourceFormat,
 )
-from wherewolf.services import ExportFormat, SettingsService
+from wherewolf.services import CatalogService, ExportFormat, SettingsService
 from wherewolf.storage import HistoryManager
 
 
@@ -384,6 +386,28 @@ def test_main_window_schema_panel_shows_schema_after_adding_dataset(tmp_path: Pa
     qtbot.waitUntil(lambda: window.schema_panel.column_count_rows() == 2)
     assert [window.schema_panel.cell_text(row, 0) for row in range(2)] == ["id", "name"]
     assert [window.schema_panel.cell_text(row, 1) for row in range(2)] == ["BIGINT", "VARCHAR"]
+
+
+def test_main_window_schema_selector_switches_between_loaded_datasets(
+    tmp_path: Path, qtbot
+) -> None:
+    first_path = tmp_path / "customers.csv"
+    second_path = tmp_path / "loans.csv"
+    first_path.write_text("id\n1\n")
+    second_path.write_text("amount\n100\n")
+    service = CatalogService()
+    added = service.add_paths((first_path, second_path)).added
+    window = MainWindow(catalog_service=service)
+    qtbot.addWidget(window)
+
+    window._on_schema_result(SchemaResult(added[0].id, (ColumnSchema("id", "BIGINT"),)))
+    window._on_schema_result(SchemaResult(added[1].id, (ColumnSchema("amount", "DOUBLE"),)))
+
+    selector = window.schema_panel.dataset_selector
+    selector.setCurrentText(added[0].alias)
+    assert window.schema_panel.cell_text(0, 0) == "id"
+    selector.setCurrentText(added[1].alias)
+    assert window.schema_panel.cell_text(0, 0) == "amount"
 
 
 def test_main_window_translation_tab_transpiles_current_editor_text(qtbot) -> None:

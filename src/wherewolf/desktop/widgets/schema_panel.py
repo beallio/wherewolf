@@ -1,8 +1,9 @@
 """Widget for displaying schema columns, data types, inspection states, and errors."""
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QSignalBlocker, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QHeaderView,
     QLabel,
     QTableWidget,
@@ -29,10 +30,17 @@ class SchemaPanel(QWidget):
 
         self._entry: CatalogEntry | None = None
         self._schema_result: SchemaResult | None = None
+        self._entries_by_alias: dict[str, CatalogEntry] = {}
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
+
+        self.dataset_selector = QComboBox(self)
+        self.dataset_selector.setObjectName("schema_dataset_selector")
+        self.dataset_selector.setToolTip("Choose the dataset whose schema is displayed.")
+        self.dataset_selector.currentTextChanged.connect(self._on_dataset_selected)
+        layout.addWidget(self.dataset_selector)
 
         self._status_label = QLabel("No table selected", self)
         self._status_label.setWordWrap(True)
@@ -57,6 +65,16 @@ class SchemaPanel(QWidget):
         self._entry = entry
         self._schema_result = None
         self._update_view()
+
+    def set_entries(self, entries: tuple[CatalogEntry, ...], selected_alias: str | None) -> None:
+        """Populate the dataset selector and display the requested catalog entry."""
+        self._entries_by_alias = {entry.alias: entry for entry in entries}
+        with QSignalBlocker(self.dataset_selector):
+            self.dataset_selector.clear()
+            self.dataset_selector.addItems(self._entries_by_alias)
+            if selected_alias is not None:
+                self.dataset_selector.setCurrentText(selected_alias)
+        self.set_entry(self._entries_by_alias.get(self.dataset_selector.currentText()))
 
     def set_schema_result(self, result: SchemaResult) -> None:
         """Update display using a SchemaResult directly."""
@@ -108,6 +126,9 @@ class SchemaPanel(QWidget):
 
     def _on_item_double_clicked(self, item: QTableWidgetItem) -> None:
         self.emit_selected_columns_insert()
+
+    def _on_dataset_selected(self, alias: str) -> None:
+        self.set_entry(self._entries_by_alias.get(alias))
 
     def _update_view(self) -> None:
         columns: tuple[ColumnSchema, ...] | None = None
