@@ -1,7 +1,14 @@
 """Widget for displaying execution errors, diagnostics, and system messages with severity roles."""
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (
+    QListWidget,
+    QListWidgetItem,
+    QPlainTextEdit,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from wherewolf.domain.enums import ExecutionStatus
 from wherewolf.domain.models import QueryResult, SqlDiagnostic
@@ -19,6 +26,18 @@ class MessagesPanel(QWidget):
         self._list_widget = QListWidget(self)
         self._list_widget.setObjectName("messages_list")
         layout.addWidget(self._list_widget)
+        self.error_details_toggle = QToolButton(self)
+        self.error_details_toggle.setObjectName("error_details_toggle")
+        self.error_details_toggle.setText("Show raw error details")
+        self.error_details_toggle.setCheckable(True)
+        self.error_details_toggle.setVisible(False)
+        self.error_details = QPlainTextEdit(self)
+        self.error_details.setObjectName("error_details")
+        self.error_details.setReadOnly(True)
+        self.error_details.setVisible(False)
+        self.error_details_toggle.toggled.connect(self.error_details.setVisible)
+        layout.addWidget(self.error_details_toggle)
+        layout.addWidget(self.error_details)
 
     def add_diagnostic(self, diagnostic: SqlDiagnostic) -> None:
         """Add a SQL diagnostic message to the panel."""
@@ -38,7 +57,10 @@ class MessagesPanel(QWidget):
             self.clear_messages()
         if result.status is ExecutionStatus.FAILED:
             msg = f"Error ({result.error_type}): {result.error_message}"
-            self.add_message(msg, severity="error", detail=result.error_detail)
+            self.add_message(msg, severity="error")
+            self.error_details_toggle.setVisible(bool(result.error_detail))
+            self.error_details_toggle.setChecked(False)
+            self.error_details.setPlainText(result.error_detail or "")
         elif result.status is ExecutionStatus.CANCELLED:
             self.add_message("Query execution cancelled.", severity="warning")
         elif result.status is ExecutionStatus.SUCCEEDED:
@@ -47,6 +69,9 @@ class MessagesPanel(QWidget):
     def clear_messages(self) -> None:
         """Clear all messages from the panel."""
         self._list_widget.clear()
+        self.error_details_toggle.setChecked(False)
+        self.error_details_toggle.setVisible(False)
+        self.error_details.clear()
 
     def message_count(self) -> int:
         """Return total message count."""

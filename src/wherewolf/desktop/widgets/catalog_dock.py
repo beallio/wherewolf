@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 from PyQt6.QtCore import QMimeData, QPoint, Qt, QUrl, pyqtSignal
@@ -60,6 +62,7 @@ class CatalogDock(QWidget):
         self._copy_alias_action = QAction("Copy Alias", self)
         self._copy_path_action = QAction("Copy File Path", self)
         self._insert_alias_action = QAction("Insert Alias at Editor Cursor", self)
+        self._reveal_action = QAction("Reveal in File Manager", self)
 
         self._rename_action.triggered.connect(self._rename_selected_alias)
         self._remove_action.triggered.connect(self._remove_selected)
@@ -67,6 +70,7 @@ class CatalogDock(QWidget):
         self._copy_alias_action.triggered.connect(self._copy_alias)
         self._copy_path_action.triggered.connect(self._copy_path)
         self._insert_alias_action.triggered.connect(self._insert_alias)
+        self._reveal_action.triggered.connect(self._reveal_selected)
 
         self.setAcceptDrops(True)
 
@@ -171,6 +175,7 @@ class CatalogDock(QWidget):
         self._copy_alias_action.setEnabled(selection is not None)
         self._copy_path_action.setEnabled(selection is not None)
         self._insert_alias_action.setEnabled(selection is not None)
+        self._reveal_action.setEnabled(selection is not None)
 
         menu.addAction(self._rename_action)
         menu.addAction(self._remove_action)
@@ -178,6 +183,7 @@ class CatalogDock(QWidget):
         menu.addSeparator()
         menu.addAction(self._copy_alias_action)
         menu.addAction(self._copy_path_action)
+        menu.addAction(self._reveal_action)
         menu.addSeparator()
         menu.addAction(self._insert_alias_action)
 
@@ -249,6 +255,22 @@ class CatalogDock(QWidget):
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(str(entry.path))
+
+    @staticmethod
+    def reveal_command(path: Path) -> list[str]:
+        """Return the platform-native command without launching it."""
+        if sys.platform == "darwin":
+            return ["open", "-R", str(path)]
+        if sys.platform == "win32":
+            return ["explorer", "/select,", str(path)]
+        return ["xdg-open", str(path.parent)]
+
+    def _reveal_selected(self) -> None:
+        selection = self._selected_entry()
+        if selection is None:
+            return
+        entry, _ = selection
+        subprocess.Popen(self.reveal_command(entry.path))  # fixed platform command
 
     def _insert_alias(self) -> None:
         selection = self._selected_entry()

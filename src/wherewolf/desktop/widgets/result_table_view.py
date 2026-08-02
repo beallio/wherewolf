@@ -18,6 +18,7 @@ class ResultTableView(QTableView):
     insert_header_requested = pyqtSignal(str)
     apply_query_order_requested = pyqtSignal(str, str)
     local_sort_changed = pyqtSignal(bool)
+    frame_changed = pyqtSignal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -45,9 +46,33 @@ class ResultTableView(QTableView):
         self._source_model.set_frame(frame)
         self._proxy_model.sort(-1, Qt.SortOrder.AscendingOrder)
         self.local_sort_changed.emit(False)
+        self.frame_changed.emit(self.has_result())
 
     def frame(self) -> pl.DataFrame:
         return self._source_model.frame()
+
+    def selection_for_export(self) -> tuple[list[tuple[int, int]], list[int]]:
+        """Return selected source cells and the displayed visual column order."""
+        selection_model = self.selectionModel()
+        header = self.horizontalHeader()
+        if selection_model is None or header is None:
+            return [], []
+        column_order = [
+            logical
+            for _visual, logical in sorted(
+                (header.visualIndex(logical), logical)
+                for logical in range(self._proxy_model.columnCount())
+                if not self.isColumnHidden(logical)
+            )
+        ]
+        selected_cells: list[tuple[int, int]] = []
+        for index in selection_model.selectedIndexes():
+            if not index.isValid() or self.isColumnHidden(index.column()):
+                continue
+            source_index = self._proxy_model.mapToSource(index)
+            if source_index.isValid():
+                selected_cells.append((source_index.row(), header.visualIndex(index.column())))
+        return selected_cells, column_order
 
     def has_result(self) -> bool:
         df = self._source_model.frame()

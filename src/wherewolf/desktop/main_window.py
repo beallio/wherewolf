@@ -2,19 +2,27 @@
 
 from __future__ import annotations
 
+import webbrowser
+from importlib.metadata import version
 from pathlib import Path
 from typing import cast
 
 from PyQt6.QtCore import QByteArray, Qt
-from PyQt6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStandardItemModel
+from PyQt6.QtGui import QAction, QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStandardItemModel
 from PyQt6.QtWidgets import (
+    QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QDockWidget,
+    QFormLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
+    QPushButton,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -53,7 +61,60 @@ from wherewolf.services import (
 )
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
+from wherewolf.services.preview_export import write_selection
 from wherewolf.storage.history import HistoryManager
+
+
+class FindReplaceDialog(QDialog):
+    """Small non-modal bridge from Edit commands to the editor's existing helpers."""
+
+    def __init__(self, editor: SqlEditor, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Find / Replace")
+        self._editor = editor
+        layout = QFormLayout(self)
+        self.find_input = QLineEdit(self)
+        self.replace_input = QLineEdit(self)
+        self.find_next_button = QPushButton("Find Next", self)
+        self.replace_next_button = QPushButton("Replace Next", self)
+        self.replace_all_button = QPushButton("Replace All", self)
+        layout.addRow("Find", self.find_input)
+        layout.addRow("Replace", self.replace_input)
+        layout.addRow(self.find_next_button, self.replace_next_button)
+        layout.addRow(self.replace_all_button)
+        self.find_next_button.clicked.connect(lambda: editor.find_text(self.find_input.text()))
+        self.replace_next_button.clicked.connect(
+            lambda: editor.replace_next(self.find_input.text(), self.replace_input.text())
+        )
+        self.replace_all_button.clicked.connect(
+            lambda: editor.replace_all(self.find_input.text(), self.replace_input.text())
+        )
+
+
+class PreferencesDialog(QDialog):
+    """Persisted desktop editor/completion preferences."""
+
+    def __init__(self, settings_service: SettingsService, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Preferences")
+        layout = QFormLayout(self)
+        self.font_size = QSpinBox(self)
+        self.font_size.setRange(6, 64)
+        self.font_size.setValue(settings_service.restore_editor_font_size())
+        self.completion_enabled = QCheckBox("Enable completion", self)
+        self.completion_enabled.setChecked(settings_service.restore_completion_enabled())
+        self.completion_threshold = QSpinBox(self)
+        self.completion_threshold.setRange(1, 20)
+        self.completion_threshold.setValue(settings_service.restore_completion_threshold())
+        layout.addRow("Editor font size", self.font_size)
+        layout.addRow(self.completion_enabled)
+        layout.addRow("Completion threshold", self.completion_threshold)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
 
 
 class MainWindow(QMainWindow):
@@ -88,6 +149,7 @@ class MainWindow(QMainWindow):
         self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
         self._schema_workers: list[SchemaWorker] = []
+        self.setWindowTitle(f"Wherewolf {version('wherewolf')}")
 
         self.main_toolbar = self._build_toolbar()
         self._catalog_dock_widget = self._build_catalog_dock()
@@ -102,6 +164,7 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._connect_actions()
         self._restore_state()
+        self._update_catalog_affordances()
 
     @property
     def catalog(self) -> CatalogDock:
@@ -149,6 +212,7 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.desktop_actions.add_datasets)
         toolbar.addAction(self.desktop_actions.export_preview)
         toolbar.addAction(self.desktop_actions.export_full)
+        toolbar.addAction(self.desktop_actions.export_selection)
         self.engine_selector = QComboBox(toolbar)
         self.engine_selector.setObjectName("engine_selector")
         model = cast(QStandardItemModel, self.engine_selector.model())
@@ -231,6 +295,7 @@ class MainWindow(QMainWindow):
         self.desktop_actions.cancel.triggered.connect(self._on_cancel_triggered)
         self.desktop_actions.export_preview.triggered.connect(lambda: self._start_export(False))
         self.desktop_actions.export_full.triggered.connect(lambda: self._start_export(True))
+        self.desktop_actions.export_selection.triggered.connect(self._export_selection)
 
         self.query_controller.status_changed.connect(self._on_query_status_changed)
         self.query_controller.result_ready.connect(self._on_query_result_ready)
@@ -274,7 +339,7 @@ class MainWindow(QMainWindow):
             else:
                 self._show_status("Executing query...")
         else:
-            self.desktop_actions.run.setEnabled(True)
+            self.desktop_actions.run.setEnabled(bool(self._catalog_service.entries))
             self.desktop_actions.cancel.setEnabled(False)
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
@@ -282,10 +347,14 @@ class MainWindow(QMainWindow):
         can_export = result.status is ExecutionStatus.SUCCEEDED and result.frame is not None
         self.desktop_actions.export_preview.setEnabled(can_export)
         self.desktop_actions.export_full.setEnabled(can_export)
+        self.desktop_actions.export_selection.setEnabled(can_export)
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
             self.result_table_view.set_frame(result.frame)
         else:
             self.result_table_view.set_frame(None)
+        self.result_truncation_notice.setVisible(
+            result.status is ExecutionStatus.SUCCEEDED and result.truncated
+        )
 
         self.messages_panel.show_query_result(result)
 
@@ -343,10 +412,29 @@ class MainWindow(QMainWindow):
                 full_export,
             )
 
+    def _export_selection(self) -> None:
+        if not self.result_table_view.has_result():
+            return
+        frame = self.result_table_view.frame()
+        selected_cells, column_order = self.result_table_view.selection_for_export()
+        if not selected_cells:
+            self._show_status("Select result cells to export", 5000)
+            return
+        choose_export_path = getattr(self._file_dialog_service, "choose_export_path", None)
+        export_format = self.export_format_selector.currentData()
+        if choose_export_path is None or not isinstance(export_format, ExportFormat):
+            return
+        destination = choose_export_path(None, export_format, self)
+        if destination is None:
+            return
+        write_selection(frame, selected_cells, column_order, destination, export_format)
+        self._show_status(f"Exported selection to {destination}")
+
     def _on_export_started(self) -> None:
         self.desktop_actions.cancel.setEnabled(True)
         self.desktop_actions.export_preview.setEnabled(False)
         self.desktop_actions.export_full.setEnabled(False)
+        self.desktop_actions.export_selection.setEnabled(False)
         self._show_status("Exporting results...")
 
     def _on_export_result(self, result: ExportResult) -> None:
@@ -354,6 +442,7 @@ class MainWindow(QMainWindow):
         can_export = self._last_result is not None and self._last_result.frame is not None
         self.desktop_actions.export_preview.setEnabled(can_export)
         self.desktop_actions.export_full.setEnabled(can_export)
+        self.desktop_actions.export_selection.setEnabled(can_export)
         if result.succeeded:
             message = f"Exported results to {result.destination}"
             if result.warnings:
@@ -366,10 +455,16 @@ class MainWindow(QMainWindow):
             self._show_status(f"Export failed: {result.error_message}")
 
     def _on_add_datasets(self) -> None:
-        paths = self._file_dialog_service.choose_dataset_files(
-            default_directory=self._settings_service.restore_last_dataset_directory(),
-            parent=self,
-        )
+        chooser = self._file_dialog_service.choose_dataset_files
+        default_directory = self._settings_service.restore_last_dataset_directory()
+        if self.show_hidden_files_action.isChecked() and isinstance(
+            self._file_dialog_service, QtFileDialogService
+        ):
+            paths = self._file_dialog_service.choose_dataset_files(
+                default_directory=default_directory, parent=self, show_hidden=True
+            )
+        else:
+            paths = chooser(default_directory=default_directory, parent=self)
 
         if not paths:
             return
@@ -390,6 +485,8 @@ class MainWindow(QMainWindow):
                         source_format=entry.source_format,
                     )
                 )
+            self._show_status(f"Added `{first.alias}` to catalog.")
+            self._update_catalog_affordances()
         if result.warnings:
             self._show_status("\n".join(sorted(set(result.warnings))))
 
@@ -423,9 +520,7 @@ class MainWindow(QMainWindow):
         )
         editor.setObjectName("query_editor")
         editor.set_catalog(self._catalog_service.entries)
-        editor.diagnostics_reported.connect(
-            lambda payload: self._show_status(payload[0].message if payload else "", 5000)
-        )
+        editor.diagnostics_reported.connect(self._on_editor_diagnostics)
 
         results = QTabWidget(self)
         results.setObjectName("results_tabs")
@@ -434,6 +529,9 @@ class MainWindow(QMainWindow):
         self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
         self.result_table_view.apply_query_order_requested.connect(self._on_apply_query_order)
         self.result_table_view.local_sort_changed.connect(self._set_local_sort_notice_visible)
+        self.result_table_view.frame_changed.connect(
+            self.desktop_actions.export_selection.setEnabled
+        )
         results_page = QWidget(results)
         results_layout = QVBoxLayout(results_page)
         results_layout.setContentsMargins(0, 0, 0, 0)
@@ -441,6 +539,22 @@ class MainWindow(QMainWindow):
         self.result_sort_notice.setObjectName("result_sort_notice")
         self.result_sort_notice.setVisible(False)
         results_layout.addWidget(self.result_sort_notice)
+        self.result_truncation_notice = QLabel(
+            "Preview is truncated at the selected row limit. Export Full Results for all rows.",
+            results_page,
+        )
+        self.result_truncation_notice.setObjectName("result_truncation_notice")
+        self.result_truncation_notice.setVisible(False)
+        results_layout.addWidget(self.result_truncation_notice)
+        self.preview_filter_input = QLineEdit(results_page)
+        self.preview_filter_input.setObjectName("preview_filter_input")
+        self.preview_filter_input.setPlaceholderText("Filter preview rows")
+        self.clear_preview_filter_action = QAction("Clear Preview Filter", self)
+        self.clear_preview_filter_action.triggered.connect(self.preview_filter_input.clear)
+        self.preview_filter_input.textChanged.connect(
+            self.result_table_view.proxy_model().set_filter_text
+        )
+        results_layout.addWidget(self.preview_filter_input)
         results_layout.addWidget(self.result_table_view)
         results.addTab(results_page, "Results")
         self.messages_panel = MessagesPanel(self)
@@ -466,7 +580,12 @@ class MainWindow(QMainWindow):
         self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
         self.editor_theme_selector.currentTextChanged.connect(editor.set_theme)
         editor.textChanged.connect(self._refresh_translation)
+        editor.textChanged.connect(self._update_catalog_affordances)
         results.addTab(translation_page, "Translation")
+
+        self.empty_catalog_banner = QLabel("Please add a dataset to begin.", results)
+        self.empty_catalog_banner.setObjectName("empty_catalog_banner")
+        results_layout.insertWidget(0, self.empty_catalog_banner)
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
@@ -560,6 +679,12 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(cut)
         edit_menu.addAction(copy)
         edit_menu.addAction(paste)
+        self.select_all_action = QAction("Select All", self)
+        self.select_all_action.triggered.connect(self.editor.selectAll)
+        self.find_replace_action = QAction("Find / Replace…", self)
+        self.find_replace_action.triggered.connect(self._show_find_replace)
+        edit_menu.addAction(self.select_all_action)
+        edit_menu.addAction(self.find_replace_action)
         edit_menu.addSeparator()
         edit_menu.addAction(toggle_comment)
 
@@ -573,12 +698,27 @@ class MainWindow(QMainWindow):
         view_menu = cast(QMenu, menu_bar.addMenu("View"))
         view_menu.setObjectName("view_menu")
         view_menu.addAction(self.desktop_actions.reset_layout)
+        view_menu.addAction(self.clear_preview_filter_action)
+        self.show_hidden_files_action = QAction("Show Hidden Files", self)
+        self.show_hidden_files_action.setCheckable(True)
+        view_menu.addAction(self.show_hidden_files_action)
+        self.preferences_action = QAction("Preferences…", self)
+        self.preferences_action.triggered.connect(self._show_preferences)
+        view_menu.addAction(self.preferences_action)
 
         help_menu = cast(QMenu, menu_bar.addMenu("Help"))
         help_menu.setObjectName("help_menu")
         self.about_action = help_menu.addAction("About")
         assert self.about_action is not None
         self.about_action.triggered.connect(self._show_about)
+        self.documentation_action = help_menu.addAction("Documentation")
+        assert self.documentation_action is not None
+        self.documentation_action.triggered.connect(
+            lambda: webbrowser.open("https://github.com/beallio/wherewolf#readme")
+        )
+        self.licenses_action = help_menu.addAction("Open-Source Licenses")
+        assert self.licenses_action is not None
+        self.licenses_action.triggered.connect(self._show_licenses)
 
         self.file_menu = file_menu
         self.edit_menu = edit_menu
@@ -593,6 +733,37 @@ class MainWindow(QMainWindow):
             "Wherewolf is licensed under GPL-3.0-only.\n\n"
             "Pre-0.6 MIT terms are retained in LICENSES/MIT-pre-0.6.txt.",
         )
+
+    def _show_licenses(self) -> None:
+        QMessageBox.about(
+            self, "Open-Source Licenses", "See LICENSE and LICENSES in the application source."
+        )
+
+    def _show_find_replace(self) -> None:
+        self.find_replace_dialog = FindReplaceDialog(self.editor, self)
+        self.find_replace_dialog.show()
+
+    def _show_preferences(self) -> None:
+        self.preferences_dialog = PreferencesDialog(self._settings_service, self)
+        self.preferences_dialog.accepted.connect(self._apply_preferences)
+        self.preferences_dialog.show()
+
+    def _apply_preferences(self) -> None:
+        dialog = self.preferences_dialog
+        self._settings_service.save_completion_enabled(dialog.completion_enabled.isChecked())
+        self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
+        self.editor.set_font_size(dialog.font_size.value())
+
+    def _on_editor_diagnostics(self, payload: tuple) -> None:
+        for diagnostic in payload:
+            self.messages_panel.add_diagnostic(diagnostic)
+        if payload:
+            self._show_status(payload[0].message, 5000)
+
+    def _update_catalog_affordances(self) -> None:
+        has_datasets = bool(self._catalog_service.entries)
+        self.desktop_actions.run.setEnabled(has_datasets)
+        self.empty_catalog_banner.setVisible(not has_datasets)
 
     def _restore_state(self) -> None:
         geometry = self._settings_service.restore_window_geometry()

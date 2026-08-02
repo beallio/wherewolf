@@ -21,6 +21,7 @@ class DesktopActions:
     clear_history: QAction
     export_preview: QAction
     export_full: QAction
+    export_selection: QAction
 
 
 def build_actions(parent: QWidget | None = None) -> DesktopActions:
@@ -56,6 +57,8 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     export_preview.setEnabled(False)
     export_full = QAction("Export Full Results…", parent)
     export_full.setEnabled(False)
+    export_selection = QAction("Export Selection…", parent)
+    export_selection.setEnabled(False)
 
     return DesktopActions(
         run=run,
@@ -67,4 +70,5 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
         clear_history=clear_history,
         export_preview=export_preview,
         export_full=export_full,
+        export_selection=export_selection,
     )

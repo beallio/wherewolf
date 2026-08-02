@@ -132,6 +132,9 @@ class SqlEditor(QsciScintilla):
             dialect="duckdb",
             catalog=self._catalog,
         )
+        call_tip = self._completion_service.call_tip(ctx)
+        if call_tip:
+            self.SendScintilla(self.SCI_CALLTIPSHOW, cursor_offset, call_tip.encode())
         self._completion_adapter.request_completion(ctx)
 
     def _on_text_changed_completion(self) -> None:

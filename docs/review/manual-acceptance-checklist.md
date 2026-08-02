@@ -44,6 +44,13 @@ expected result.
     only the SQL presentation without dropping statements or making the UI unresponsive.
   - Result / issue: _________________________________________________________________
 
+- [ ] Platform: __________  Date: __________  Call tips, Find/Replace, and Preferences
+  - Steps: In the editor, place the cursor after a known SQL function's opening parenthesis, use
+    **Edit → Find / Replace…**, then change font and completion options in **View → Preferences…**.
+  - Expected: A native call tip is readable, replacements affect the intended text, and saved
+    preferences take effect and survive restart.
+  - Result / issue: _________________________________________________________________
+
 - [ ] Platform: __________  Date: __________  Desktop parity controls and editor appearance
   - Steps: Inspect **Edit** for Undo/Redo/Cut/Copy/Paste/Toggle Comment. Add a dataset and open
     the Schema dock. Enter SQL, open the Translation tab, select an input dialect and a target
@@ -91,6 +98,13 @@ expected result.
   - Expected: Preview export contains only the displayed bounded rows. Full export re-executes the
     query and contains all rows; the application remains responsive and reports success or a
     concrete error. Do not infer full-export success from the preview file.
+  - Result / issue: _________________________________________________________________
+
+- [ ] Platform: __________  Date: __________  Preview filter, selection export, and catalog reveal
+  - Steps: Filter a populated preview, clear the filter, select moved columns and export the
+    selection, then choose **Reveal in File Manager** for a catalog entry.
+  - Expected: Filtering is reversible, export follows the visible column order, and the native
+    file manager opens the selected dataset or its containing folder.
   - Result / issue: _________________________________________________________________
 
 - [ ] Platform: __________  Date: __________  Restart, geometry, layout, and history
