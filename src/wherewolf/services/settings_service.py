@@ -21,6 +21,8 @@ class SettingsService:
 
     DEFAULT_COMPLETION_THRESHOLD: Final = 2
     DEFAULT_COMPLETION_ENABLED: Final = True
+    DEFAULT_PREVIEW_LIMIT: Final = 100
+    DEFAULT_EDITOR_THEME: Final = "Dark"
 
     def __init__(self, settings: QSettings | None = None):
         self._settings = settings or QSettings(self.ORGANIZATION, self.APPLICATION)
@@ -53,6 +55,14 @@ class SettingsService:
     def _completion_enabled_key(schema_version: str) -> str:
         return f"{schema_version}/completion/enabled"
 
+    @staticmethod
+    def _preview_limit_key(schema_version: str) -> str:
+        return f"{schema_version}/preview/limit"
+
+    @staticmethod
+    def _editor_theme_key(schema_version: str) -> str:
+        return f"{schema_version}/editor/theme"
+
     @property
     def namespace_prefix(self) -> str:
         return f"{self.SCHEMA_VERSION}"
@@ -84,6 +94,14 @@ class SettingsService:
     @property
     def completion_enabled_key(self) -> str:
         return self._completion_enabled_key(self.namespace_prefix)
+
+    @property
+    def preview_limit_key(self) -> str:
+        return self._preview_limit_key(self.namespace_prefix)
+
+    @property
+    def editor_theme_key(self) -> str:
+        return self._editor_theme_key(self.namespace_prefix)
 
     def restore_window_geometry(self) -> bytes:
         return self._read_bytes(self.window_geometry_key, b"")
@@ -143,6 +161,22 @@ class SettingsService:
 
     def save_completion_enabled(self, enabled: bool) -> None:
         self._settings.setValue(self.completion_enabled_key, bool(enabled))
+
+    def restore_preview_limit(self) -> int:
+        value = self._settings.value(self.preview_limit_key, self.DEFAULT_PREVIEW_LIMIT)
+        if not isinstance(value, int) or isinstance(value, bool) or not 10 <= value <= 1000:
+            return self.DEFAULT_PREVIEW_LIMIT
+        return value
+
+    def save_preview_limit(self, limit: int) -> None:
+        self._settings.setValue(self.preview_limit_key, max(10, min(int(limit), 1000)))
+
+    def restore_editor_theme(self) -> str:
+        value = self._settings.value(self.editor_theme_key, self.DEFAULT_EDITOR_THEME)
+        return value if isinstance(value, str) and value else self.DEFAULT_EDITOR_THEME
+
+    def save_editor_theme(self, theme: str) -> None:
+        self._settings.setValue(self.editor_theme_key, str(theme))
 
     def _read_bytes(self, key: str, default: bytes) -> bytes:
         value = self._settings.value(key, default)

@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wherewolf.desktop import main_window
+from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.domain import (
     CatalogBinding,
@@ -29,7 +30,7 @@ from wherewolf.domain import (
     QueryResult,
     SourceFormat,
 )
-from wherewolf.services import SettingsService
+from wherewolf.services import ExportFormat, SettingsService
 from wherewolf.storage import HistoryManager
 
 
@@ -148,6 +149,158 @@ def test_main_window_query_actions_initial_state_and_shared_instances(qtbot) -> 
 
     editor_context = window.editor._setup_context_menu
     assert editor_context is not None
+
+
+def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
+    """The menubar must expose the same actions the editor uses in its context menu."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    actions = [action for action in window.edit_menu.actions() if not action.isSeparator()]
+
+    assert actions
+    assert [action.text() for action in actions] == [
+        "Undo",
+        "Redo",
+        "Cut",
+        "Copy",
+        "Paste",
+        "Toggle Comment",
+    ]
+    assert actions == list(window.editor.edit_actions)
+
+
+def test_main_window_schema_panel_shows_schema_after_adding_dataset(tmp_path: Path, qtbot) -> None:
+    csv_file = tmp_path / "people.csv"
+    csv_file.write_text("id,name\n1,Ada\n")
+    window = MainWindow(file_dialog_service=FakeFileDialogService(paths=(csv_file,)))
+    qtbot.addWidget(window)
+
+    window.desktop_actions.add_datasets.trigger()
+
+    qtbot.waitUntil(lambda: window.schema_panel.column_count_rows() == 2)
+    assert [window.schema_panel.cell_text(row, 0) for row in range(2)] == ["id", "name"]
+    assert [window.schema_panel.cell_text(row, 1) for row in range(2)] == ["BIGINT", "VARCHAR"]
+
+
+def test_main_window_translation_tab_transpiles_current_editor_text(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    target_index = window.translation_target_selector.findData("spark")
+    assert target_index >= 0
+    window.translation_target_selector.setCurrentIndex(target_index)
+    window.editor.setText("SELECT IFNULL(value, 0) FROM users")
+
+    assert window.translation_panel.translated_text() == "SELECT\n  COALESCE(value, 0)\nFROM users"
+
+
+def test_main_window_transpiles_selected_input_dialect_before_execution(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", submitted.append)
+    window.editor.setText("SELECT TOP 10 * FROM users")
+
+    source_index = window.input_dialect_selector.findData("tsql")
+    assert source_index >= 0
+    window.input_dialect_selector.setCurrentIndex(source_index)
+    window.desktop_actions.run.trigger()
+
+    assert len(submitted) == 1
+    assert submitted[0].source_dialect == "tsql"
+    assert submitted[0].executable_sql != submitted[0].original_sql
+    assert "LIMIT 10" in submitted[0].executable_sql
+
+
+def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "preferences")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", submitted.append)
+    window.preview_limit_selector.setValue(250)
+    window.editor_theme_selector.setCurrentText("Light")
+    window.editor.setText("SELECT 1")
+
+    window.desktop_actions.run.trigger()
+
+    assert submitted[0].preview_limit == 250
+    assert settings.restore_preview_limit() == 250
+    assert settings.restore_editor_theme() == "Light"
+
+
+def test_main_window_fills_starter_query_for_first_dataset_when_editor_is_empty(
+    tmp_path: Path, qtbot
+) -> None:
+    csv_file = tmp_path / "select.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(file_dialog_service=FakeFileDialogService(paths=(csv_file,)))
+    qtbot.addWidget(window)
+
+    window.desktop_actions.add_datasets.trigger()
+
+    assert window.editor.text() == 'SELECT * FROM "select" LIMIT 10'
+
+
+def test_main_window_never_overwrites_existing_editor_text_when_adding_dataset(
+    tmp_path: Path, qtbot
+) -> None:
+    csv_file = tmp_path / "people.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(file_dialog_service=FakeFileDialogService(paths=(csv_file,)))
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT user_query")
+
+    window.desktop_actions.add_datasets.trigger()
+
+    assert window.editor.text() == "SELECT user_query"
+
+
+@pytest.mark.parametrize("export_format", (ExportFormat.PARQUET, ExportFormat.XLSX))
+def test_main_window_exports_selected_format_to_readable_artifact(
+    tmp_path: Path, qtbot, export_format: ExportFormat
+) -> None:
+    destination = tmp_path / "result"
+    window = MainWindow(
+        file_dialog_service=FakeFileDialogService(paths=(), export_path=destination)
+    )
+    qtbot.addWidget(window)
+    request_id = uuid4()
+    request = ExecutionRequest(
+        request_id=request_id,
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=100,
+        submitted_at=datetime.now(UTC),
+    )
+    result = QueryResult(
+        request_id=request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"id": [1, 2]}),
+        execution_seconds=0.01,
+        preview_row_count=2,
+        total_row_count=2,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(result, request)
+
+    format_index = window.export_format_selector.findData(export_format)
+    assert format_index >= 0
+    window.export_format_selector.setCurrentIndex(format_index)
+    with qtbot.waitSignal(window.export_controller.result_ready, timeout=3000):
+        window.desktop_actions.export_preview.trigger()
+
+    artifact = destination.with_suffix(f".{export_format.value}")
+    assert artifact.exists()
+    reader = pl.read_parquet if export_format is ExportFormat.PARQUET else pl.read_excel
+    assert reader(artifact).to_dicts() == [{"id": 1}, {"id": 2}]
 
 
 def test_format_action_is_shared_with_editor_context_action(qtbot) -> None:

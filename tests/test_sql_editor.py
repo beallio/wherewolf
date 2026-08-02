@@ -1,4 +1,5 @@
 from PyQt6.Qsci import QsciLexerSQL
+from PyQt6.QtGui import QColor
 
 from wherewolf.desktop.widgets import SqlEditor
 from wherewolf.services import SqlCompletionService, StatementSelection, StatementService
@@ -37,6 +38,46 @@ def test_sql_editor_assigns_lexer(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)
     assert isinstance(editor.lexer(), QsciLexerSQL)
+
+
+def _relative_luminance(colour: QColor) -> float:
+    def linear(channel: int) -> float:
+        value = channel / 255
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+    return (
+        0.2126 * linear(colour.red())
+        + 0.7152 * linear(colour.green())
+        + 0.0722 * linear(colour.blue())
+    )
+
+
+def _contrast_ratio(first: QColor, second: QColor) -> float:
+    first_luminance = _relative_luminance(first)
+    second_luminance = _relative_luminance(second)
+    lighter, darker = sorted((first_luminance, second_luminance), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_sql_editor_text_lexer_styles_contrast_with_caret_line(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    lexer = editor.lexer()
+    assert isinstance(lexer, QsciLexerSQL)
+
+    caret_line = editor.caret_line_background
+    text_styles = (
+        QsciLexerSQL.Default,
+        QsciLexerSQL.Identifier,
+        QsciLexerSQL.Operator,
+        QsciLexerSQL.Keyword,
+        QsciLexerSQL.Number,
+        QsciLexerSQL.SingleQuotedString,
+    )
+
+    contrasts = {style: _contrast_ratio(lexer.color(style), caret_line) for style in text_styles}
+
+    assert all(ratio >= 4.5 for ratio in contrasts.values()), contrasts
 
 
 def test_sql_editor_line_margin_and_features_configured(qtbot) -> None:

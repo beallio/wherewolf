@@ -44,6 +44,15 @@ expected result.
     only the SQL presentation without dropping statements or making the UI unresponsive.
   - Result / issue: _________________________________________________________________
 
+- [ ] Platform: __________  Date: __________  Desktop parity controls and editor appearance
+  - Steps: Inspect **Edit** for Undo/Redo/Cut/Copy/Paste/Toggle Comment. Add a dataset and open
+    the Schema dock. Enter SQL, open the Translation tab, select an input dialect and a target
+    dialect, change Preview Size and Editor Theme, then run and export as CSV, Excel, and Parquet.
+  - Expected: All controls are visible and legible in the native palette; schema/translation content
+    is usable; source SQL is transpiled before execution; each selected export format produces the
+    requested artifact; the starter query appears only for an empty editor after the first dataset.
+  - Result / issue: _________________________________________________________________
+
 - [ ] Platform: __________  Date: __________  Query responsiveness and cancellation
   - Steps: Run a query that takes long enough to interact with the app while it is active. Switch
     docks, select editor text, then choose **Cancel** or press **Ctrl+.**.

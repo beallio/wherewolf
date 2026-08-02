@@ -103,6 +103,16 @@ def test_settings_service_completion_threshold_and_enabled_round_trip(tmp_path: 
     assert service.restore_completion_enabled() is False
 
 
+def test_settings_service_preview_limit_and_editor_theme_round_trip(tmp_path: Path) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "editor-preferences"))
+
+    service.save_preview_limit(250)
+    service.save_editor_theme("Light")
+
+    assert service.restore_preview_limit() == 250
+    assert service.restore_editor_theme() == "Light"
+
+
 def test_settings_service_round_trips_every_persistent_setting(tmp_path: Path) -> None:
     service = SettingsService(_configure_qsettings_path(tmp_path / "all-round-trips"))
 

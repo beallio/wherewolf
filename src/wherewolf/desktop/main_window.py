@@ -10,10 +10,12 @@ from PyQt6.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QFont, QStanda
 from PyQt6.QtWidgets import (
     QComboBox,
     QDockWidget,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMenu,
     QMessageBox,
+    QSpinBox,
     QSplitter,
     QStatusBar,
     QTabWidget,
@@ -21,7 +23,9 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from sqlglot.dialects import DIALECT_MODULE_NAMES
 
+from wherewolf.constants import DIALECT_MAPPING
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.export_controller import ExportController, ExportResult
@@ -29,6 +33,8 @@ from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
+from wherewolf.desktop.widgets.schema_panel import SchemaPanel
+from wherewolf.desktop.widgets.translation_panel import TranslationPanel
 from wherewolf.desktop.workers import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
@@ -45,6 +51,7 @@ from wherewolf.services import (
     ExportFormat,
     SettingsService,
 )
+from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.storage.history import HistoryManager
 
@@ -85,6 +92,7 @@ class MainWindow(QMainWindow):
         self.main_toolbar = self._build_toolbar()
         self._catalog_dock_widget = self._build_catalog_dock()
         self.dataset_catalog_dock = self._catalog_dock_widget
+        self._schema_dock_widget = self._build_schema_dock()
         self._history_dock_widget = self._build_history_dock()
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
@@ -108,6 +116,16 @@ class MainWindow(QMainWindow):
     @property
     def catalog_view(self) -> QDockWidget:
         return self._catalog_dock_widget
+
+    @property
+    def schema_panel(self) -> SchemaPanel:
+        widget = self._schema_dock_widget.widget()
+        assert isinstance(widget, SchemaPanel)
+        return widget
+
+    @property
+    def schema_dock(self) -> QDockWidget:
+        return self._schema_dock_widget
 
     @property
     def history_dock(self) -> HistoryDock:
@@ -144,6 +162,31 @@ class MainWindow(QMainWindow):
             assert item is not None
             item.setEnabled(descriptor.available)
         toolbar.addWidget(self.engine_selector)
+        self.input_dialect_selector = QComboBox(toolbar)
+        self.input_dialect_selector.setObjectName("input_dialect_selector")
+        for label, dialect in DIALECT_MAPPING.items():
+            self.input_dialect_selector.addItem(label, dialect)
+        toolbar.addWidget(self.input_dialect_selector)
+        self.export_format_selector = QComboBox(toolbar)
+        self.export_format_selector.setObjectName("export_format_selector")
+        for label, export_format in (
+            ("CSV", ExportFormat.CSV),
+            ("Excel", ExportFormat.XLSX),
+            ("Parquet", ExportFormat.PARQUET),
+        ):
+            self.export_format_selector.addItem(label, export_format)
+        toolbar.addWidget(self.export_format_selector)
+        self.preview_limit_selector = QSpinBox(toolbar)
+        self.preview_limit_selector.setObjectName("preview_limit_selector")
+        self.preview_limit_selector.setRange(10, 1000)
+        self.preview_limit_selector.setValue(self._settings_service.restore_preview_limit())
+        self.preview_limit_selector.valueChanged.connect(self._settings_service.save_preview_limit)
+        toolbar.addWidget(self.preview_limit_selector)
+        self.editor_theme_selector = QComboBox(toolbar)
+        self.editor_theme_selector.setObjectName("editor_theme_selector")
+        self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
+        self.editor_theme_selector.setCurrentText(self._settings_service.restore_editor_theme())
+        toolbar.addWidget(self.editor_theme_selector)
         return toolbar
 
     def _build_catalog_dock(self) -> QDockWidget:
@@ -168,6 +211,18 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         return dock
 
+    def _build_schema_dock(self) -> QDockWidget:
+        schema_panel = SchemaPanel(self)
+        schema_panel.insert_columns_requested.connect(self.editor_insert_text)
+
+        dock = QDockWidget("Schema", self)
+        dock.setObjectName("schema_dock")
+        dock.setWidget(schema_panel)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, dock)
+        self.tabifyDockWidget(self._catalog_dock_widget, dock)
+        self._catalog_dock_widget.raise_()
+        return dock
+
     def _connect_actions(self) -> None:
         self.desktop_actions.add_datasets.triggered.connect(self._on_add_datasets)
         self.desktop_actions.reset_layout.triggered.connect(self._reset_layout)
@@ -190,11 +245,15 @@ class MainWindow(QMainWindow):
 
         try:
             engine = cast(EngineKind, self.engine_selector.currentData())
+            source_dialect = self.input_dialect_selector.currentData()
+            if not isinstance(source_dialect, str):
+                raise TypeError("No input dialect is selected")
             request = ExecutionRequestBuilder.build(
                 sql=sql,
-                source_dialect="duckdb" if engine is EngineKind.DUCKDB else "spark",
+                source_dialect=source_dialect,
                 engine=engine,
                 catalog_service=self._catalog_service,
+                preview_limit=self.preview_limit_selector.value(),
             )
         except Exception as exc:  # noqa: BLE001  # Request creation boundary
             self._show_status(f"Failed to prepare query: {exc}", 5000)
@@ -270,13 +329,17 @@ class MainWindow(QMainWindow):
         if choose_export_path is None:
             self._show_status("Export dialog is unavailable", 5000)
             return
-        destination = choose_export_path(None, ExportFormat.CSV, self)
+        export_format = self.export_format_selector.currentData()
+        if not isinstance(export_format, ExportFormat):
+            self._show_status("No export format is selected", 5000)
+            return
+        destination = choose_export_path(None, export_format, self)
         if destination is not None:
             self.export_controller.export(
                 self._last_request,
                 self._last_result.frame,
                 destination,
-                ExportFormat.CSV,
+                export_format,
                 full_export,
             )
 
@@ -305,9 +368,12 @@ class MainWindow(QMainWindow):
         if not paths:
             return
 
+        was_empty_catalog = not self._catalog_service.entries
         result = self._catalog_service.add_paths(paths)
         if result.added:
             first = result.added[0]
+            if was_empty_catalog and not self.editor.text().strip():
+                self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)} LIMIT 10")
             self._settings_service.save_last_dataset_directory(first.path.parent)
             for entry in result.added:
                 self._queue_schema_work(
@@ -340,6 +406,7 @@ class MainWindow(QMainWindow):
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
         self.editor.set_catalog(self._catalog_service.entries)
+        self.schema_panel.set_schema_result(schema_result)
 
     def _build_central_area(self) -> QSplitter:
         editor = SqlEditor(
@@ -374,6 +441,27 @@ class MainWindow(QMainWindow):
         self.messages_panel.setObjectName("messages_panel")
         results.addTab(self.messages_panel, "Messages")
 
+        translation_page = QWidget(results)
+        translation_layout = QVBoxLayout(translation_page)
+        translation_controls = QHBoxLayout()
+        translation_controls.addWidget(QLabel("Target Dialect", translation_page))
+        self.translation_target_selector = QComboBox(translation_page)
+        self.translation_target_selector.setObjectName("translation_target_selector")
+        for dialect in sorted(DIALECT_MODULE_NAMES):
+            self.translation_target_selector.addItem(dialect, dialect)
+        spark_index = self.translation_target_selector.findData("spark")
+        self.translation_target_selector.setCurrentIndex(max(spark_index, 0))
+        translation_controls.addWidget(self.translation_target_selector)
+        translation_layout.addLayout(translation_controls)
+        self.translation_panel = TranslationPanel(translation_page)
+        self.translation_panel.setObjectName("translation_panel")
+        translation_layout.addWidget(self.translation_panel)
+        self.translation_target_selector.currentTextChanged.connect(self._refresh_translation)
+        self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
+        self.editor_theme_selector.currentTextChanged.connect(editor.set_theme)
+        editor.textChanged.connect(self._refresh_translation)
+        results.addTab(translation_page, "Translation")
+
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
         splitter.addWidget(editor)
@@ -382,6 +470,17 @@ class MainWindow(QMainWindow):
 
     def _set_local_sort_notice_visible(self, is_sorted: bool) -> None:
         self.result_sort_notice.setVisible(is_sorted)
+
+    def _refresh_translation(self) -> None:
+        target_dialect = self.translation_target_selector.currentData()
+        if not isinstance(target_dialect, str):
+            return
+        source_dialect = self.input_dialect_selector.currentData()
+        if not isinstance(source_dialect, str):
+            return
+        self.translation_panel.update_translation(
+            self.editor.text(), source_dialect=source_dialect, target_dialect=target_dialect
+        )
 
     def editor_insert_text(self, alias: str) -> None:
         self.editor.insert(alias)
@@ -448,6 +547,15 @@ class MainWindow(QMainWindow):
 
         edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
         edit_menu.setObjectName("edit_menu")
+        undo, redo, cut, copy, paste, toggle_comment = self.editor.edit_actions
+        edit_menu.addAction(undo)
+        edit_menu.addAction(redo)
+        edit_menu.addSeparator()
+        edit_menu.addAction(cut)
+        edit_menu.addAction(copy)
+        edit_menu.addAction(paste)
+        edit_menu.addSeparator()
+        edit_menu.addAction(toggle_comment)
 
         query_menu = cast(QMenu, menu_bar.addMenu("Query"))
         query_menu.setObjectName("query_menu")
@@ -500,6 +608,7 @@ class MainWindow(QMainWindow):
         """Return persistent docks and the central splitter to their default arrangement."""
         for dock, area in (
             (self._catalog_dock_widget, Qt.DockWidgetArea.LeftDockWidgetArea),
+            (self._schema_dock_widget, Qt.DockWidgetArea.LeftDockWidgetArea),
             (self._history_dock_widget, Qt.DockWidgetArea.RightDockWidgetArea),
         ):
             dock.setFloating(False)
