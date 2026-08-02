@@ -25,3 +25,15 @@ def test_pyspark_is_an_optional_dependency_and_registry_uses_spec_lookup() -> No
         )
         for node in ast.walk(registry)
     )
+
+
+def test_spark_engine_has_no_eager_pyspark_import() -> None:
+    engine = ast.parse(Path("src/wherewolf/execution/spark_engine.py").read_text())
+
+    assert not any(
+        isinstance(node, (ast.Import, ast.ImportFrom))
+        and any(
+            alias.name == "pyspark" or alias.name.startswith("pyspark.") for alias in node.names
+        )
+        for node in ast.walk(engine)
+    )

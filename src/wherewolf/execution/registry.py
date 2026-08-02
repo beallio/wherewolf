@@ -313,7 +313,7 @@ class _SparkAdapter(_BaseAdapter):
     def __init__(self, request_id: UUID):
         from .spark_engine import SparkEngine
 
-        self._engine = SparkEngine()
+        self._engine = SparkEngine(request_id=request_id)
 
         def execute_fn(request: ExecutionRequest) -> QueryResult:
             catalog = {binding.alias: str(binding.path) for binding in request.catalog}
@@ -349,8 +349,16 @@ class _SparkAdapter(_BaseAdapter):
             )
 
         def schema_fn(entry: CatalogEntry) -> SchemaResult:
-            schema = self._engine.get_schema(str(entry.path))
-            return SchemaResult(entry_id=entry.id, columns=_frame_to_columns(schema))
+            try:
+                schema = self._engine.get_schema(str(entry.path))
+                return SchemaResult(entry_id=entry.id, columns=_frame_to_columns(schema))
+            except Exception as error:  # noqa: BLE001  # Schema boundary: preserve the failure for the HUD.
+                return SchemaResult(
+                    entry_id=entry.id,
+                    columns=(),
+                    error_type=type(error).__name__,
+                    error_message=str(error),
+                )
 
         super().__init__(
             request_id=request_id,
@@ -405,7 +413,7 @@ class EngineRegistry:
             kind=EngineKind.SPARK,
             display_name="Spark",
             available=False,
-            unavailable_reason="pyspark is not installed",
+            unavailable_reason="pyspark is not installed; install wherewolf[spark] and Java",
         )
 
 
