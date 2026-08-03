@@ -269,6 +269,7 @@ class SqlEditor(QsciScintilla):
             if isinstance(lexer_font, QFont):
                 lexer_font.setPointSize(size)
                 lexer.setDefaultFont(lexer_font)
+            lexer.setFont(font)
 
         self._refresh_line_margin()
 
