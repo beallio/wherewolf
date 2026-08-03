@@ -90,7 +90,6 @@ def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_
             "input_dialect_selector",
             "export_format_selector",
             "preview_limit_selector",
-            "editor_theme_selector",
         ):
             control = window.findChild(QWidget, object_name)
             assert control is not None
@@ -329,6 +328,27 @@ def test_main_window_preferences_persist_and_change_editor_font(tmp_path: Path, 
     assert settings.restore_completion_enabled() is False
     assert settings.restore_completion_threshold() == 4
     assert window.editor.font_size == 18
+
+
+def test_main_window_moves_editor_theme_to_preferences_and_keeps_saved_theme(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "theme-preferences")
+    settings.save_editor_theme("Light")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    assert window.query_controls_toolbar.findChild(QComboBox, "editor_theme_selector") is None
+    assert window.editor.theme_name == "Light"
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    assert dialog.editor_theme_selector.currentText() == "Light"
+    dialog.editor_theme_selector.setCurrentText("Dark")
+    dialog.accept()
+
+    assert settings.restore_editor_theme() == "Dark"
+    assert window.editor.theme_name == "Dark"
 
 
 def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
@@ -582,7 +602,9 @@ def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
     monkeypatch.setattr(window.query_controller, "execute", submitted.append)
     window.desktop_actions.run.setEnabled(True)
     window.preview_limit_selector.setValue(250)
-    window.editor_theme_selector.setCurrentText("Light")
+    window.preferences_action.trigger()
+    window.preferences_dialog.editor_theme_selector.setCurrentText("Light")
+    window.preferences_dialog.accept()
     window.editor.setText("SELECT 1")
     window.desktop_actions.run.setEnabled(True)  # isolated request-builder test without a catalog
 

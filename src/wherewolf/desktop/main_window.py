@@ -125,12 +125,17 @@ class PreferencesDialog(QDialog):
         self.profile_max_bytes = QSpinBox(self)
         self.profile_max_bytes.setRange(0, 2_147_483_647)
         self.profile_max_bytes.setValue(settings_service.restore_profile_max_bytes())
+        self.editor_theme_selector = QComboBox(self)
+        self.editor_theme_selector.setObjectName("editor_theme_selector")
+        self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
+        self.editor_theme_selector.setCurrentText(settings_service.restore_editor_theme())
         layout.addRow("Editor font size", self.font_size)
         layout.addRow(self.completion_enabled)
         layout.addRow("Completion threshold", self.completion_threshold)
         layout.addRow(self.update_check_enabled)
         layout.addRow(self.profile_on_load)
         layout.addRow("Profile size limit (bytes)", self.profile_max_bytes)
+        layout.addRow("Editor theme", self.editor_theme_selector)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
         )
@@ -306,16 +311,6 @@ class MainWindow(QMainWindow):
             "Preview rows",
             self.preview_limit_selector,
             "Choose the maximum number of rows shown in a query preview.",
-        )
-        self.editor_theme_selector = QComboBox(toolbar)
-        self.editor_theme_selector.setObjectName("editor_theme_selector")
-        self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
-        self.editor_theme_selector.setCurrentText(self._settings_service.restore_editor_theme())
-        self._add_labelled_control(
-            controls_layout,
-            "Editor theme",
-            self.editor_theme_selector,
-            "Choose the colour theme used by the SQL editor.",
         )
         toolbar.addWidget(controls)
         return toolbar
@@ -744,7 +739,6 @@ class MainWindow(QMainWindow):
         translation_layout.addWidget(self.translation_panel)
         self.translation_target_selector.currentTextChanged.connect(self._refresh_translation)
         self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
-        self.editor_theme_selector.currentTextChanged.connect(editor.set_theme)
         editor.textChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._update_catalog_affordances)
         results.addTab(translation_page, "Translation")
@@ -916,6 +910,7 @@ class MainWindow(QMainWindow):
         self._settings_service.save_update_check_enabled(dialog.update_check_enabled.isChecked())
         self._settings_service.save_profile_on_load(dialog.profile_on_load.isChecked())
         self._settings_service.save_profile_max_bytes(dialog.profile_max_bytes.value())
+        self.editor.set_theme(dialog.editor_theme_selector.currentText())
         self.editor.set_font_size(dialog.font_size.value())
 
     def _on_editor_diagnostics(self, payload: tuple) -> None:
