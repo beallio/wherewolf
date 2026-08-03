@@ -74,6 +74,30 @@ def test_main_window_structure(qtbot) -> None:
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
 
 
+def test_main_window_view_menu_reopens_a_closed_dock_without_affecting_siblings(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+
+    history = window._history_dock_widget
+    sibling = window.catalog_dock
+    assert history.isVisible()
+    assert sibling.isVisible()
+
+    history.close()
+    assert not history.isVisible()
+    assert sibling.isVisible()
+
+    history_action = next(
+        (action for action in window.view_menu.actions() if action.text() == "History"), None
+    )
+    assert history_action is not None
+    history_action.trigger()
+
+    assert history.isVisible()
+    assert sibling.isVisible()
+
+
 def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_widths(
     qtbot,
 ) -> None:
@@ -88,13 +112,88 @@ def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_
         for object_name in (
             "engine_selector",
             "input_dialect_selector",
-            "export_format_selector",
             "preview_limit_selector",
-            "editor_theme_selector",
         ):
             control = window.findChild(QWidget, object_name)
             assert control is not None
             assert control.isVisible(), f"{object_name} is hidden at {width}px"
+
+
+def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(
+    qtbot,
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    window.resize(1024, 768)
+    qtbot.wait(20)
+
+    for object_name in (
+        "preview_filter_input",
+        "export_format_selector",
+        "export_scope_selector",
+        "export_button",
+        "export_preview_button",
+        "export_full_button",
+        "export_selection_button",
+    ):
+        control = window.findChild(QWidget, object_name)
+        assert control is not None
+        assert control.isVisible(), f"{object_name} is hidden at 1024px"
+
+    assert all(
+        action not in window.main_toolbar.actions()
+        for action in (
+            window.desktop_actions.export_preview,
+            window.desktop_actions.export_full,
+            window.desktop_actions.export_selection,
+        )
+    )
+    query_actions = window.query_menu.actions()
+    assert window.desktop_actions.export_preview in query_actions
+    assert window.desktop_actions.export_full in query_actions
+    assert window.desktop_actions.export_selection in query_actions
+
+
+def test_main_window_export_button_writes_selected_parquet_scope(tmp_path: Path, qtbot) -> None:
+    destination = tmp_path / "result"
+    window = MainWindow(
+        file_dialog_service=FakeFileDialogService(paths=(), export_path=destination)
+    )
+    qtbot.addWidget(window)
+    request_id = uuid4()
+    request = ExecutionRequest(
+        request_id=request_id,
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=100,
+        submitted_at=datetime.now(UTC),
+    )
+    result = QueryResult(
+        request_id=request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"id": [1, 2]}),
+        execution_seconds=0.01,
+        preview_row_count=2,
+        total_row_count=2,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(result, request)
+    window.export_format_selector.setCurrentIndex(
+        window.export_format_selector.findData(ExportFormat.PARQUET)
+    )
+    window.export_scope_selector.setCurrentIndex(window.export_scope_selector.findData("preview"))
+
+    with qtbot.waitSignal(window.export_controller.result_ready, timeout=3000):
+        window.export_button.click()
+
+    artifact = destination.with_suffix(".parquet")
+    assert artifact.exists()
+    assert pl.read_parquet(artifact).to_dicts() == [{"id": 1}, {"id": 2}]
 
 
 def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:
@@ -269,6 +368,36 @@ def test_main_window_preview_filter_reduces_rows_and_clear_restores_them(qtbot) 
     assert window.result_table_view.proxy_model().rowCount() == 3
 
 
+def test_main_window_preview_filter_supports_sql_predicates_and_nonblocking_errors(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.result_table_view.set_frame(
+        pl.DataFrame(
+            {
+                "age": [25, 41, 55],
+                "region": ["West", "East", "East"],
+            }
+        )
+    )
+
+    window.preview_filter_input.setText("age > 40")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    assert window.preview_filter_error.isHidden()
+
+    window.preview_filter_input.setText("East")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    assert window.preview_filter_error.isHidden()
+
+    window.preview_filter_input.setText("age >")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    assert not window.preview_filter_error.isHidden()
+    assert "age" in window.preview_filter_error.text()
+
+    window.preview_filter_input.setText("missing_column = 1")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    assert "missing_column" in window.preview_filter_error.text()
+
+
 def test_main_window_exports_selected_cells_in_visual_column_order(tmp_path: Path, qtbot) -> None:
     destination = tmp_path / "selection"
     window = MainWindow(
@@ -329,6 +458,27 @@ def test_main_window_preferences_persist_and_change_editor_font(tmp_path: Path, 
     assert settings.restore_completion_enabled() is False
     assert settings.restore_completion_threshold() == 4
     assert window.editor.font_size == 18
+
+
+def test_main_window_moves_editor_theme_to_preferences_and_keeps_saved_theme(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "theme-preferences")
+    settings.save_editor_theme("Light")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    assert window.query_controls_toolbar.findChild(QComboBox, "editor_theme_selector") is None
+    assert window.editor.theme_name == "Light"
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    assert dialog.editor_theme_selector.currentText() == "Light"
+    dialog.editor_theme_selector.setCurrentText("Dark")
+    dialog.accept()
+
+    assert settings.restore_editor_theme() == "Dark"
+    assert window.editor.theme_name == "Dark"
 
 
 def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
@@ -582,7 +732,9 @@ def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
     monkeypatch.setattr(window.query_controller, "execute", submitted.append)
     window.desktop_actions.run.setEnabled(True)
     window.preview_limit_selector.setValue(250)
-    window.editor_theme_selector.setCurrentText("Light")
+    window.preferences_action.trigger()
+    window.preferences_dialog.editor_theme_selector.setCurrentText("Light")
+    window.preferences_dialog.accept()
     window.editor.setText("SELECT 1")
     window.desktop_actions.run.setEnabled(True)  # isolated request-builder test without a catalog
 

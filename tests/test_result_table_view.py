@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import polars as pl
-from PyQt6.QtCore import QItemSelection, QItemSelectionModel, Qt
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtCore import QBuffer, QIODevice, QItemSelection, QItemSelectionModel, Qt
+from PyQt6.QtGui import QIcon, QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
@@ -208,6 +210,49 @@ def test_result_table_view_column_operations(qtbot):
 
     table_view.auto_size_columns()
     assert all(header.sectionSize(column) > 0 for column in range(3))
+
+
+def test_result_table_view_headers_show_distinct_dtype_icons_and_tooltips(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(
+        pl.DataFrame(
+            {
+                "count": [1],
+                "name": ["Ada"],
+                "started": [date(2026, 8, 2)],
+                "active": [True],
+            }
+        )
+    )
+
+    header = table_view.horizontalHeader()
+    assert header is not None
+    model = table_view.model()
+    assert model is not None
+
+    icons = [
+        model.headerData(column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DecorationRole)
+        for column in range(4)
+    ]
+    tooltips = [
+        model.headerData(column, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
+        for column in range(4)
+    ]
+
+    assert all(isinstance(icon, QIcon) and not icon.isNull() for icon in icons)
+
+    def rendered_icon_content(icon: QIcon) -> bytes:
+        buffer = QBuffer()
+        assert buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        assert icon.pixmap(18, 18).toImage().save(buffer, "PNG")
+        return buffer.data().data()
+
+    assert len({rendered_icon_content(icon) for icon in icons}) == 4
+    assert "Int" in str(tooltips[0])
+    assert "String" in str(tooltips[1])
+    assert "Date" in str(tooltips[2])
+    assert "Boolean" in str(tooltips[3])
 
 
 def test_header_context_menu_apply_order(qtbot) -> None:

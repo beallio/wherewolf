@@ -78,6 +78,7 @@ class SchemaPanel(QWidget):
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self._table_widget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._table_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self._table_widget.setAlternatingRowColors(True)
         self._table_widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         layout.addWidget(self._table_widget)
