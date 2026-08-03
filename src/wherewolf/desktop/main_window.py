@@ -36,6 +36,7 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QTabWidget,
     QToolBar,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -239,9 +240,6 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.desktop_actions.cancel)
         toolbar.addAction(self.desktop_actions.format_sql)
         toolbar.addAction(self.desktop_actions.add_datasets)
-        toolbar.addAction(self.desktop_actions.export_preview)
-        toolbar.addAction(self.desktop_actions.export_full)
-        toolbar.addAction(self.desktop_actions.export_selection)
         return toolbar
 
     def _build_query_controls_toolbar(self) -> QToolBar:
@@ -286,20 +284,6 @@ class MainWindow(QMainWindow):
             "Input dialect",
             self.input_dialect_selector,
             "Choose the SQL dialect you are writing; it is transpiled to the execution engine.",
-        )
-        self.export_format_selector = QComboBox(toolbar)
-        self.export_format_selector.setObjectName("export_format_selector")
-        for label, export_format in (
-            ("CSV", ExportFormat.CSV),
-            ("Excel", ExportFormat.XLSX),
-            ("Parquet", ExportFormat.PARQUET),
-        ):
-            self.export_format_selector.addItem(label, export_format)
-        self._add_labelled_control(
-            controls_layout,
-            "Export format",
-            self.export_format_selector,
-            "Choose the file format for exported query results.",
         )
         self.preview_limit_selector = QSpinBox(toolbar)
         self.preview_limit_selector.setObjectName("preview_limit_selector")
@@ -442,6 +426,7 @@ class MainWindow(QMainWindow):
         self.desktop_actions.export_preview.setEnabled(can_export)
         self.desktop_actions.export_full.setEnabled(can_export)
         self.desktop_actions.export_selection.setEnabled(can_export)
+        self.export_button.setEnabled(can_export)
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
             self.result_table_view.set_frame(result.frame)
         else:
@@ -514,6 +499,15 @@ class MainWindow(QMainWindow):
                 full_export,
             )
 
+    def _export_selected_scope(self) -> None:
+        scope = self.export_scope_selector.currentData()
+        if scope == "preview":
+            self._start_export(False)
+        elif scope == "full":
+            self._start_export(True)
+        elif scope == "selection":
+            self._export_selection()
+
     def _export_selection(self) -> None:
         if not self.result_table_view.has_result():
             return
@@ -537,6 +531,7 @@ class MainWindow(QMainWindow):
         self.desktop_actions.export_preview.setEnabled(False)
         self.desktop_actions.export_full.setEnabled(False)
         self.desktop_actions.export_selection.setEnabled(False)
+        self.export_button.setEnabled(False)
         self._show_status("Exporting results...")
 
     def _on_export_result(self, result: ExportResult) -> None:
@@ -545,6 +540,7 @@ class MainWindow(QMainWindow):
         self.desktop_actions.export_preview.setEnabled(can_export)
         self.desktop_actions.export_full.setEnabled(can_export)
         self.desktop_actions.export_selection.setEnabled(can_export)
+        self.export_button.setEnabled(can_export)
         if result.succeeded:
             message = f"Exported results to {result.destination}"
             if result.warnings:
@@ -700,12 +696,68 @@ class MainWindow(QMainWindow):
         self.preview_filter_input = QLineEdit(results_page)
         self.preview_filter_input.setObjectName("preview_filter_input")
         self.preview_filter_input.setPlaceholderText("Filter preview rows")
+        self.preview_filter_input.setToolTip(
+            "Filter the preview with a SQL predicate or plain text substring."
+        )
         self.clear_preview_filter_action = QAction("Clear Preview Filter", self)
         self.clear_preview_filter_action.triggered.connect(self.preview_filter_input.clear)
         self.preview_filter_input.textChanged.connect(
             self.result_table_view.proxy_model().set_filter_text
         )
-        results_layout.addWidget(self.preview_filter_input)
+        export_controls = QHBoxLayout()
+        self._add_labelled_control(
+            export_controls,
+            "Preview filter",
+            self.preview_filter_input,
+            self.preview_filter_input.toolTip(),
+        )
+
+        self.export_format_selector = QComboBox(results_page)
+        self.export_format_selector.setObjectName("export_format_selector")
+        for label, export_format in (
+            ("CSV", ExportFormat.CSV),
+            ("Excel", ExportFormat.XLSX),
+            ("Parquet", ExportFormat.PARQUET),
+        ):
+            self.export_format_selector.addItem(label, export_format)
+        self._add_labelled_control(
+            export_controls,
+            "Export format",
+            self.export_format_selector,
+            "Choose the file format for exported query results.",
+        )
+
+        self.export_scope_selector = QComboBox(results_page)
+        self.export_scope_selector.setObjectName("export_scope_selector")
+        self.export_scope_selector.addItem("Preview", "preview")
+        self.export_scope_selector.addItem("Full results", "full")
+        self.export_scope_selector.addItem("Selection", "selection")
+        self._add_labelled_control(
+            export_controls,
+            "Export scope",
+            self.export_scope_selector,
+            "Choose which result scope to export.",
+        )
+
+        self.export_button = QPushButton("Export", results_page)
+        self.export_button.setObjectName("export_button")
+        self.export_button.setToolTip("Export results using the selected format and scope.")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self._export_selected_scope)
+        export_controls.addWidget(self.export_button)
+
+        for object_name, action in (
+            ("export_preview_button", self.desktop_actions.export_preview),
+            ("export_full_button", self.desktop_actions.export_full),
+            ("export_selection_button", self.desktop_actions.export_selection),
+        ):
+            button = QToolButton(results_page)
+            button.setObjectName(object_name)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+            button.setDefaultAction(action)
+            export_controls.addWidget(button)
+        export_controls.setStretch(1, 1)
+        results_layout.addLayout(export_controls)
         results_layout.addWidget(self.result_table_view)
         results.addTab(results_page, "Results")
         self.messages_panel = MessagesPanel(self)
@@ -850,6 +902,10 @@ class MainWindow(QMainWindow):
         query_menu.addAction(self.desktop_actions.cancel)
         query_menu.addAction(self.desktop_actions.format_sql)
         query_menu.addAction(self.desktop_actions.show_completion)
+        query_menu.addSeparator()
+        query_menu.addAction(self.desktop_actions.export_preview)
+        query_menu.addAction(self.desktop_actions.export_full)
+        query_menu.addAction(self.desktop_actions.export_selection)
 
         view_menu = cast(QMenu, menu_bar.addMenu("View"))
         view_menu.setObjectName("view_menu")
