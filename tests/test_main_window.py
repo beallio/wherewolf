@@ -761,7 +761,7 @@ def test_main_window_preview_limit_text_box_validates_and_uses_last_valid_value(
     assert isinstance(selector, QLineEdit)
     assert selector.text() == "1000"
 
-    for valid_text in ("10", "50000", "100000"):
+    for valid_text in ("10", "500", "50000", "100000"):
         selector.setText(valid_text)
         assert settings.restore_preview_limit() == int(valid_text)
         assert selector.property("validationState") == "valid"
