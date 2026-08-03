@@ -242,10 +242,16 @@ def test_result_table_view_headers_show_distinct_dtype_badges_and_tooltips(qtbot
 
     assert badges == ["INT", "TXT", "DATE", "BOOL"]
     assert len(set(badges)) == 4
-    assert [
+    display_headers = [
         model.headerData(column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
         for column in range(4)
-    ] == ["count", "name", "started", "active"]
+    ]
+    assert display_headers == [
+        "count [INT]",
+        "name [TXT]",
+        "started [DATE]",
+        "active [BOOL]",
+    ]
     assert "Int" in str(tooltips[0])
     assert "String" in str(tooltips[1])
     assert "Date" in str(tooltips[2])

@@ -23,9 +23,9 @@ Objective: Implement `docs/plans/2026-08-02_results-export-and-headers.md` on
   requests use 1000 rows.
 - Export scope remains a single selector plus the Export button; Query-menu actions and
   shortcuts remain available. The save filter is now exactly one selected extension.
-- Header badges use `INT`, `FLOAT`, `TXT`, `DATE`, `BOOL`, `NUM`, or `OTHER`. They are
-  exposed through `UserRole`; `DisplayRole` remains the plain column name and the tooltip
-  retains the full Polars dtype.
+- Header badges use `INT`, `FLOAT`, `TXT`, `DATE`, `BOOL`, `NUM`, or `OTHER`. They remain
+  available through `UserRole` and are now rendered visibly in `DisplayRole` as
+  `column_name [BADGE]`; the tooltip retains the full Polars dtype.
 - QScintilla receives the selected font through `lexer.setFont(font)`, covering every
   per-style font while preserving persisted Preferences behavior.
 - Preview input is a `QLineEdit` with object name `preview_limit_selector`, validator and
@@ -46,7 +46,8 @@ Objective: Implement `docs/plans/2026-08-02_results-export-and-headers.md` on
   `Export files (*.xlsx)`. The Parquet Export button path wrote two rows, whose first rows were
   `[{'id': 1}, {'id': 2}]`, and `pl.read_parquet` read them back.
 - Result badges for integer/string/date/boolean columns were
-  `['INT', 'TXT', 'DATE', 'BOOL']`; tooltips were `count: Int64`, `name: String`,
+  `['INT', 'TXT', 'DATE', 'BOOL']`; rendered headers were `count [INT]`, `name [TXT]`,
+  `started [DATE]`, and `active [BOOL]`; tooltips were `count: Int64`, `name: String`,
   `started: Date`, and `active: Boolean`.
 - After `set_font_size(28)`, widget, default lexer, keyword lexer, and identifier lexer fonts
   all reported 28 points. The persisted setting and a new `SqlEditor` also reported/restored 28.
@@ -75,7 +76,9 @@ The captured negative-control logs are in `/tmp/wherewolf/negative-task{1..6}.lo
 
 Baseline: 430 passed, 7 deselected.
 
-Final implementation suite: 433 passed, 7 deselected.
+Final implementation suite: 433 passed, 7 deselected. The follow-up badge-rendering
+regression test first failed against the reviewed implementation and passed after
+`DisplayRole` was updated.
 
 Quality gates passed through `scripts/orchestration/run-quality-gates`, including ruff,
 formatting, `ty check src/`, pytest, and review-note deletion protection. The additional

@@ -72,10 +72,13 @@ class PolarsTableModel(QAbstractTableModel):
         self, section: int, orientation: Qt.Orientation, role: int = Qt.ItemDataRole.DisplayRole
     ):
         if orientation == Qt.Orientation.Horizontal and 0 <= section < self._frame.width:
+            column_name = self._frame.columns[section]
             if role == Qt.ItemDataRole.DisplayRole:
-                return self._frame.columns[section]
+                if section < len(self._header_badges) and self._header_badges[section]:
+                    return f"{column_name} [{self._header_badges[section]}]"
+                return column_name
             if role == Qt.ItemDataRole.ToolTipRole:
-                return f"{self._frame.columns[section]}: {self._frame.dtypes[section]}"
+                return f"{column_name}: {self._frame.dtypes[section]}"
             if role == Qt.ItemDataRole.UserRole and section < len(self._header_badges):
                 return self._header_badges[section]
         if (

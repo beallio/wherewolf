@@ -152,6 +152,12 @@ class ResultTableView(QTableView):
         if cb is not None:
             cb.setText(text)
 
+    def _column_name(self, column: int) -> str:
+        frame = self._source_model.frame()
+        if 0 <= column < frame.width:
+            return frame.columns[column]
+        return ""
+
     def copy_all_visible_column_names(self) -> None:
         """Copy the visible headers in their current left-to-right order."""
         header = self.horizontalHeader()
@@ -165,25 +171,12 @@ class ResultTableView(QTableView):
             ),
             key=lambda pair: pair[0],
         )
-        names = [
-            str(
-                self._proxy_model.headerData(
-                    column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole
-                )
-                or ""
-            )
-            for _visual_index, column in columns
-        ]
+        names = [self._column_name(column) for _visual_index, column in columns]
         self._set_clipboard_text("\t".join(names))
 
     def create_header_context_menu(self, column: int) -> QMenu:
         menu = QMenu(self)
-        h_name = str(
-            self._proxy_model.headerData(
-                column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole
-            )
-            or ""
-        )
+        h_name = self._column_name(column)
 
         menu.addAction(
             "Sort Ascending",
@@ -315,12 +308,7 @@ class ResultTableView(QTableView):
             header_parts = []
             for v_col in used_visual_cols:
                 p_col = v_to_p[v_col]
-                h_name = str(
-                    self._proxy_model.headerData(
-                        p_col, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole
-                    )
-                    or ""
-                )
+                h_name = self._column_name(p_col)
                 header_parts.append(format_header_name(h_name, quote=quote_headers))
             lines.append("\t".join(header_parts))
 
