@@ -118,6 +118,34 @@ class SchemaResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ColumnProfile:
+    """Summary statistics returned for one dataset column."""
+
+    name: str
+    data_type: str
+    min: str | None
+    max: str | None
+    approx_unique: int | None
+    avg: float | None
+    std: float | None
+    q25: float | None
+    q50: float | None
+    q75: float | None
+    count: int | None
+    null_percentage: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ProfileResult:
+    """Profiles for one catalog entry, or a normalized profiling error."""
+
+    entry_id: UUID
+    profiles: tuple[ColumnProfile, ...] | None
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class SqlDiagnostic:
     message: str
     severity: str
