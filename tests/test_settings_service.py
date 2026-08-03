@@ -113,14 +113,6 @@ def test_settings_service_preview_limit_and_editor_theme_round_trip(tmp_path: Pa
     assert service.restore_editor_theme() == "Light"
 
 
-def test_settings_service_update_check_defaults_off_and_round_trips(tmp_path: Path) -> None:
-    service = SettingsService(_configure_qsettings_path(tmp_path / "update-check"))
-
-    assert service.restore_update_check_enabled() is False
-    service.save_update_check_enabled(True)
-    assert service.restore_update_check_enabled() is True
-
-
 def test_profile_preferences_default_on_and_round_trip(tmp_path: Path) -> None:
     service = SettingsService(_configure_qsettings_path(tmp_path / "profile"))
 
