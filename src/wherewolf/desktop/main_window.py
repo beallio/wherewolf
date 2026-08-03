@@ -52,7 +52,7 @@ from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
 from wherewolf.desktop.widgets.translation_panel import TranslationPanel
-from wherewolf.desktop.workers import SchemaWorker
+from wherewolf.desktop.workers import ProfileWorker, SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
     EngineKind,
@@ -163,6 +163,7 @@ class MainWindow(QMainWindow):
         self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
         self._schema_workers: list[SchemaWorker] = []
+        self._profile_workers: list[ProfileWorker] = []
         self.setWindowTitle(f"Wherewolf {version('wherewolf')}")
 
         self.main_toolbar = self._build_toolbar()
@@ -599,6 +600,20 @@ class MainWindow(QMainWindow):
         self._schema_workers.append(worker)
         worker.start()
 
+    def _queue_profile_work(self, binding: CatalogBinding) -> None:
+        worker = ProfileWorker(
+            engine_registry=self._engine_registry,
+            binding=binding,
+            parent=self,
+        )
+        worker.finished.connect(
+            lambda: (
+                self._profile_workers.remove(worker) if worker in self._profile_workers else None
+            )
+        )
+        self._profile_workers.append(worker)
+        worker.start()
+
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
         self.editor.set_catalog(self._catalog_service.entries)
@@ -921,6 +936,12 @@ class MainWindow(QMainWindow):
                 worker.quit()
                 worker.wait()
         self._schema_workers.clear()
+
+        for worker in list(self._profile_workers):
+            if worker.isRunning():
+                worker.quit()
+                worker.wait()
+        self._profile_workers.clear()
 
         self.query_controller.shutdown()
         self.export_controller.shutdown()

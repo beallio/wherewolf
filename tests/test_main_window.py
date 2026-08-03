@@ -913,6 +913,30 @@ def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Pat
     assert len(window._schema_workers) == 0
 
 
+def test_main_window_removes_completed_profile_workers(qtbot, tmp_path: Path) -> None:
+    csv_file = tmp_path / "profile.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._queue_profile_work(CatalogBinding(uuid4(), "profile", csv_file, SourceFormat.CSV))
+
+    qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
+    assert window._profile_workers == []
+
+
+def test_main_window_close_waits_for_running_profile_workers(qtbot, tmp_path: Path) -> None:
+    csv_file = tmp_path / "profile.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._queue_profile_work(CatalogBinding(uuid4(), "profile", csv_file, SourceFormat.CSV))
+
+    assert len(window._profile_workers) == 1
+    window.close()
+    assert window._profile_workers == []
+
+
 def test_main_window_close_calls_query_controller_shutdown(qtbot, monkeypatch) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
