@@ -155,12 +155,21 @@ class CatalogService:
             return
         entries = list(self._entries)
         entry = entries[index]
+        try:
+            stat = entry.path.stat()
+            profile_source_size = stat.st_size
+            profile_source_mtime_ns = stat.st_mtime_ns
+        except OSError:
+            profile_source_size = None
+            profile_source_mtime_ns = None
         entries[index] = replace(
             entry,
             profile=profile_result.profiles,
             profile_error=profile_result.error_message,
             profile_stale=False,
             profile_skipped_reason=None,
+            profile_source_size=profile_source_size,
+            profile_source_mtime_ns=profile_source_mtime_ns,
         )
         self._entries = tuple(entries)
         self._notify()
@@ -171,6 +180,28 @@ class CatalogService:
             for entry in self._entries
         )
         self._notify()
+
+    def refresh_profile_staleness(self) -> None:
+        entries: list[CatalogEntry] = []
+        changed = False
+        for entry in self._entries:
+            if entry.profile is None or entry.profile_source_mtime_ns is None:
+                entries.append(entry)
+                continue
+            try:
+                stat = entry.path.stat()
+                stale = (
+                    stat.st_size != entry.profile_source_size
+                    or stat.st_mtime_ns != entry.profile_source_mtime_ns
+                )
+            except OSError:
+                stale = True
+            updated = replace(entry, profile_stale=stale)
+            changed = changed or updated != entry
+            entries.append(updated)
+        if changed:
+            self._entries = tuple(entries)
+            self._notify()
 
     def snapshot(self) -> tuple[CatalogBinding, ...]:
         return tuple(

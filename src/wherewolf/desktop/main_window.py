@@ -634,6 +634,7 @@ class MainWindow(QMainWindow):
 
     def _on_profile_result(self, profile_result: ProfileResult) -> None:
         self._catalog_service.update_profile(profile_result)
+        self._catalog_service.refresh_profile_staleness()
         entry = next(
             (
                 entry

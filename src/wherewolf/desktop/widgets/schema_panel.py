@@ -213,6 +213,10 @@ class SchemaPanel(QWidget):
                         self._status_label.setText(
                             f"{self._status_label.text()} — {self._entry.profile_skipped_reason}"
                         )
+                    if self._entry.profile_stale:
+                        self._status_label.setText(
+                            f"{self._status_label.text()} — Profile is stale; re-profile this source."
+                        )
                 self._status_label.show()
 
             self._table_widget.show()

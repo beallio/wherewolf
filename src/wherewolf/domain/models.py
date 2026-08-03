@@ -50,6 +50,8 @@ class CatalogEntry:
     profile_error: str | None = None
     profile_stale: bool = False
     profile_skipped_reason: str | None = None
+    profile_source_size: int | None = None
+    profile_source_mtime_ns: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
