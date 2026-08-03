@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import date
 
 import polars as pl
-from PyQt6.QtCore import QBuffer, QIODevice, QItemSelection, QItemSelectionModel, Qt
-from PyQt6.QtGui import QIcon, QKeyEvent
+from PyQt6.QtCore import QItemSelection, QItemSelectionModel, Qt
+from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
@@ -212,7 +212,7 @@ def test_result_table_view_column_operations(qtbot):
     assert all(header.sectionSize(column) > 0 for column in range(3))
 
 
-def test_result_table_view_headers_show_distinct_dtype_icons_and_tooltips(qtbot) -> None:
+def test_result_table_view_headers_show_distinct_dtype_badges_and_tooltips(qtbot) -> None:
     table_view = ResultTableView()
     qtbot.addWidget(table_view)
     table_view.set_frame(
@@ -231,8 +231,8 @@ def test_result_table_view_headers_show_distinct_dtype_icons_and_tooltips(qtbot)
     model = table_view.model()
     assert model is not None
 
-    icons = [
-        model.headerData(column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DecorationRole)
+    badges = [
+        model.headerData(column, Qt.Orientation.Horizontal, Qt.ItemDataRole.UserRole)
         for column in range(4)
     ]
     tooltips = [
@@ -240,15 +240,18 @@ def test_result_table_view_headers_show_distinct_dtype_icons_and_tooltips(qtbot)
         for column in range(4)
     ]
 
-    assert all(isinstance(icon, QIcon) and not icon.isNull() for icon in icons)
-
-    def rendered_icon_content(icon: QIcon) -> bytes:
-        buffer = QBuffer()
-        assert buffer.open(QIODevice.OpenModeFlag.WriteOnly)
-        assert icon.pixmap(18, 18).toImage().save(buffer, "PNG")
-        return buffer.data().data()
-
-    assert len({rendered_icon_content(icon) for icon in icons}) == 4
+    assert badges == ["INT", "TXT", "DATE", "BOOL"]
+    assert len(set(badges)) == 4
+    display_headers = [
+        model.headerData(column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole)
+        for column in range(4)
+    ]
+    assert display_headers == [
+        "count [INT]",
+        "name [TXT]",
+        "started [DATE]",
+        "active [BOOL]",
+    ]
     assert "Int" in str(tooltips[0])
     assert "String" in str(tooltips[1])
     assert "Date" in str(tooltips[2])

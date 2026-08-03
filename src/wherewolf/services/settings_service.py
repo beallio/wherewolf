@@ -21,7 +21,9 @@ class SettingsService:
 
     DEFAULT_COMPLETION_THRESHOLD: Final = 2
     DEFAULT_COMPLETION_ENABLED: Final = True
-    DEFAULT_PREVIEW_LIMIT: Final = 100
+    MIN_PREVIEW_LIMIT: Final = 10
+    MAX_PREVIEW_LIMIT: Final = 100000
+    DEFAULT_PREVIEW_LIMIT: Final = 1000
     DEFAULT_EDITOR_THEME: Final = "Dark"
     DEFAULT_PROFILE_ON_LOAD: Final = True
     DEFAULT_PROFILE_MAX_BYTES: Final = 268_435_456
@@ -182,12 +184,19 @@ class SettingsService:
 
     def restore_preview_limit(self) -> int:
         value = self._settings.value(self.preview_limit_key, self.DEFAULT_PREVIEW_LIMIT)
-        if not isinstance(value, int) or isinstance(value, bool) or not 10 <= value <= 1000:
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not self.MIN_PREVIEW_LIMIT <= value <= self.MAX_PREVIEW_LIMIT
+        ):
             return self.DEFAULT_PREVIEW_LIMIT
         return value
 
     def save_preview_limit(self, limit: int) -> None:
-        self._settings.setValue(self.preview_limit_key, max(10, min(int(limit), 1000)))
+        self._settings.setValue(
+            self.preview_limit_key,
+            max(self.MIN_PREVIEW_LIMIT, min(int(limit), self.MAX_PREVIEW_LIMIT)),
+        )
 
     def restore_editor_theme(self) -> str:
         value = self._settings.value(self.editor_theme_key, self.DEFAULT_EDITOR_THEME)

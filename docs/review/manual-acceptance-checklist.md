@@ -63,12 +63,14 @@ expected result.
 - [ ] Platform: __________  Date: __________  UI legibility at the maintainer's working width
   - Steps: With 5, 50, then 500 SQL lines, change the editor font size and confirm every line
     number remains fully readable against the dark editor paper. Load `customers`, then `loans`, and
-    inspect the Schema dock header after each. Resize the window to 1024px wide, inspect both toolbar
-    rows, and inspect the tooltip for
+    inspect the Schema dock header after each. Load a result frame containing narrow and wide column
+    names and inspect the `INT`, `FLOAT`, `TXT`, `DATE`, and `BOOL` header badges at 1024px. Resize the
+    window to 1024px wide, inspect both toolbar rows, and inspect the tooltip for
     Execution engine, Input dialect, Export format, Preview rows, Editor theme, and Translation target.
   - Expected: The margin fits its digits without a light strip, each schema header identifies the
-    current alias, and every control has a visible caption plus an explanatory tooltip. Narrow
-    windows keep every toolbar control visible without an overflow button.
+    current alias, the result badges remain legible without clipping or excessive header weight, and
+    every control has a visible caption plus an explanatory tooltip. Narrow windows keep every toolbar
+    control visible without an overflow button.
   - Result / issue: _________________________________________________________________
 
 - [ ] Platform: __________  Date: __________  UI follow-ups composition

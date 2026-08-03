@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import polars as pl
-from PyQt6.QtCore import QPoint, QRect, Qt, pyqtSignal
-from PyQt6.QtGui import QIcon, QKeyEvent, QKeySequence, QPainter, QPalette, QPixmap, QPolygon
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
+from PyQt6.QtGui import QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import QApplication, QMenu, QTableView
 
 from wherewolf.desktop.clipboard_serializers import format_cell_value, format_header_name
@@ -45,45 +45,28 @@ class ResultTableView(QTableView):
     def set_frame(self, frame: pl.DataFrame | None) -> None:
         self._source_model.set_frame(frame)
         if frame is not None:
-            self._source_model.set_header_icons(
-                [self._build_dtype_icon(dtype) for dtype in frame.dtypes]
+            self._source_model.set_header_badges(
+                [self._dtype_badge(dtype) for dtype in frame.dtypes]
             )
         self._proxy_model.sort(-1, Qt.SortOrder.AscendingOrder)
         self.local_sort_changed.emit(False)
         self.frame_changed.emit(self.has_result())
 
-    def _build_dtype_icon(self, dtype: pl.DataType) -> QIcon:
-        """Create a compact, palette-aware icon for a Polars dtype family."""
-        family = self._dtype_family(dtype)
-        pixmap = QPixmap(18, 18)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        palette = self.palette()
-        fill = palette.color(QPalette.ColorRole.Highlight)
-        text = palette.color(QPalette.ColorRole.HighlightedText)
-        painter.setBrush(fill)
-        painter.setPen(fill)
-        if family == "numeric":
-            painter.drawEllipse(1, 1, 16, 16)
-            glyph = "#"
-        elif family == "text":
-            painter.drawRoundedRect(1, 1, 16, 16, 3, 3)
-            glyph = "T"
-        elif family == "temporal":
-            painter.drawRect(2, 2, 14, 14)
-            glyph = "D"
-        elif family == "boolean":
-            painter.drawPolygon(
-                QPolygon([QPoint(9, 1), QPoint(17, 9), QPoint(9, 17), QPoint(1, 9)])
-            )
-            glyph = "✓"
-        else:
-            painter.drawRect(2, 2, 14, 14)
-            glyph = "·"
-        painter.setPen(text)
-        painter.drawText(QRect(1, 1, 16, 16), Qt.AlignmentFlag.AlignCenter, glyph)
-        painter.end()
-        return QIcon(pixmap)
+    @staticmethod
+    def _dtype_badge(dtype: pl.DataType) -> str:
+        if dtype == pl.Boolean:
+            return "BOOL"
+        if dtype.is_integer():
+            return "INT"
+        if dtype.is_float():
+            return "FLOAT"
+        if dtype.is_numeric():
+            return "NUM"
+        if dtype.is_temporal():
+            return "DATE"
+        if dtype == pl.String:
+            return "TXT"
+        return "OTHER"
 
     @staticmethod
     def _dtype_family(dtype: pl.DataType) -> str:
@@ -169,6 +152,12 @@ class ResultTableView(QTableView):
         if cb is not None:
             cb.setText(text)
 
+    def _column_name(self, column: int) -> str:
+        frame = self._source_model.frame()
+        if 0 <= column < frame.width:
+            return frame.columns[column]
+        return ""
+
     def copy_all_visible_column_names(self) -> None:
         """Copy the visible headers in their current left-to-right order."""
         header = self.horizontalHeader()
@@ -182,25 +171,12 @@ class ResultTableView(QTableView):
             ),
             key=lambda pair: pair[0],
         )
-        names = [
-            str(
-                self._proxy_model.headerData(
-                    column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole
-                )
-                or ""
-            )
-            for _visual_index, column in columns
-        ]
+        names = [self._column_name(column) for _visual_index, column in columns]
         self._set_clipboard_text("\t".join(names))
 
     def create_header_context_menu(self, column: int) -> QMenu:
         menu = QMenu(self)
-        h_name = str(
-            self._proxy_model.headerData(
-                column, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole
-            )
-            or ""
-        )
+        h_name = self._column_name(column)
 
         menu.addAction(
             "Sort Ascending",
@@ -332,12 +308,7 @@ class ResultTableView(QTableView):
             header_parts = []
             for v_col in used_visual_cols:
                 p_col = v_to_p[v_col]
-                h_name = str(
-                    self._proxy_model.headerData(
-                        p_col, Qt.Orientation.Horizontal, Qt.ItemDataRole.DisplayRole
-                    )
-                    or ""
-                )
+                h_name = self._column_name(p_col)
                 header_parts.append(format_header_name(h_name, quote=quote_headers))
             lines.append("\t".join(header_parts))
 

@@ -14,7 +14,13 @@ def test_destination_normalisation_and_filter_are_format_driven() -> None:
     assert normalise_destination(Path("out"), ExportFormat.CSV) == Path("out.csv")
     assert normalise_destination(Path("out.parquet"), ExportFormat.CSV) == Path("out.csv")
     assert normalise_destination(Path("out.CSV"), ExportFormat.CSV) == Path("out.CSV")
-    assert all(f"*.{fmt.value}" in export_file_filter() for fmt in ExportFormat)
+    for export_format in ExportFormat:
+        selected_filter = export_file_filter(export_format)
+        assert f"*.{export_format.value}" in selected_filter
+        assert all(
+            export_format is other or f"*.{other.value}" not in selected_filter
+            for other in ExportFormat
+        )
 
 
 def test_atomic_writer_preserves_existing_bytes_and_removes_temp(tmp_path: Path) -> None:

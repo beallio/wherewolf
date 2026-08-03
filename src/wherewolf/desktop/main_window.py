@@ -13,6 +13,7 @@ from PyQt6.QtGui import (
     QDragEnterEvent,
     QDropEvent,
     QFont,
+    QIntValidator,
     QKeySequence,
     QStandardItemModel,
 )
@@ -36,7 +37,6 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QTabWidget,
     QToolBar,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -282,11 +282,19 @@ class MainWindow(QMainWindow):
             self.input_dialect_selector,
             "Choose the SQL dialect you are writing; it is transpiled to the execution engine.",
         )
-        self.preview_limit_selector = QSpinBox(toolbar)
+        self._preview_limit_value = self._settings_service.restore_preview_limit()
+        self.preview_limit_selector = QLineEdit(toolbar)
         self.preview_limit_selector.setObjectName("preview_limit_selector")
-        self.preview_limit_selector.setRange(10, 1000)
-        self.preview_limit_selector.setValue(self._settings_service.restore_preview_limit())
-        self.preview_limit_selector.valueChanged.connect(self._settings_service.save_preview_limit)
+        self.preview_limit_selector.setValidator(
+            QIntValidator(
+                SettingsService.MIN_PREVIEW_LIMIT,
+                SettingsService.MAX_PREVIEW_LIMIT,
+                self.preview_limit_selector,
+            )
+        )
+        self.preview_limit_selector.setText(str(self._preview_limit_value))
+        self.preview_limit_selector.textChanged.connect(self._on_preview_limit_changed)
+        self._set_preview_limit_validity(True)
         self._add_labelled_control(
             controls_layout,
             "Preview rows",
@@ -295,6 +303,31 @@ class MainWindow(QMainWindow):
         )
         toolbar.addWidget(controls)
         return toolbar
+
+    def _on_preview_limit_changed(self, text: str) -> None:
+        if text.isdecimal():
+            value = int(text)
+            if SettingsService.MIN_PREVIEW_LIMIT <= value <= SettingsService.MAX_PREVIEW_LIMIT:
+                self._preview_limit_value = value
+                self._settings_service.save_preview_limit(value)
+                self._set_preview_limit_validity(True)
+                return
+        self._set_preview_limit_validity(False)
+
+    def _set_preview_limit_validity(self, valid: bool) -> None:
+        self.preview_limit_selector.setProperty("validationState", "valid" if valid else "invalid")
+        if valid:
+            self.preview_limit_selector.setStyleSheet("")
+            self.preview_limit_selector.setToolTip(
+                "Choose the maximum number of rows shown in a query preview (10–100000)."
+            )
+        else:
+            self.preview_limit_selector.setStyleSheet(
+                "QLineEdit[validationState='invalid'] { border: 1px solid #d7191c; }"
+            )
+            self.preview_limit_selector.setToolTip(
+                "Enter a whole number from 10 to 100000 for preview rows."
+            )
 
     @staticmethod
     def _add_labelled_control(
@@ -381,7 +414,7 @@ class MainWindow(QMainWindow):
                 source_dialect=source_dialect,
                 engine=engine,
                 catalog_service=self._catalog_service,
-                preview_limit=self.preview_limit_selector.value(),
+                preview_limit=self._preview_limit_value,
             )
         except TranslationError as exc:
             self._on_editor_diagnostics(
@@ -573,7 +606,7 @@ class MainWindow(QMainWindow):
         if result.added:
             first = result.added[0]
             if was_empty_catalog and not self.editor.text().strip():
-                self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)} LIMIT 10")
+                self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)}")
             self._settings_service.save_last_dataset_directory(first.path.parent)
             for entry in result.added:
                 binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
@@ -750,16 +783,6 @@ class MainWindow(QMainWindow):
         self.export_button.clicked.connect(self._export_selected_scope)
         export_controls.addWidget(self.export_button)
 
-        for object_name, action in (
-            ("export_preview_button", self.desktop_actions.export_preview),
-            ("export_full_button", self.desktop_actions.export_full),
-            ("export_selection_button", self.desktop_actions.export_selection),
-        ):
-            button = QToolButton(results_page)
-            button.setObjectName(object_name)
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-            button.setDefaultAction(action)
-            export_controls.addWidget(button)
         export_controls.setStretch(1, 1)
         results_layout.addLayout(export_controls)
         self.preview_filter_error = QLabel(results_page)

@@ -27,8 +27,8 @@ def normalise_destination(path: Path, export_format: ExportFormat) -> Path:
     return path.with_suffix(suffix)
 
 
-def export_file_filter() -> str:
-    return "Export files (" + " ".join(f"*.{fmt.value}" for fmt in ExportFormat) + ")"
+def export_file_filter(export_format: ExportFormat) -> str:
+    return f"Export files (*.{export_format.value})"
 
 
 def write_atomically(destination: Path, writer: Callable[[Path], None]) -> None:

@@ -1,8 +1,14 @@
 from PyQt6.Qsci import QsciLexerSQL
+from PyQt6.QtCore import QSettings
 from PyQt6.QtGui import QColor
 
 from wherewolf.desktop.widgets import SqlEditor
-from wherewolf.services import SqlCompletionService, StatementSelection, StatementService
+from wherewolf.services import (
+    SettingsService,
+    SqlCompletionService,
+    StatementSelection,
+    StatementService,
+)
 
 
 class _SpyCompletionService(SqlCompletionService):
@@ -135,12 +141,27 @@ def test_sql_editor_toggle_comment_round_trips_selection(qtbot) -> None:
     assert editor.text() == "select 1;\nselect 2;"
 
 
-def test_sql_editor_font_settings_are_restored_and_saved(qtbot) -> None:
-    editor = SqlEditor()
+def test_sql_editor_font_settings_are_restored_and_saved(qtbot, tmp_path) -> None:
+    settings = QSettings(str(tmp_path / "font-preferences.ini"), QSettings.Format.IniFormat)
+    settings_service = SettingsService(settings)
+    editor = SqlEditor(settings_service=settings_service)
     qtbot.addWidget(editor)
-    editor.set_font_size(18)
+    editor.set_font_size(28)
 
-    assert editor.font_size == 18
+    lexer = editor.lexer()
+    assert isinstance(lexer, QsciLexerSQL)
+    for style in (QsciLexerSQL.Default, QsciLexerSQL.Keyword, QsciLexerSQL.Identifier):
+        assert lexer.font(style).pointSize() == 28
+    assert editor.font().pointSize() == 28
+    assert editor.font_size == 28
+    assert settings_service.restore_editor_font_size() == 28
+
+    restored = SqlEditor(settings_service=settings_service)
+    qtbot.addWidget(restored)
+    restored_lexer = restored.lexer()
+    assert isinstance(restored_lexer, QsciLexerSQL)
+    for style in (QsciLexerSQL.Default, QsciLexerSQL.Keyword, QsciLexerSQL.Identifier):
+        assert restored_lexer.font(style).pointSize() == 28
 
 
 def test_text_to_run_prefers_selection_over_statement_lookup(qtbot) -> None:

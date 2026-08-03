@@ -41,6 +41,7 @@ def test_settings_service_returns_defaults_for_missing_keys(tmp_path: Path) -> N
     assert service.restore_window_state() == b""
     assert service.restore_splitter_sizes() == service.DEFAULT_SPLITTER_SIZES
     assert service.restore_editor_font_size() == service.DEFAULT_FONT_SIZE
+    assert service.restore_preview_limit() == 1000
     assert isinstance(service.restore_last_dataset_directory(), Path)
 
 

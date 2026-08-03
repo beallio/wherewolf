@@ -72,7 +72,10 @@ def test_successful_export_without_warnings_still_reports_the_destination(
     assert "warning" not in combined.lower()
 
 
-def test_export_destination_dialog_confirms_overwrite(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("export_format", tuple(ExportFormat))
+def test_export_destination_dialog_uses_only_selected_format_filter(
+    monkeypatch: pytest.MonkeyPatch, export_format: ExportFormat
+) -> None:
     """Qt must be allowed to prompt before an existing file is replaced."""
     captured: list[tuple[object, ...]] = []
 
@@ -84,10 +87,16 @@ def test_export_destination_dialog_confirms_overwrite(monkeypatch: pytest.Monkey
 
     QtFileDialogService().choose_export_path(
         default_directory=Path("/tmp"),
-        export_format=ExportFormat.CSV,
+        export_format=export_format,
         parent=None,
     )
 
+    selected_filter = str(captured[0][3])
+    assert selected_filter == f"Export files (*.{export_format.value})"
+    assert all(
+        export_format is other or f"*.{other.value}" not in selected_filter
+        for other in ExportFormat
+    )
     options = [a for a in captured[0] if isinstance(a, QFileDialog.Option)]
     assert all(QFileDialog.Option.DontConfirmOverwrite not in opt for opt in options), (
         "DontConfirmOverwrite suppresses the native overwrite prompt, so an export "

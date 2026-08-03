@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QDockWidget,
+    QLineEdit,
     QMainWindow,
     QPlainTextEdit,
     QScrollArea,
@@ -133,13 +134,17 @@ def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(
         "export_format_selector",
         "export_scope_selector",
         "export_button",
-        "export_preview_button",
-        "export_full_button",
-        "export_selection_button",
     ):
         control = window.findChild(QWidget, object_name)
         assert control is not None
         assert control.isVisible(), f"{object_name} is hidden at 1024px"
+
+    for object_name in (
+        "export_preview_button",
+        "export_full_button",
+        "export_selection_button",
+    ):
+        assert window.findChild(QWidget, object_name) is None
 
     assert all(
         action not in window.main_toolbar.actions()
@@ -731,7 +736,7 @@ def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(window.query_controller, "execute", submitted.append)
     window.desktop_actions.run.setEnabled(True)
-    window.preview_limit_selector.setValue(250)
+    window.preview_limit_selector.setText("250")
     window.preferences_action.trigger()
     window.preferences_dialog.editor_theme_selector.setCurrentText("Light")
     window.preferences_dialog.accept()
@@ -745,6 +750,44 @@ def test_main_window_preview_limit_and_theme_are_reachable_and_persisted(
     assert settings.restore_editor_theme() == "Light"
 
 
+def test_main_window_preview_limit_text_box_validates_and_uses_last_valid_value(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "preview-limit-validation")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    selector = window.preview_limit_selector
+
+    assert isinstance(selector, QLineEdit)
+    assert selector.text() == "1000"
+
+    for valid_text in ("10", "500", "50000", "100000"):
+        selector.setText(valid_text)
+        assert settings.restore_preview_limit() == int(valid_text)
+        assert selector.property("validationState") == "valid"
+
+    selector.setText("50000")
+
+    for invalid_text in ("5", "999999", "abc", ""):
+        selector.setText(invalid_text)
+        assert selector.property("validationState") == "invalid"
+        assert "10" in selector.toolTip()
+        assert "100000" in selector.toolTip()
+        assert settings.restore_preview_limit() == 50000
+
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", submitted.append)
+    window.editor.setText("SELECT 1")
+    window.desktop_actions.run.setEnabled(True)
+    window.desktop_actions.run.trigger()
+
+    assert submitted[0].preview_limit == 50000
+
+    restored = MainWindow(settings_service=settings)
+    qtbot.addWidget(restored)
+    assert restored.preview_limit_selector.text() == "50000"
+
+
 def test_main_window_fills_starter_query_for_first_dataset_when_editor_is_empty(
     tmp_path: Path, qtbot
 ) -> None:
@@ -755,7 +798,8 @@ def test_main_window_fills_starter_query_for_first_dataset_when_editor_is_empty(
 
     window.desktop_actions.add_datasets.trigger()
 
-    assert window.editor.text() == 'SELECT * FROM "select" LIMIT 10'
+    assert window.editor.text() == 'SELECT * FROM "select"'
+    assert "LIMIT" not in window.editor.text().upper()
 
 
 def test_main_window_never_overwrites_existing_editor_text_when_adding_dataset(
