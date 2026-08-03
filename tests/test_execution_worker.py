@@ -4,7 +4,14 @@ from uuid import uuid4
 from PyQt6.QtTest import QSignalSpy
 
 from wherewolf.desktop.workers.execution_worker import ExecutionWorker
-from wherewolf.domain import ExecutionRequest, ExecutionStatus, QueryResult, SchemaResult
+from wherewolf.domain import (
+    CatalogEntry,
+    ExecutionRequest,
+    ExecutionStatus,
+    ProfileResult,
+    QueryResult,
+    SchemaResult,
+)
 from wherewolf.domain.enums import EngineKind
 from wherewolf.execution.base import CancellationHandle
 
@@ -36,8 +43,11 @@ class _FakeExecutionAdapter:
             raise RuntimeError("engine execution crashed")
         return self._result
 
-    def inspect_schema(self, entry: object) -> SchemaResult:
+    def inspect_schema(self, entry: CatalogEntry) -> SchemaResult:
         return SchemaResult(entry_id=uuid4(), columns=())
+
+    def profile_dataset(self, entry: CatalogEntry) -> ProfileResult:
+        return ProfileResult(entry_id=entry.id, profiles=())
 
     def close(self) -> None:
         self.closed = True

@@ -8,6 +8,7 @@ from wherewolf.domain import (
     CatalogEntry,
     ExecutionRequest,
     ExecutionStatus,
+    ProfileResult,
     QueryResult,
     SourceFormat,
 )
@@ -60,6 +61,9 @@ class FakeEngine:
 
     def inspect_schema(self, entry: CatalogEntry) -> SchemaResult:
         return SchemaResult(entry_id=entry.id, columns=())
+
+    def profile_dataset(self, entry: CatalogEntry) -> ProfileResult:
+        return ProfileResult(entry_id=entry.id, profiles=())
 
     def cancellation_handle(self) -> CancellationHandle:
         return self._handle

@@ -24,6 +24,8 @@ class SettingsService:
     DEFAULT_PREVIEW_LIMIT: Final = 100
     DEFAULT_EDITOR_THEME: Final = "Dark"
     DEFAULT_UPDATE_CHECK_ENABLED: Final = False
+    DEFAULT_PROFILE_ON_LOAD: Final = True
+    DEFAULT_PROFILE_MAX_BYTES: Final = 268_435_456
 
     def __init__(self, settings: QSettings | None = None):
         self._settings = settings or QSettings(self.ORGANIZATION, self.APPLICATION)
@@ -68,6 +70,14 @@ class SettingsService:
     def _update_check_enabled_key(schema_version: str) -> str:
         return f"{schema_version}/updates/check_enabled"
 
+    @staticmethod
+    def _profile_on_load_key(schema_version: str) -> str:
+        return f"{schema_version}/profile/on_load"
+
+    @staticmethod
+    def _profile_max_bytes_key(schema_version: str) -> str:
+        return f"{schema_version}/profile/max_bytes"
+
     @property
     def namespace_prefix(self) -> str:
         return f"{self.SCHEMA_VERSION}"
@@ -111,6 +121,14 @@ class SettingsService:
     @property
     def update_check_enabled_key(self) -> str:
         return self._update_check_enabled_key(self.namespace_prefix)
+
+    @property
+    def profile_on_load_key(self) -> str:
+        return self._profile_on_load_key(self.namespace_prefix)
+
+    @property
+    def profile_max_bytes_key(self) -> str:
+        return self._profile_max_bytes_key(self.namespace_prefix)
 
     def restore_window_geometry(self) -> bytes:
         return self._read_bytes(self.window_geometry_key, b"")
@@ -195,6 +213,24 @@ class SettingsService:
 
     def save_update_check_enabled(self, enabled: bool) -> None:
         self._settings.setValue(self.update_check_enabled_key, bool(enabled))
+
+    def restore_profile_on_load(self) -> bool:
+        value = self._settings.value(self.profile_on_load_key, self.DEFAULT_PROFILE_ON_LOAD)
+        return value if isinstance(value, bool) else self.DEFAULT_PROFILE_ON_LOAD
+
+    def save_profile_on_load(self, enabled: bool) -> None:
+        self._settings.setValue(self.profile_on_load_key, bool(enabled))
+
+    def restore_profile_max_bytes(self) -> int:
+        value = self._settings.value(self.profile_max_bytes_key, self.DEFAULT_PROFILE_MAX_BYTES)
+        return (
+            value
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            else self.DEFAULT_PROFILE_MAX_BYTES
+        )
+
+    def save_profile_max_bytes(self, maximum: int) -> None:
+        self._settings.setValue(self.profile_max_bytes_key, max(0, int(maximum)))
 
     def _read_bytes(self, key: str, default: bytes) -> bytes:
         value = self._settings.value(key, default)

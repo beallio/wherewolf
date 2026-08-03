@@ -10,7 +10,14 @@ import polars as pl
 import pytest
 
 from wherewolf import execution
-from wherewolf.domain import CompletionKind, EngineKind, ExecutionStatus, SourceFormat
+from wherewolf.domain import (
+    ColumnProfile,
+    CompletionKind,
+    EngineKind,
+    ExecutionStatus,
+    ProfileResult,
+    SourceFormat,
+)
 from wherewolf.domain import models as domain_models
 from wherewolf.domain.errors import UnsupportedFormatError
 
@@ -113,6 +120,30 @@ def test_domain_models_are_frozen() -> None:
 
 def test_domain_queryresult_distinct_from_execution_queryresult() -> None:
     assert domain_models.QueryResult is not execution.models.QueryResult
+
+
+def test_column_profile_preserves_non_numeric_statistics_as_none() -> None:
+    entry_id = uuid4()
+    profile = ColumnProfile(
+        name="category",
+        data_type="VARCHAR",
+        min="alpha",
+        max="omega",
+        approx_unique=3,
+        avg=None,
+        std=None,
+        q25=None,
+        q50=None,
+        q75=None,
+        count=4,
+        null_percentage=25.0,
+    )
+    result = ProfileResult(entry_id=entry_id, profiles=(profile,))
+
+    assert result.entry_id == entry_id
+    assert result.error_type is None
+    assert result.profiles is not None
+    assert result.profiles[0].avg is None
 
 
 def test_catalog_binding_copies_path_snapshot() -> None:

@@ -25,11 +25,13 @@ import pyarrow  # noqa: F401
 
 from wherewolf.domain import (
     CatalogEntry,
+    ColumnProfile,
     ColumnSchema,
     EngineKind,
     EngineUnavailableError,
     ExecutionRequest,
     ExecutionStatus,
+    ProfileResult,
     QueryResult,
     SchemaResult,
 )
@@ -219,6 +221,70 @@ class _DuckDBAdapter(ExecutionEngine):
             except Exception:  # noqa: BLE001, S110  # Cleanup boundary: ignore errors during connection closure
                 pass
 
+    def profile_dataset(self, entry: CatalogEntry) -> ProfileResult:
+        """Run DuckDB's full-scan SUMMARIZE statement for one catalog entry."""
+        import duckdb
+
+        if self._cancelled:
+            return ProfileResult(
+                entry_id=entry.id,
+                profiles=(),
+                error_type="CancelledError",
+                error_message="Dataset profiling cancelled",
+            )
+
+        con = duckdb.connect(database=":memory:")
+        self._con = con
+        try:
+            if self._cancelled:
+                con.interrupt()
+
+            temp_alias = "_profile_hud"
+            self._register_view(con, str(entry.path), temp_alias)
+            rows = con.sql(f"SUMMARIZE {temp_alias}").fetchall()
+            profiles = tuple(
+                ColumnProfile(
+                    name=str(row[0]),
+                    data_type=str(row[1]),
+                    min=_as_text(row[2]),
+                    max=_as_text(row[3]),
+                    approx_unique=_as_int(row[4]),
+                    avg=_as_float(row[5]),
+                    std=_as_float(row[6]),
+                    q25=_as_float(row[7]),
+                    q50=_as_float(row[8]),
+                    q75=_as_float(row[9]),
+                    count=_as_int(row[10]),
+                    null_percentage=_as_float(row[11]),
+                )
+                for row in rows
+            )
+            return ProfileResult(entry_id=entry.id, profiles=profiles)
+        except Exception as error:  # noqa: BLE001  # Profiling boundary normalizes engine failures.
+            if (
+                self._cancelled
+                or isinstance(error, duckdb.InterruptException)
+                or "interrupt" in str(error).lower()
+            ):
+                return ProfileResult(
+                    entry_id=entry.id,
+                    profiles=(),
+                    error_type="CancelledError",
+                    error_message="Dataset profiling cancelled",
+                )
+            return ProfileResult(
+                entry_id=entry.id,
+                profiles=(),
+                error_type=type(error).__name__,
+                error_message=str(error),
+            )
+        finally:
+            self._con = None
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001, S110  # Cleanup boundary: ignore errors during connection closure
+                pass
+
     def export_full(
         self, request: ExecutionRequest, destination: Path, export_format: str
     ) -> tuple[str, ...]:
@@ -390,6 +456,14 @@ class _SparkAdapter(_BaseAdapter):
     ) -> tuple[str, ...]:
         raise ValueError("Full export is currently available only for DuckDB")
 
+    def profile_dataset(self, entry: CatalogEntry) -> ProfileResult:
+        return ProfileResult(
+            entry_id=entry.id,
+            profiles=(),
+            error_type="UnsupportedOperation",
+            error_message="Profiling is not available for this engine (Spark).",
+        )
+
 
 class EngineRegistry:
     def available_engines(self) -> tuple[EngineDescriptor, ...]:
@@ -460,6 +534,18 @@ def _frame_to_columns(frame: pl.DataFrame) -> tuple[ColumnSchema, ...] | None:
             )
         )
     return tuple(columns)
+
+
+def _as_text(value: object) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _as_int(value: object) -> int | None:
+    return int(str(value)) if value is not None else None
+
+
+def _as_float(value: object) -> float | None:
+    return float(str(value)) if value is not None else None
 
 
 def _source_warnings(request: ExecutionRequest) -> tuple[str, ...]:

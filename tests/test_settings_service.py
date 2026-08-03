@@ -121,6 +121,17 @@ def test_settings_service_update_check_defaults_off_and_round_trips(tmp_path: Pa
     assert service.restore_update_check_enabled() is True
 
 
+def test_profile_preferences_default_on_and_round_trip(tmp_path: Path) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "profile"))
+
+    assert service.restore_profile_on_load() is True
+    assert service.restore_profile_max_bytes() == 268_435_456
+    service.save_profile_on_load(False)
+    service.save_profile_max_bytes(12)
+    assert service.restore_profile_on_load() is False
+    assert service.restore_profile_max_bytes() == 12
+
+
 def test_settings_service_round_trips_every_persistent_setting(tmp_path: Path) -> None:
     service = SettingsService(_configure_qsettings_path(tmp_path / "all-round-trips"))
 

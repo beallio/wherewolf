@@ -7,7 +7,9 @@ import polars as pl
 import pytest
 
 from wherewolf.domain import (
+    CatalogEntry,
     EngineKind,
+    SourceFormat,
 )
 from wherewolf.domain.errors import EngineUnavailableError
 from wherewolf.execution.base import ExecutionEngine
@@ -72,6 +74,45 @@ def test_registry_create_spark_unavailable_raises(monkeypatch) -> None:
 
     with pytest.raises(EngineUnavailableError):
         reg.create(EngineKind.SPARK, uuid4())
+
+
+def test_duckdb_adapter_profiles_mixed_columns_from_a_fixture_file(tmp_path: Path) -> None:
+    fixture = tmp_path / "mixed.csv"
+    fixture.write_text(
+        "integer_value,float_value,category,nullable_value\n"
+        "1,1.5,alpha,10\n"
+        "2,2.5,beta,\n"
+        "3,,alpha,30\n"
+    )
+    entry = CatalogEntry(id=uuid4(), alias="mixed", path=fixture, source_format=SourceFormat.CSV)
+
+    result = EngineRegistry().create(EngineKind.DUCKDB, uuid4()).profile_dataset(entry)
+
+    assert result.error_message is None
+    assert result.profiles is not None
+    profiles = {profile.name: profile for profile in result.profiles}
+    assert profiles["nullable_value"].null_percentage == pytest.approx(33.33, abs=0.01)
+    assert profiles["category"].avg is None
+    assert profiles["category"].std is None
+    assert profiles["category"].q25 is None
+    assert profiles["category"].q50 is None
+    assert profiles["category"].q75 is None
+
+
+def test_spark_adapter_reports_that_profiling_is_unsupported(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(EngineRegistry, "_is_spark_available", lambda self: True)
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="events",
+        path=tmp_path / "events.csv",
+        source_format=SourceFormat.CSV,
+    )
+
+    result = EngineRegistry().create(EngineKind.SPARK, uuid4()).profile_dataset(entry)
+
+    assert result.profiles == ()
+    assert result.error_message is not None
+    assert "profiling is not available for this engine" in result.error_message.lower()
 
 
 def test_spark_schema_failure_is_distinguishable_from_an_empty_schema(

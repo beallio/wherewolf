@@ -52,12 +52,13 @@ from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
 from wherewolf.desktop.widgets.translation_panel import TranslationPanel
-from wherewolf.desktop.workers import SchemaWorker
+from wherewolf.desktop.workers import ProfileWorker, SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
     EngineKind,
     ExecutionRequest,
     ExecutionStatus,
+    ProfileResult,
     QueryResult,
     SchemaResult,
     SqlDiagnostic,
@@ -119,10 +120,17 @@ class PreferencesDialog(QDialog):
         self.completion_threshold.setValue(settings_service.restore_completion_threshold())
         self.update_check_enabled = QCheckBox("Check for updates on startup", self)
         self.update_check_enabled.setChecked(settings_service.restore_update_check_enabled())
+        self.profile_on_load = QCheckBox("Profile datasets when added", self)
+        self.profile_on_load.setChecked(settings_service.restore_profile_on_load())
+        self.profile_max_bytes = QSpinBox(self)
+        self.profile_max_bytes.setRange(0, 2_147_483_647)
+        self.profile_max_bytes.setValue(settings_service.restore_profile_max_bytes())
         layout.addRow("Editor font size", self.font_size)
         layout.addRow(self.completion_enabled)
         layout.addRow("Completion threshold", self.completion_threshold)
         layout.addRow(self.update_check_enabled)
+        layout.addRow(self.profile_on_load)
+        layout.addRow("Profile size limit (bytes)", self.profile_max_bytes)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
         )
@@ -163,6 +171,7 @@ class MainWindow(QMainWindow):
         self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
         self._schema_workers: list[SchemaWorker] = []
+        self._profile_workers: list[ProfileWorker] = []
         self.setWindowTitle(f"Wherewolf {version('wherewolf')}")
 
         self.main_toolbar = self._build_toolbar()
@@ -351,6 +360,11 @@ class MainWindow(QMainWindow):
     def _build_schema_dock(self) -> QDockWidget:
         schema_panel = SchemaPanel(self)
         schema_panel.insert_columns_requested.connect(self.editor_insert_text)
+        schema_panel.profile_requested.connect(
+            lambda entry: self._queue_profile_work(
+                CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
+            )
+        )
 
         dock = QDockWidget("Schema", self)
         dock.setObjectName("schema_dock")
@@ -570,14 +584,18 @@ class MainWindow(QMainWindow):
                 self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)} LIMIT 10")
             self._settings_service.save_last_dataset_directory(first.path.parent)
             for entry in result.added:
-                self._queue_schema_work(
-                    CatalogBinding(
-                        entry_id=entry.id,
-                        alias=entry.alias,
-                        path=entry.path,
-                        source_format=entry.source_format,
-                    )
-                )
+                binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
+                self._queue_schema_work(binding)
+                if self._settings_service.restore_profile_on_load():
+                    if (
+                        entry.path.stat().st_size
+                        <= self._settings_service.restore_profile_max_bytes()
+                    ):
+                        self._queue_profile_work(binding)
+                    else:
+                        self._catalog_service.mark_profile_skipped(
+                            entry.id, "Profiling skipped: source exceeds the configured size limit."
+                        )
             self._show_status(f"Added `{first.alias}` to catalog.")
             self._update_catalog_affordances()
         if result.warnings:
@@ -598,6 +616,35 @@ class MainWindow(QMainWindow):
         )
         self._schema_workers.append(worker)
         worker.start()
+
+    def _queue_profile_work(self, binding: CatalogBinding) -> None:
+        worker = ProfileWorker(
+            engine_registry=self._engine_registry,
+            binding=binding,
+            parent=self,
+        )
+        worker.result_ready.connect(self._on_profile_result)
+        worker.finished.connect(
+            lambda: (
+                self._profile_workers.remove(worker) if worker in self._profile_workers else None
+            )
+        )
+        self._profile_workers.append(worker)
+        worker.start()
+
+    def _on_profile_result(self, profile_result: ProfileResult) -> None:
+        self._catalog_service.update_profile(profile_result)
+        self._catalog_service.refresh_profile_staleness()
+        entry = next(
+            (
+                entry
+                for entry in self._catalog_service.entries
+                if entry.id == profile_result.entry_id
+            ),
+            None,
+        )
+        if entry is not None:
+            self.schema_panel.set_entries(self._catalog_service.entries, entry.alias)
 
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
@@ -867,6 +914,8 @@ class MainWindow(QMainWindow):
         self._settings_service.save_completion_enabled(dialog.completion_enabled.isChecked())
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
         self._settings_service.save_update_check_enabled(dialog.update_check_enabled.isChecked())
+        self._settings_service.save_profile_on_load(dialog.profile_on_load.isChecked())
+        self._settings_service.save_profile_max_bytes(dialog.profile_max_bytes.value())
         self.editor.set_font_size(dialog.font_size.value())
 
     def _on_editor_diagnostics(self, payload: tuple) -> None:
@@ -921,6 +970,12 @@ class MainWindow(QMainWindow):
                 worker.quit()
                 worker.wait()
         self._schema_workers.clear()
+
+        for worker in list(self._profile_workers):
+            if worker.isRunning():
+                worker.quit()
+                worker.wait()
+        self._profile_workers.clear()
 
         self.query_controller.shutdown()
         self.export_controller.shutdown()

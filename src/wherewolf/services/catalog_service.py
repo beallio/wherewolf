@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Final
 from uuid import UUID, uuid4
 
-from wherewolf.domain import CatalogBinding, CatalogEntry, SchemaResult, SourceFormat
+from wherewolf.domain import CatalogBinding, CatalogEntry, ProfileResult, SchemaResult, SourceFormat
 from wherewolf.domain.errors import UnsupportedFormatError
 
 
@@ -145,6 +145,63 @@ class CatalogService:
         )
         self._entries = tuple(entries)
         self._notify()
+
+    def update_profile(self, profile_result: ProfileResult) -> None:
+        index = next(
+            (i for i, entry in enumerate(self._entries) if entry.id == profile_result.entry_id),
+            None,
+        )
+        if index is None:
+            return
+        entries = list(self._entries)
+        entry = entries[index]
+        try:
+            stat = entry.path.stat()
+            profile_source_size = stat.st_size
+            profile_source_mtime_ns = stat.st_mtime_ns
+        except OSError:
+            profile_source_size = None
+            profile_source_mtime_ns = None
+        entries[index] = replace(
+            entry,
+            profile=profile_result.profiles,
+            profile_error=profile_result.error_message,
+            profile_stale=False,
+            profile_skipped_reason=None,
+            profile_source_size=profile_source_size,
+            profile_source_mtime_ns=profile_source_mtime_ns,
+        )
+        self._entries = tuple(entries)
+        self._notify()
+
+    def mark_profile_skipped(self, entry_id: UUID, reason: str) -> None:
+        self._entries = tuple(
+            replace(entry, profile_skipped_reason=reason) if entry.id == entry_id else entry
+            for entry in self._entries
+        )
+        self._notify()
+
+    def refresh_profile_staleness(self) -> None:
+        entries: list[CatalogEntry] = []
+        changed = False
+        for entry in self._entries:
+            if entry.profile is None or entry.profile_source_mtime_ns is None:
+                entries.append(entry)
+                continue
+            try:
+                stat = entry.path.stat()
+                stale = (
+                    stat.st_size != entry.profile_source_size
+                    or stat.st_mtime_ns != entry.profile_source_mtime_ns
+                )
+            except OSError:
+                stale = True
+            updated = replace(entry, profile_stale=stale)
+            changed = changed or updated != entry
+            entries.append(updated)
+        if changed:
+            self._entries = tuple(entries)
+            self._notify()
 
     def snapshot(self) -> tuple[CatalogBinding, ...]:
         return tuple(

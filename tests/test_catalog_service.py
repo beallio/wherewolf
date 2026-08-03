@@ -3,7 +3,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from wherewolf.domain import ColumnSchema, SchemaResult
+from wherewolf.domain import ColumnProfile, ColumnSchema, ProfileResult, SchemaResult
 from wherewolf.services.catalog_service import CatalogService
 
 
@@ -163,3 +163,21 @@ def test_snapshot_is_not_mutated_by_later_service_updates(tmp_path: Path) -> Non
 
     assert len(snapshot) == 1
     assert snapshot[0].entry_id == first.id
+
+
+def test_profile_is_marked_stale_when_its_source_changes(tmp_path: Path) -> None:
+    service = CatalogService()
+    path = tmp_path / "profile.csv"
+    _write_csv(path)
+    entry = service.add_paths((path,)).added[0]
+    service.update_profile(
+        ProfileResult(
+            entry.id,
+            (ColumnProfile("a", "BIGINT", "1", "1", 1, 1.0, None, 1.0, 1.0, 1.0, 1, 0.0),),
+        )
+    )
+
+    path.write_text("a\n1\n2\n")
+    service.refresh_profile_staleness()
+
+    assert service.entries[0].profile_stale is True

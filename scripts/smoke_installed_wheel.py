@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,16 @@ def _fresh_python(venv_dir: Path) -> Path:
 def main() -> int:
     TEMP_ROOT.mkdir(parents=True, exist_ok=True)
     work_dir = Path(tempfile.mkdtemp(prefix="installed-wheel-", dir=TEMP_ROOT))
+    try:
+        return _run_smoke(work_dir)
+    finally:
+        # Each run builds a full virtual environment (~700 MB). Without this the
+        # directories accumulate: 212 of them had been left behind, filling the disk
+        # until `uv build` failed with ENOSPC and three unrelated tests went red.
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def _run_smoke(work_dir: Path) -> int:
     dist_dir = work_dir / "dist"
     venv_dir = work_dir / "venv"
     smoke_home = work_dir / "home"
@@ -72,6 +83,8 @@ app.processEvents()
         env=smoke_environment,
     )
 
+    # Printed before cleanup: the test asserts on it to prove the smoke ran in a
+    # fresh environment rather than the project venv.
     print(f"Fresh virtual environment: {venv_dir}")
     print("Smoke test passed")
     return 0
