@@ -508,6 +508,10 @@ class MainWindow(QMainWindow):
         elif scope == "selection":
             self._export_selection()
 
+    def _on_preview_filter_error(self, message: str) -> None:
+        self.preview_filter_error.setText(message)
+        self.preview_filter_error.setVisible(bool(message))
+
     def _export_selection(self) -> None:
         if not self.result_table_view.has_result():
             return
@@ -704,6 +708,9 @@ class MainWindow(QMainWindow):
         self.preview_filter_input.textChanged.connect(
             self.result_table_view.proxy_model().set_filter_text
         )
+        self.result_table_view.proxy_model().filter_error_changed.connect(
+            self._on_preview_filter_error
+        )
         export_controls = QHBoxLayout()
         self._add_labelled_control(
             export_controls,
@@ -758,6 +765,11 @@ class MainWindow(QMainWindow):
             export_controls.addWidget(button)
         export_controls.setStretch(1, 1)
         results_layout.addLayout(export_controls)
+        self.preview_filter_error = QLabel(results_page)
+        self.preview_filter_error.setObjectName("preview_filter_error")
+        self.preview_filter_error.setWordWrap(True)
+        self.preview_filter_error.setVisible(False)
+        results_layout.addWidget(self.preview_filter_error)
         results_layout.addWidget(self.result_table_view)
         results.addTab(results_page, "Results")
         self.messages_panel = MessagesPanel(self)

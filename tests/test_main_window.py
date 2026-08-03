@@ -368,6 +368,36 @@ def test_main_window_preview_filter_reduces_rows_and_clear_restores_them(qtbot) 
     assert window.result_table_view.proxy_model().rowCount() == 3
 
 
+def test_main_window_preview_filter_supports_sql_predicates_and_nonblocking_errors(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.result_table_view.set_frame(
+        pl.DataFrame(
+            {
+                "age": [25, 41, 55],
+                "region": ["West", "East", "East"],
+            }
+        )
+    )
+
+    window.preview_filter_input.setText("age > 40")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    assert window.preview_filter_error.isHidden()
+
+    window.preview_filter_input.setText("East")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    assert window.preview_filter_error.isHidden()
+
+    window.preview_filter_input.setText("age >")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    assert not window.preview_filter_error.isHidden()
+    assert "age" in window.preview_filter_error.text()
+
+    window.preview_filter_input.setText("missing_column = 1")
+    assert window.result_table_view.proxy_model().rowCount() == 2
+    assert "missing_column" in window.preview_filter_error.text()
+
+
 def test_main_window_exports_selected_cells_in_visual_column_order(tmp_path: Path, qtbot) -> None:
     destination = tmp_path / "selection"
     window = MainWindow(
