@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 import polars as pl
-from PyQt6.QtCore import QItemSelection, QItemSelectionModel, Qt
+from PyQt6.QtCore import QBuffer, QIODevice, QItemSelection, QItemSelectionModel, Qt
 from PyQt6.QtGui import QIcon, QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
@@ -241,7 +241,14 @@ def test_result_table_view_headers_show_distinct_dtype_icons_and_tooltips(qtbot)
     ]
 
     assert all(isinstance(icon, QIcon) and not icon.isNull() for icon in icons)
-    assert len({icon.cacheKey() for icon in icons}) == 4
+
+    def rendered_icon_content(icon: QIcon) -> bytes:
+        buffer = QBuffer()
+        assert buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        assert icon.pixmap(18, 18).toImage().save(buffer, "PNG")
+        return buffer.data().data()
+
+    assert len({rendered_icon_content(icon) for icon in icons}) == 4
     assert "Int" in str(tooltips[0])
     assert "String" in str(tooltips[1])
     assert "Date" in str(tooltips[2])
