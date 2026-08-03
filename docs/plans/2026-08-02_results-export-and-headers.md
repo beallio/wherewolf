@@ -80,6 +80,17 @@ after set_font_size(28)      widget.font()=28  lexer.defaultFont(0)=28  lexer.fo
 theme work assigned per-style attributes, so every style ignores it. The setting is saved
 and restored correctly; only the rendering never changes.
 
+### D5 — the preview row count uses a spinner, capped at 1000
+
+`main_window.py:285-289` builds `preview_limit_selector` as a `QSpinBox` with
+`setRange(10, 1000)`, persisting on `valueChanged`. The maintainer wants a free text entry
+instead of a spinner, and a ceiling above 1000.
+
+**Maintainer decision: keep an upper bound, but raise it — accept 10 to 100000.** A preview
+is materialised into a Polars frame and rendered in a table widget, so an unbounded value
+turns a mistyped extra zero into a long freeze. Whole-result output already has its own
+path via Export Full Results.
+
 **Slug used throughout this plan:** `results-export-and-headers`
 
 ---
@@ -201,7 +212,8 @@ Drop the `LIMIT 10` clause from the auto-filled query at `main_window.py:576` so
 `SELECT * FROM <alias>`. Change `DEFAULT_PREVIEW_LIMIT` (`settings_service.py:24`) and the
 `preview_limit` parameter default (`execution_request_builder.py:28`) from `100` to `1000`.
 
-Do not change the spinbox range; `1000` is already its maximum.
+The spinner itself is replaced in Task 6, which also raises the ceiling; here just change
+the two defaults and leave the existing control alone.
 
 Tests: the auto-filled text contains no `LIMIT`; a fresh `SettingsService` returns `1000`;
 an `ExecutionRequest` built without an explicit limit carries `preview_limit == 1000`. Also
@@ -271,6 +283,27 @@ so a test against it passes on the unfixed code.
 
 Also assert the size survives a settings round-trip through a new `SqlEditor`.
 
+### Task 6 — replace the preview spinner with a validated text box (D5)
+
+Replace the `QSpinBox` at `main_window.py:285` with a text entry (`QLineEdit`) that accepts
+**10 to 100000**, keeping the object name `preview_limit_selector` so existing tests and
+tooling continue to find it. Persist through the same `save_preview_limit` /
+`restore_preview_limit` API — do not add a second settings key.
+
+Validation rules, all of which need a test:
+
+- a valid number inside the range is accepted and persisted;
+- a value below 10 or above 100000 is rejected, with the rejection visible to the user
+  rather than silently clamped in a way they cannot see;
+- non-numeric text is rejected and does not raise;
+- an empty box does not persist a nonsense value or crash on the next run.
+
+A rejected value must never reach `ExecutionRequest.preview_limit`. Test that a request
+built while the box holds an invalid value uses the last valid setting, not the garbage.
+
+Because Task 1 sets the default to 1000 and this task raises the ceiling to 100000, also
+assert a fresh profile still starts at 1000 rather than at either bound.
+
 ### Cross-cutting requirements
 
 - Do not weaken, skip or delete existing tests.
@@ -332,6 +365,9 @@ Record in the session log:
 7. The four header badges for an int/str/date/bool frame and their tooltips.
 8. `lexer.font(style).pointSize()` for the default, keyword and identifier styles before and
    after applying a new Preferences font size, alongside `widget.font().pointSize()`.
+9. The preview control's class name, and what it does with each of: `500`, `50000`, `5`,
+   `999999`, `abc`, and empty — recording the persisted value and the
+   `ExecutionRequest.preview_limit` that results in each case.
 
 ### Negative controls
 
@@ -342,6 +378,7 @@ Mandatory for tasks 1, 2, 3 and 4, and each must run against the **full** suite
 - re-add one of the three export `QToolButton`s → task 2's test must fail;
 - make `export_file_filter` list every format again → task 3's test must fail;
 - make every dtype map to the same badge string → task 4's test must fail;
+- accept an out-of-range preview value (drop the validation) → task 6's test must fail;
 - revert Task 5 to setting only `setDefaultFont` → task 5's test must fail. This one matters
   most: the pre-fix code already passes a `defaultFont`-based assertion, so a guard aimed at
   the wrong property would look green against the very bug being fixed.
@@ -365,9 +402,10 @@ columns, are manual maintainer checks — record them in
 Font rendering at very large sizes, and how the editor's margin width tracks a resized
 font, are manual maintainer checks.
 
-Raising the preview default to 1000 is **not** benchmarked here: no measurement is taken of
-render time or memory for a 1000-row preview on a wide frame. State that explicitly rather
-than implying the new default was performance-tested.
+Raising the preview default to 1000, and allowing up to 100000, are **not** benchmarked
+here: no measurement is taken of render time or memory for a large preview on a wide frame.
+State that explicitly rather than implying either limit was performance-tested. The 100000
+ceiling is a guard against a mistyped digit, not a validated safe maximum.
 
 ---
 
