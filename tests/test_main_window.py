@@ -74,6 +74,30 @@ def test_main_window_structure(qtbot) -> None:
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
 
 
+def test_main_window_view_menu_reopens_a_closed_dock_without_affecting_siblings(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+
+    history = window._history_dock_widget
+    sibling = window.catalog_dock
+    assert history.isVisible()
+    assert sibling.isVisible()
+
+    history.close()
+    assert not history.isVisible()
+    assert sibling.isVisible()
+
+    history_action = next(
+        (action for action in window.view_menu.actions() if action.text() == "History"), None
+    )
+    assert history_action is not None
+    history_action.trigger()
+
+    assert history.isVisible()
+    assert sibling.isVisible()
+
+
 def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_widths(
     qtbot,
 ) -> None:

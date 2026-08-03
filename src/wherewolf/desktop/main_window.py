@@ -853,6 +853,13 @@ class MainWindow(QMainWindow):
 
         view_menu = cast(QMenu, menu_bar.addMenu("View"))
         view_menu.setObjectName("view_menu")
+        for dock in (
+            self._catalog_dock_widget,
+            self._schema_dock_widget,
+            self._history_dock_widget,
+        ):
+            view_menu.addAction(dock.toggleViewAction())
+        view_menu.addSeparator()
         view_menu.addAction(self.desktop_actions.reset_layout)
         view_menu.addAction(self.clear_preview_filter_action)
         self.show_hidden_files_action = QAction("Show Hidden Files", self)
