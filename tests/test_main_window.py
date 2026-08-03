@@ -755,7 +755,8 @@ def test_main_window_fills_starter_query_for_first_dataset_when_editor_is_empty(
 
     window.desktop_actions.add_datasets.trigger()
 
-    assert window.editor.text() == 'SELECT * FROM "select" LIMIT 10'
+    assert window.editor.text() == 'SELECT * FROM "select"'
+    assert "LIMIT" not in window.editor.text().upper()
 
 
 def test_main_window_never_overwrites_existing_editor_text_when_adding_dataset(

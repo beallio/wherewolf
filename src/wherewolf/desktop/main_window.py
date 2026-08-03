@@ -573,7 +573,7 @@ class MainWindow(QMainWindow):
         if result.added:
             first = result.added[0]
             if was_empty_catalog and not self.editor.text().strip():
-                self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)} LIMIT 10")
+                self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)}")
             self._settings_service.save_last_dataset_directory(first.path.parent)
             for entry in result.added:
                 binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)

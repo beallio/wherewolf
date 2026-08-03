@@ -69,6 +69,8 @@ def test_different_builds_have_unique_ids():
     )
 
     assert req1.request_id != req2.request_id
+    assert req1.preview_limit == 1000
+    assert req2.preview_limit == 1000
 
 
 def test_empty_or_whitespace_sql_rejected():
