@@ -133,13 +133,17 @@ def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(
         "export_format_selector",
         "export_scope_selector",
         "export_button",
-        "export_preview_button",
-        "export_full_button",
-        "export_selection_button",
     ):
         control = window.findChild(QWidget, object_name)
         assert control is not None
         assert control.isVisible(), f"{object_name} is hidden at 1024px"
+
+    for object_name in (
+        "export_preview_button",
+        "export_full_button",
+        "export_selection_button",
+    ):
+        assert window.findChild(QWidget, object_name) is None
 
     assert all(
         action not in window.main_toolbar.actions()

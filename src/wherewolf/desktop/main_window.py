@@ -36,7 +36,6 @@ from PyQt6.QtWidgets import (
     QStatusBar,
     QTabWidget,
     QToolBar,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -750,16 +749,6 @@ class MainWindow(QMainWindow):
         self.export_button.clicked.connect(self._export_selected_scope)
         export_controls.addWidget(self.export_button)
 
-        for object_name, action in (
-            ("export_preview_button", self.desktop_actions.export_preview),
-            ("export_full_button", self.desktop_actions.export_full),
-            ("export_selection_button", self.desktop_actions.export_selection),
-        ):
-            button = QToolButton(results_page)
-            button.setObjectName(object_name)
-            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
-            button.setDefaultAction(action)
-            export_controls.addWidget(button)
         export_controls.setStretch(1, 1)
         results_layout.addLayout(export_controls)
         self.preview_filter_error = QLabel(results_page)
