@@ -209,6 +209,10 @@ class SchemaPanel(QWidget):
                     self._status_label.setText(
                         f"{alias} — {self._entry.path} ({self._entry.source_format.value}) — {len(columns)} columns"
                     )
+                    if self._entry.profile_skipped_reason is not None:
+                        self._status_label.setText(
+                            f"{self._status_label.text()} — {self._entry.profile_skipped_reason}"
+                        )
                 self._status_label.show()
 
             self._table_widget.show()

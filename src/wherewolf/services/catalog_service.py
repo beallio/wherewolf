@@ -165,6 +165,13 @@ class CatalogService:
         self._entries = tuple(entries)
         self._notify()
 
+    def mark_profile_skipped(self, entry_id: UUID, reason: str) -> None:
+        self._entries = tuple(
+            replace(entry, profile_skipped_reason=reason) if entry.id == entry_id else entry
+            for entry in self._entries
+        )
+        self._notify()
+
     def snapshot(self) -> tuple[CatalogBinding, ...]:
         return tuple(
             CatalogBinding(
