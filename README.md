@@ -1,16 +1,16 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=21" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=22" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=21)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=21)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=21)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=22)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=22)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=22)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 Wherewolf is a local SQL workbench for CSV, Parquet, JSON, JSON Lines, and XLSX files. It opens
 a native PyQt6 desktop window and runs queries with DuckDB by default. There is no browser UI and
 no local web server.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=21)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=22)
 
 ## Install
 
@@ -22,6 +22,10 @@ wherewolf
 ```
 
 `wherewolf-desktop` is an equivalent entry point. Both commands open the native desktop window.
+
+`wherewolf --version` prints the release version and the build commit, for example
+`wherewolf 0.6.0 (build 202db43)`. It answers without loading Qt, so it works over SSH and on a
+machine with no display — useful for confirming which build an installed copy actually is.
 
 ### Optional Spark engine
 
@@ -68,18 +72,32 @@ installing Java.
 4. Press **Ctrl+.** to request cancellation of the active query. The status bar and Messages tab
    report state, timing, preview rows, truncation, and errors.
 5. History records successful queries in `~/.wherewolf/history.json`. Selecting a history entry
-   restores its SQL and available datasets without immediately running it. Use **File → Clear
-   History** to remove saved entries or **View → Reset Layout** to restore the default layout.
+   restores its SQL only — your dataset catalog is left untouched — and does not run it. The
+   History dock shows timestamp and query in separate sortable columns. Use **File → Clear
+   History** to remove saved entries, **View → Reset Layout** to restore the default layout, or
+   the **View** menu to reopen a dock you have closed.
 
-Window geometry, docks, splitter proportions, editor font size, recent dataset directory, and
-completion preferences are persisted between desktop sessions.
+The Schema dock also profiles the selected dataset — null percentage, approximate distinct
+count, min, max and mean — computed with DuckDB `SUMMARIZE` on a background thread. Profiling
+runs automatically when a dataset is added and is skipped for sources above a configurable size.
+Both settings live in **View → Preferences…**, alongside editor font size, theme, and completion.
+
+Window geometry, docks, splitter proportions, editor font size and theme, preview row count,
+recent dataset directory, profiling and completion preferences are persisted between desktop
+sessions.
 
 ## Results grid and ordering
 
-The grid displays a bounded preview (up to 1,000 rows), preserves values for typed sorting, and
-supports selection, spreadsheet-compatible TSV copy, search/filtering, column reordering,
-hiding, auto-sizing, and reset. Right-click a header to copy or insert its name, adjust columns,
-or choose an ordering action.
+The grid displays a bounded preview — 1,000 rows by default, adjustable from 10 to 100,000 —
+preserves values for typed sorting, and supports selection, spreadsheet-compatible TSV copy,
+filtering, column reordering, hiding, auto-sizing, and reset. Column headers carry a data-type
+badge such as `age [INT]` or `when [DATE]`, with the exact type in the tooltip. Right-click a
+header to copy or insert its name, adjust columns, or choose an ordering action.
+
+The preview filter accepts either plain text, matched as a substring, or a SQL predicate over
+the previewed rows such as `age > 40` or `region = 'East' AND amount > 100`. An invalid
+expression reports the engine's error and leaves the current rows in place. Filters apply to the
+preview only and cannot reach rows excluded by the row limit.
 
 Clicking a header only sorts the local preview. While a local sort is active, Wherewolf labels it
 **Sorted preview only.** It does not rerun or alter your query. To change the result order of the
@@ -91,8 +109,11 @@ that header's context menu, then run the resulting SQL.
 **Export Preview…** writes the currently displayed, bounded preview. **Export Full Results…**
 re-executes the captured query rather than exporting only the preview. For DuckDB, full CSV and
 Parquet exports stream directly to disk without materializing the entire result in Python; full
-XLSX export is intentionally capped at 100,000 rows. The desktop export action currently selects
-CSV destinations. Spark has no desktop full-export adapter, so full Spark export is not available.
+XLSX export is intentionally capped at 100,000 rows. Choose the scope and file format beside the
+results grid and press **Export**; the save dialog offers only the selected format and confirms
+before replacing an existing file. If a source file changed on disk after the query ran, the
+export reports it rather than reporting plain success. Spark has no desktop full-export adapter,
+so full Spark export is not available.
 
 ## License
 
