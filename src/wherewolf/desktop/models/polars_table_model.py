@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import polars as pl
 from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt
-from PyQt6.QtGui import QIcon
 
 NULL_PLACEHOLDER = "<null>"
 
@@ -17,17 +16,17 @@ class PolarsTableModel(QAbstractTableModel):
     def __init__(self, frame: pl.DataFrame | None = None, parent=None) -> None:
         super().__init__(parent)
         self._frame = frame if frame is not None else pl.DataFrame()
-        self._header_icons: list[QIcon | None] = []
+        self._header_badges: list[str] = []
 
     def set_frame(self, frame: pl.DataFrame | None) -> None:
         self.beginResetModel()
         self._frame = frame if frame is not None else pl.DataFrame()
-        self._header_icons = [None] * self._frame.width
+        self._header_badges = [""] * self._frame.width
         self.endResetModel()
 
-    def set_header_icons(self, icons: list[QIcon]) -> None:
-        """Set runtime-generated result header icons for the current frame."""
-        self._header_icons = [*icons]
+    def set_header_badges(self, badges: list[str]) -> None:
+        """Set readable runtime-generated result header badges for the current frame."""
+        self._header_badges = [*badges]
         if self._frame.width:
             self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, self._frame.width - 1)
 
@@ -77,8 +76,8 @@ class PolarsTableModel(QAbstractTableModel):
                 return self._frame.columns[section]
             if role == Qt.ItemDataRole.ToolTipRole:
                 return f"{self._frame.columns[section]}: {self._frame.dtypes[section]}"
-            if role == Qt.ItemDataRole.DecorationRole and section < len(self._header_icons):
-                return self._header_icons[section]
+            if role == Qt.ItemDataRole.UserRole and section < len(self._header_badges):
+                return self._header_badges[section]
         if (
             orientation == Qt.Orientation.Vertical
             and 0 <= section < self._frame.height
