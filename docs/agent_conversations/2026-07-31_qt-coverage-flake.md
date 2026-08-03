@@ -1,0 +1,38 @@
+# Session Log: 2026-07-31 - Fix Qt Coverage Flake
+
+- **date**: 2026-07-31
+- **task objective**: Investigate and fix intermittent Qt native crashes (`Fatal Python error: Aborted` / `Segmentation fault`) occurring during `pytest` runs under coverage.
+- **files modified**:
+  - `pyproject.toml`
+  - `scripts/check_flake.sh`
+  - `README.md`
+  - `docs/plans/2026-07-31_qt-coverage-flake.md`
+  - `docs/agent_conversations/2026-07-31_qt-coverage-flake.md`
+- **tests added**:
+  - `scripts/check_flake.sh` (on-demand regression guard script)
+- **design decisions**:
+  - Followed plan-mandated empirical hypothesis testing with explicit sample sizes (30-40 runs per configuration).
+  - Adopted `timid = true` under `[tool.coverage.run]` in `pyproject.toml` to switch coverage.py from C-extension trace hooks to standard Python `sys.settrace`, preventing native C frame corruption during Qt event loop dispatch.
+- **results & hypothesis history**:
+  - **Baseline (Measured)**:
+    - Coverage ON (`/tmp/wherewolf/flake.sh 30`): `2 / 30` crashes (runs 4, 6)
+    - Coverage OFF (`/tmp/wherewolf/flake.sh 30 --no-cov`): `0 / 30` crashes
+  - **Previously Disproven Hypotheses**:
+    - Unregistered top-level widgets: `6 / 25` crashes (disproven in commit `3314afc`).
+    - `SchemaWorker` `QThread` garbage-collection race: `8 / 40` crashes (disproven in commit `3314afc`).
+  - **Evaluated Hypotheses**:
+    - Task 2 (`concurrency = ["thread"]`): `3 / 40` crashes (runs 1, 9, 20). Reverted per decision rule (3+ / 40).
+    - Task 3 (Crash sample collection): 5 crashes observed across 40 runs (`test_catalog_dock.py` and `test_actions.py`). C stack trace showed invalid frame during Qt posted-event delivery (`QCoreApplicationPrivate::sendPostedEvents` -> `QObject::event`). Isolated test execution produced `0 / 40` crashes.
+    - Task 4.1 (`sigterm = true`): `4 / 40` crashes (runs 23, 26, 29, 35) - disproven.
+    - Task 4.2 (`omit = ["src/wherewolf/desktop/workers/*"]`): `1 / 40` crashes (run 6) - reduced but not zero, reverted.
+    - Task 4.3 (`PYTHONFAULTHANDLER=1`): `4 / 40` crashes (runs 7, 16, 36, 40). Faulthandler confirmed `<invalid frame>` in Python frame evaluation during Qt's Glib/QEventLoop event dispatch.
+    - Task 4 (Fix - `timid = true`): `0 / 40` crashes across 40 suite runs.
+- **Root Cause Summary**:
+  - coverage.py's C-extension tracer engine (`coverage.tracer`) corrupts Python interpreter frame state when PyQt6 C++ event dispatch loops (`QEventDispatcherGlib` / `sendPostedEvents` / `QObject::event`) invoke Python wrappers across signal/slot and thread boundaries under Python 3.14.
+  - Setting `timid = true` configures coverage.py to use pure-Python `sys.settrace` tracing, which cleanly bypasses low-level C frame corruption during Qt event handling while keeping coverage 100% enabled and functional.
+- **Verification Results**:
+  - V1: 0 / 40 crashes (`crashes: 0 / 40`).
+  - V2: Coverage remains enabled (`addopts = "--cov=src --cov-report=term"`), reporting 84% total coverage (2023 stmts, 328 missed).
+  - V3: 179 passed, 1 skipped; no tests deleted, skipped, or xfailed.
+  - V4: `scripts/check_flake.sh` passed on clean suite (0/5) and correctly detected exit 139 native crash on sabotaged suite.
+  - V5: Clean working tree; ruff check, ruff format, ty check, pytest, and review notes checks all passed.

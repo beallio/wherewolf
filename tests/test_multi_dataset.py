@@ -1,4 +1,6 @@
 import polars as pl
+import pytest
+
 from wherewolf.execution import DuckDBEngine, SparkEngine
 
 
@@ -22,7 +24,8 @@ def test_duckdb_multi_dataset_join(tmp_path):
     assert list(result.df.columns) == ["name", "amount"]
 
 
-def test_spark_multi_dataset_join(tmp_path):
+@pytest.mark.spark
+def test_spark_multi_dataset_join(tmp_path, spark_session):
     """Verify Spark can register and join multiple datasets."""
     path1 = tmp_path / "users.csv"
     path2 = tmp_path / "orders.parquet"

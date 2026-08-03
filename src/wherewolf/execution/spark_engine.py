@@ -1,100 +1,134 @@
+from __future__ import annotations
+
 import time
+from importlib import import_module, util
+from pathlib import Path
+from typing import Any, cast
+from uuid import UUID, uuid4
+
 import polars as pl
-from typing import Optional, cast
+
 from .models import QueryResult
 
-try:
-    from pyspark.sql import SparkSession
-
-    SPARK_AVAILABLE = True
-except ImportError:
-    SPARK_AVAILABLE = False
+SPARK_AVAILABLE = util.find_spec("pyspark") is not None
 
 
 class SparkEngine:
-    """Execution engine using PySpark."""
+    """Execute a request in an isolated SQL session on the shared local Spark context."""
 
-    def __init__(self):
-        self.spark = None
-        self._registered_views = {}  # alias -> path mapping for idempotency
-        if SPARK_AVAILABLE:
-            # Note: We'll lazily create the session or expect it in the execute
-            pass
+    def __init__(self, request_id: UUID | None = None) -> None:
+        self._request_id = request_id or uuid4()
+        self.spark: Any | None = None
+        self._active_views: set[str] = set()
 
-    def _get_session(self):
-        if not self.spark:
-            self.spark = (
-                SparkSession.builder.appName("Wherewolf")
-                .master("local[*]")
+    def _get_session(self) -> Any:
+        """Start Spark only on demand and use a fresh SQL session for this request."""
+        if self.spark is not None:
+            return self.spark
+        if not SPARK_AVAILABLE:
+            raise RuntimeError("PySpark is not installed; install wherewolf[spark]")
+
+        try:
+            spark_session = import_module("pyspark.sql").SparkSession
+            root_session = (
+                # pyspark exposes `builder` dynamically, which ty cannot resolve.
+                spark_session.builder.appName("Wherewolf")  # ty: ignore[unresolved-attribute]
+                .master("local[1]")
+                .config("spark.driver.memory", "512m")
+                .config("spark.ui.enabled", "false")
+                .config("spark.sql.shuffle.partitions", "1")
                 .config("spark.sql.execution.arrow.pyspark.enabled", "true")
                 .getOrCreate()
             )
+            # `getOrCreate` reuses the one JVM-backed context. A child SQL session keeps
+            # temporary views isolated between request adapters while sharing that context.
+            self.spark = root_session.newSession()
+        except Exception as error:  # Startup boundary: normalize JVM failures.
+            raise RuntimeError(
+                "Unable to start Spark. Install wherewolf[spark] and a compatible Java runtime. "
+                f"Details: {error}"
+            ) from error
         return self.spark
 
-    def _register_view(self, path: str, alias: str = "dataset"):
-        """Registers a dataset as a view with the given alias."""
-        # Idempotency check
-        if self._registered_views.get(alias) == path:
-            # We still need the dataframe for get_schema if we just registered it
-            # But for execute, we just need the view to exist.
-            # To be safe, we'll re-read if it's not in the spark catalog,
-            # but usually it's faster to trust self._registered_views.
-            pass
+    @staticmethod
+    def _validate_json_shape(path: Path) -> None:
+        """Keep the suffix contract explicit instead of silently misreading JSON input.
 
-        import os
-        from pathlib import Path
+        `.json` is a JSON array and `.jsonl` is one JSON object per line. This small
+        content check catches the common accidental suffix swap before Spark can return
+        a plausible-but-wrong frame.
+        """
+        try:
+            leading = path.read_text(encoding="utf-8").lstrip()[:1]
+        except OSError as error:
+            raise ValueError(f"Cannot read JSON input {path}: {error}") from error
 
+        if path.suffix.lower() == ".json" and leading != "[":
+            raise ValueError("JSON files must contain a JSON array; use .jsonl for JSON Lines")
+        if path.suffix.lower() == ".jsonl" and leading == "[":
+            raise ValueError(
+                "JSON Lines files must contain one object per line; use .json for arrays"
+            )
+
+    def _register_view(self, path: str, alias: str = "dataset") -> Any:
+        """Read one source and make it available for the current request only."""
         spark = self._get_session()
-        abs_path = os.path.abspath(path)
-        suffix = Path(abs_path).suffix.lower()
+        abs_path = Path(path).expanduser().resolve()
+        suffix = abs_path.suffix.lower()
 
-        # Determine format by extension (basic detection)
         if suffix == ".csv":
             df_spark = (
-                spark.read.option("header", "true").option("inferSchema", "true").csv(abs_path)
+                spark.read.option("header", "true").option("inferSchema", "true").csv(str(abs_path))
             )
         elif suffix == ".parquet":
-            df_spark = spark.read.parquet(abs_path)
-        elif suffix == ".json":
-            df_spark = spark.read.json(abs_path)
-        elif suffix in [".xlsx", ".xls"]:
-            # Use polars as a bridge for Excel in local Spark
-            df_arrow = pl.read_excel(abs_path).to_arrow()
-            df_spark = spark.createDataFrame(df_arrow)
+            df_spark = spark.read.parquet(str(abs_path))
+        elif suffix in {".json", ".jsonl"}:
+            self._validate_json_shape(abs_path)
+            df_spark = spark.read.option("multiLine", str(suffix == ".json").lower()).json(
+                str(abs_path)
+            )
+        elif suffix in {".xlsx", ".xls"}:
+            df_spark = spark.createDataFrame(pl.read_excel(abs_path).to_arrow())
         else:
             raise ValueError(f"Unsupported file format for path: {abs_path}")
 
-        # 2. Register temp view
         df_spark.createOrReplaceTempView(alias)
-        self._registered_views[alias] = path
+        self._active_views.add(alias)
         return df_spark
 
-    def get_schema(self, path: str) -> pl.DataFrame:
-        """Returns the schema of the dataset.
+    def _drop_active_views(self) -> None:
+        if self.spark is None:
+            return
+        for alias in self._active_views:
+            try:
+                self.spark.catalog.dropTempView(alias)
+            except Exception:  # noqa: BLE001, S110  # Cleanup is best effort after a failed job.
+                pass
+        self._active_views.clear()
 
-        Returns:
-            A DataFrame with 'Column' and 'Type' columns.
-        """
+    def get_schema(self, path: str) -> pl.DataFrame:
+        """Return schema columns or raise so the registry can report a schema error."""
         if not SPARK_AVAILABLE:
             return pl.DataFrame(schema={"Column": pl.Utf8, "Type": pl.Utf8})
 
         try:
-            temp_alias = "_schema_hud"
-            df_spark = self._register_view(path, alias=temp_alias)
-            # Spark schema to polars
-            schema_data = []
-            for field in df_spark.schema:
-                schema_data.append({"Column": field.name, "Type": field.dataType.simpleString()})
-            return pl.DataFrame(schema_data, schema={"Column": pl.Utf8, "Type": pl.Utf8})
-        except Exception:
-            return pl.DataFrame(schema={"Column": pl.Utf8, "Type": pl.Utf8})
+            df_spark = self._register_view(path, alias="_schema_hud")
+            return pl.DataFrame(
+                [
+                    {"Column": field.name, "Type": field.dataType.simpleString()}
+                    for field in df_spark.schema
+                ],
+                schema={"Column": pl.Utf8, "Type": pl.Utf8},
+            )
+        finally:
+            self._drop_active_views()
 
     def execute(
         self,
         query: str,
         path: str = "",
-        limit: Optional[int] = 1000,
-        catalog: Optional[dict[str, str]] = None,
+        limit: int | None = 1000,
+        catalog: dict[str, str] | None = None,
     ) -> QueryResult:
         if not SPARK_AVAILABLE:
             return QueryResult(success=False, error_message="PySpark not installed")
@@ -102,27 +136,24 @@ class SparkEngine:
         start_time = time.time()
         try:
             spark = self._get_session()
+            spark.sparkContext.setJobGroup(
+                str(self._request_id),
+                f"Wherewolf request {self._request_id}",
+                interruptOnCancel=True,
+            )
 
-            # 1. Prepare Catalog
-            active_catalog = catalog or {}
+            active_catalog = dict(catalog or {})
             if path and "dataset" not in active_catalog:
                 active_catalog["dataset"] = path
-
-            # 2. Register all datasets in the catalog
             for alias, dataset_path in active_catalog.items():
                 self._register_view(dataset_path, alias=alias)
 
-            # 3. Execute query
             res_spark = spark.sql(query)
-
             if limit is None:
-                # Full result set (used for full exports): no row cap.
                 df_preview = cast(pl.DataFrame, pl.from_arrow(res_spark.toArrow()))
                 row_count = len(df_preview)
                 is_truncated = False
             else:
-                # Fetch the preview + 1 extra row to see if there's more.
-                # This avoids a full scan of the dataset with count()
                 preview_plus_one = cast(
                     pl.DataFrame, pl.from_arrow(res_spark.limit(limit + 1).toArrow())
                 )
@@ -130,23 +161,25 @@ class SparkEngine:
                 row_count = len(df_preview)
                 is_truncated = len(preview_plus_one) > limit
 
-            execution_time = time.time() - start_time
             return QueryResult(
                 df=df_preview,
-                execution_time=execution_time,
+                execution_time=time.time() - start_time,
                 row_count=row_count,
                 success=True,
                 is_truncated=is_truncated,
             )
-        except Exception as e:
+        except Exception as error:  # noqa: BLE001  # Execution boundary: normalize Spark failures.
             return QueryResult(
-                success=False, error_message=str(e), execution_time=time.time() - start_time
+                success=False,
+                error_message=str(error),
+                execution_time=time.time() - start_time,
             )
+        finally:
+            self._drop_active_views()
 
-    def interrupt(self):
-        """Interrupts current Spark job."""
-        if self.spark:
-            # Spark context interrupt
-            sc = getattr(self.spark, "sparkContext", None)
-            if sc:
-                sc.cancelAllJobs()
+    def interrupt(self) -> None:
+        """Cancel only this request's job group, never every Spark job in the context."""
+        if self.spark is not None:
+            spark_context = getattr(self.spark, "sparkContext", None)
+            if spark_context is not None:
+                spark_context.cancelJobGroup(str(self._request_id))

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, dev ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, dev ]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -20,9 +20,16 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
       - name: Set up Python
-        run: uv python install 3.12
+        run: uv python install 3.14
+      # Install Qt offscreen platform libraries required by PyQt6 under QT_QPA_PLATFORM=offscreen, as configured in tests/conftest.py.
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
       - name: Install dependencies
-        run: ./run.sh uv sync --all-extras --dev
+        # Include the spark extra: ty must resolve pyspark to type-check the optional
+        # engine. The test-duckdb leg is what proves a DuckDB-only install works.
+        run: ./run.sh uv sync --locked --extra spark --dev
       - name: Lint with ruff
         run: |
           ./run.sh uv run ruff check .
@@ -30,11 +37,11 @@ jobs:
       - name: Type check with ty
         run: ./run.sh uv run ty check . --python /tmp/wherewolf/.venv/bin/python
 
-  test:
+  test-duckdb:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@v6
       - name: Install uv
@@ -44,7 +51,112 @@ jobs:
           cache-dependency-glob: "uv.lock"
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
+      # Install Qt offscreen platform libraries required by PyQt6 under QT_QPA_PLATFORM=offscreen, as configured in tests/conftest.py.
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
       - name: Install dependencies
-        run: ./run.sh uv sync --all-extras --dev
+        run: ./run.sh uv sync --locked --dev --python ${{ matrix.python-version }}
+      - name: Verify interpreter
+        run: |
+          actual=$(
+            ./run.sh uv run --python ${{ matrix.python-version }} python -c 'import sys; print("%d.%d" % sys.version_info[:2])' | tail -1
+          )
+          echo "interpreter: $actual"
+          test "$actual" = "${{ matrix.python-version }}" || { echo "FAIL: expected ${{ matrix.python-version }}, got $actual"; exit 1; }
       - name: Run tests
-        run: ./run.sh uv run pytest
+        run: ./run.sh uv run --python ${{ matrix.python-version }} pytest
+
+  test-spark:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+      - name: Set up Java for Spark
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies
+        run: ./run.sh uv sync --locked --extra spark --dev --python ${{ matrix.python-version }}
+      - name: Verify interpreter
+        run: |
+          actual=$(
+            ./run.sh uv run --python ${{ matrix.python-version }} python -c 'import sys; print("%d.%d" % sys.version_info[:2])' | tail -1
+          )
+          echo "interpreter: $actual"
+          test "$actual" = "${{ matrix.python-version }}" || { echo "FAIL: expected ${{ matrix.python-version }}, got $actual"; exit 1; }
+      - name: Run Spark tests
+        run: ./run.sh uv run --python ${{ matrix.python-version }} pytest -m spark
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+      - name: Install dependencies
+        run: ./run.sh uv sync --locked --dev --python 3.14
+      - name: Build and smoke test installed wheel
+        run: ./run.sh uv run --python 3.14 python scripts/smoke_installed_wheel.py
+
+  qt-smoke:
+    name: qt-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      QT_QPA_PLATFORM: offscreen
+      # `runner` is unavailable at job scope. Keep these isolated from the
+      # checked-out project while using a context GitHub accepts for this scope.
+      UV_PROJECT_ENVIRONMENT: ${{ github.workspace }}/.wherewolf-qt-smoke-venv
+      UV_CACHE_DIR: ${{ github.workspace }}/.wherewolf-qt-smoke-uv-cache
+      XDG_CACHE_HOME: ${{ github.workspace }}/.wherewolf-qt-smoke-cache
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/.wherewolf-qt-smoke-pycache
+      TMPDIR: ${{ github.workspace }}/.wherewolf-qt-smoke-tmp
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python
+        run: uv python install 3.14
+      - name: Install Qt offscreen system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+      - name: Install dependencies
+        run: uv sync --locked --dev --python 3.14
+      - name: Run offscreen Qt widget and integration smoke tests
+        run: >-
+          uv run --python 3.14 pytest -q --no-cov
+          -o cache_dir=${{ runner.temp }}/wherewolf-pytest-cache
+          tests/test_qt_stack.py tests/test_desktop_duckdb_flow.py

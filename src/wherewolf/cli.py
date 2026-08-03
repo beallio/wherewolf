@@ -1,26 +1,39 @@
-import sys
-import subprocess
-from pathlib import Path
+"""Console entry point for the native desktop application."""
+
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
 
 
-def main():
-    """Entry point for the 'wherewolf' command."""
-    # Find the app.py relative to this file
-    app_path = Path(__file__).parent / "app.py"
+def main(argv: Sequence[str] | None = None) -> int:
+    """Launch the native Qt application for the ``wherewolf`` console script.
 
-    if not app_path.exists():
-        print(f"Error: Could not find app.py at {app_path}")
-        sys.exit(1)
+    ``--version`` is answered before Qt is touched, so it works over SSH and on a box
+    with no display — which is where you most need to ask which build is installed.
+    """
+    parser = argparse.ArgumentParser(
+        prog="wherewolf",
+        description="Wherewolf — a local SQL workbench.",
+    )
+    parser.add_argument(
+        "--version",
+        action="store_true",
+        help="print the version and build commit, then exit",
+    )
+    args = parser.parse_args(argv)
 
-    # Launch streamlit
-    try:
-        subprocess.run([sys.executable, "-m", "streamlit", "run", str(app_path)], check=True)
-    except KeyboardInterrupt:
-        sys.exit(0)
-    except Exception as e:
-        print(f"Error launching Wherewolf: {e}")
-        sys.exit(1)
+    if args.version:
+        from wherewolf import build_identifier
+
+        print(build_identifier())
+        return 0
+
+    # Imported here, not at module scope: --version must not pay for Qt.
+    from wherewolf.desktop.application import main as desktop_main
+
+    return desktop_main()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

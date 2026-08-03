@@ -1,6 +1,8 @@
-import pytest
 import json
 from unittest.mock import patch
+
+import pytest
+
 from wherewolf.storage.history import HistoryManager
 
 
@@ -12,10 +14,13 @@ def test_history_atomic_write_failure(tmp_path):
 
     hm = HistoryManager(storage_path=storage_path)
 
-    # Mock json.dump to fail
-    with patch("json.dump", side_effect=IOError("Disk full")):
-        with pytest.raises(Exception):  # The implementation might wrap it or let it bubble
-            hm.add_entry("Spark", "SELECT 2", "/path/to/data")
+    # Mock json.dump to fail. add_entry removes its temp file and re-raises, so
+    # the original OSError reaches the caller unwrapped.
+    with (
+        patch("json.dump", side_effect=OSError("Disk full")),
+        pytest.raises(OSError, match="Disk full"),
+    ):
+        hm.add_entry("Spark", "SELECT 2", "/path/to/data")
 
     # Verify the initial data is still there and NOT corrupted/empty
     assert storage_path.exists()

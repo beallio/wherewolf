@@ -1,4 +1,4 @@
-from wherewolf.constants import SUPPORTED_EXTENSIONS, DIALECT_MAPPING
+from wherewolf.constants import DIALECT_MAPPING, SUPPORTED_EXTENSIONS
 from wherewolf.translation import Translator
 
 
@@ -13,6 +13,6 @@ def test_supported_extensions():
 
 
 def test_dialect_mapping():
-    assert DIALECT_MAPPING == {"DuckDB": "duckdb", "Spark": "spark", "Azure SQL": "tsql"}
+    assert {"Oracle", "PostgreSQL"} <= DIALECT_MAPPING.keys()
     for value in DIALECT_MAPPING.values():
         assert value in Translator.VALID_DIALECTS

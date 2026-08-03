@@ -1,4 +1,5 @@
 import polars as pl
+
 from wherewolf.execution.duckdb_engine import DuckDBEngine
 
 

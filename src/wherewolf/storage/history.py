@@ -1,7 +1,9 @@
 import json
+import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional
+from uuid import UUID, uuid4
 
 
 class HistoryManager:
@@ -9,7 +11,7 @@ class HistoryManager:
 
     DEFAULT_PATH = Path.home() / ".wherewolf" / "history.json"
 
-    def __init__(self, storage_path: Optional[Path] = None):
+    def __init__(self, storage_path: Path | None = None):
         self.storage_path = storage_path or self.DEFAULT_PATH
         self._ensure_storage()
 
@@ -20,34 +22,8 @@ class HistoryManager:
             with open(self.storage_path, "w") as f:
                 json.dump([], f)
 
-    def add_entry(
-        self, engine: str, query: str, path: str = "", catalog: Optional[Dict[str, str]] = None
-    ):
-        """Adds a new query to the history.
-
-        Args:
-            engine: The execution engine used (e.g., 'duckdb').
-            query: The SQL query string.
-            path: The dataset path used (legacy).
-            catalog: A mapping of aliases to filesystem paths.
-        """
-        import os
-        import tempfile
-
-        history = self.get_all()
-        entry = {
-            "timestamp": datetime.now().isoformat(),
-            "engine": engine,
-            "query": query,
-            "path": path,
-            "catalog": catalog if catalog is not None else {"dataset": path} if path else {},
-        }
-        history.insert(0, entry)  # Add to the beginning
-
-        # Limit history to 100 entries
-        history = history[:100]
-
-        # Atomic write using a temporary file
+    def _write_history(self, history: list[dict]) -> None:
+        """Atomically persist the complete history without replacing a good file on failure."""
         temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path.parent, text=True)
         try:
             with os.fdopen(temp_fd, "w") as f:
@@ -58,7 +34,77 @@ class HistoryManager:
                 os.remove(temp_path)
             raise
 
-    def get_all(self) -> List[Dict]:
+    @staticmethod
+    def _migrate_v1_entry(entry: dict) -> dict:
+        """Return the v2 representation of one legacy history entry."""
+        migrated = dict(entry)
+        migrated["schema_version"] = 2
+        migrated["id"] = str(uuid4())
+        migrated.setdefault("catalog", {"dataset": migrated.get("path", "")})
+        return migrated
+
+    @staticmethod
+    def _has_required_keys(entry: dict) -> bool:
+        return all(
+            isinstance(entry.get(key), str) and entry[key]
+            for key in ("timestamp", "engine", "query")
+        )
+
+    @classmethod
+    def _is_v2_entry(cls, entry: object) -> bool:
+        if not isinstance(entry, dict) or entry.get("schema_version") != 2:
+            return False
+        entry_id = entry.get("id")
+        if not cls._has_required_keys(entry) or not isinstance(entry_id, str):
+            return False
+        try:
+            UUID(entry_id)
+        except ValueError:
+            return False
+        return True
+
+    @classmethod
+    def _is_v1_entry(cls, entry: object) -> bool:
+        return (
+            isinstance(entry, dict)
+            and "schema_version" not in entry
+            and "id" not in entry
+            and cls._has_required_keys(entry)
+        )
+
+    def add_entry(
+        self, engine: str, query: str, path: str = "", catalog: dict[str, str] | None = None
+    ):
+        """Adds a new query to the history.
+
+        Args:
+            engine: The execution engine used (e.g., 'duckdb').
+            query: The SQL query string.
+            path: The dataset path used (legacy).
+            catalog: A mapping of aliases to filesystem paths.
+        """
+        history = self.get_all()
+        entry = {
+            "schema_version": 2,
+            "id": str(uuid4()),
+            # Local time with an explicit UTC offset. `astimezone()` keeps the
+            # first 16 characters identical to the previous naive local format,
+            # which app.py slices for history labels, while making the value
+            # unambiguous for the schema-v2 migration.
+            "timestamp": datetime.now().astimezone().isoformat(),
+            "engine": engine,
+            "query": query,
+            "path": path,
+            "catalog": catalog if catalog is not None else {"dataset": path} if path else {},
+        }
+        history.insert(0, entry)  # Add to the beginning
+
+        # Limit history to 100 entries
+        history = history[:100]
+
+        self._write_history(history)
+
+    def get_all(self) -> list[dict]:
         """Returns all history entries.
 
         Returns:
@@ -69,26 +115,29 @@ class HistoryManager:
                 return []
             with open(self.storage_path, "r") as f:
                 history = json.load(f)
-                # Backward compatibility layer: Ensure every entry has a catalog
-                for entry in history:
-                    if "catalog" not in entry:
-                        entry["catalog"] = {"dataset": entry.get("path", "")}
-                return history
-        except (json.JSONDecodeError, IOError):
-            # If corrupted, we might want to be more careful, but for now returning empty
+        except (OSError, json.JSONDecodeError):
             return []
+
+        if not isinstance(history, list):
+            return []
+
+        readable_entries: list[dict] = []
+        migrated = False
+        for entry in history:
+            if self._is_v2_entry(entry):
+                readable_entries.append(entry)
+            elif self._is_v1_entry(entry):
+                readable_entries.append(self._migrate_v1_entry(entry))
+                migrated = True
+
+        if migrated:
+            self._write_history(readable_entries)
+        return readable_entries
+
+    def get_by_id(self, entry_id: str) -> dict | None:
+        """Return the history record identified by its stable UUID, if present."""
+        return next((entry for entry in self.get_all() if entry["id"] == entry_id), None)
 
     def clear(self):
         """Clears the query history."""
-        import os
-        import tempfile
-
-        temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path.parent, text=True)
-        try:
-            with os.fdopen(temp_fd, "w") as f:
-                json.dump([], f)
-            os.replace(temp_path, self.storage_path)
-        except Exception:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            raise
+        self._write_history([])

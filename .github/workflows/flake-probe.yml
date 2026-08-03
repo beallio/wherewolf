@@ -1,0 +1,94 @@
+name: Flake Probe
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_mode:
+        description: "Probe mode to run on the branch probe matrix"
+        required: false
+        default: baseline
+        type: choice
+        options:
+          - baseline
+          - no-cov
+          - deselect
+          - timid-false
+  push:
+    branches:
+      - feat/ci-qt-flake-312
+    paths:
+      - .github/probe-mode
+      - .github/workflows/flake-probe.yml
+
+jobs:
+  probe:
+    name: probe-${{ matrix.python-version }}-${{ matrix.probe }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.14"]
+        probe: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install Qt offscreen system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libdbus-1-3
+      - name: Set up Java for Spark
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies
+        run: ./run.sh uv sync --all-extras --dev --python ${{ matrix.python-version }}
+      - name: Resolve probe mode
+        id: mode
+        run: echo "value=$(tr -d '[:space:]' < .github/probe-mode)" >> "$GITHUB_OUTPUT"
+      - name: Run tests
+        env:
+          PROBE_MODE: ${{ steps.mode.outputs.value }}
+        run: |
+          args=()
+          case "${PROBE_MODE}" in
+            baseline)
+              ;;
+            no-cov)
+              args+=(--no-cov --override-ini addopts=)
+              ;;
+            deselect)
+              args+=(--deselect tests/test_actions.py --deselect tests/test_main_window.py --deselect tests/test_catalog_dock.py --deselect tests/test_sql_editor.py)
+              ;;
+            timid-false)
+              cat > /tmp/wherewolf/coverage-no-timid.ini <<'EOF'
+          [run]
+          timid = false
+          EOF
+              args+=(--cov-config=/tmp/wherewolf/coverage-no-timid.ini)
+              ;;
+            *)
+              echo "Unknown PROBE_MODE=${PROBE_MODE}"
+              exit 1
+              ;;
+          esac
+
+          if [ "${PROBE_MODE}" = "timid-false" ]; then
+            ./run.sh uv run --python "${{ matrix.python-version }}" python -c \
+              "import coverage; c=coverage.Coverage(config_file='/tmp/wherewolf/coverage-no-timid.ini'); c._init(); print('EFFECTIVE timid =', c.config.timid)"
+          else
+            ./run.sh uv run --python "${{ matrix.python-version }}" python -c \
+              "import coverage; c=coverage.Coverage(); c._init(); print('EFFECTIVE timid =', c.config.timid)"
+          fi
+
+          echo -n "PYTEST ARGV: "
+          printf '%q ' ./run.sh uv run --python "${{ matrix.python-version }}" pytest "${args[@]}"
+          echo ""
+
+          ./run.sh uv run --python "${{ matrix.python-version }}" pytest "${args[@]}"

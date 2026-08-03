@@ -1,0 +1,35 @@
+{
+  "date": "2026-08-02",
+  "task_objective": "Implement desktop-parity-2 reachable commands, preferences, feedback, and platform affordances.",
+  "files_modified": [
+    "src/wherewolf/desktop/actions.py",
+    "src/wherewolf/desktop/dialogs/file_dialog_service.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "src/wherewolf/desktop/widgets/messages_panel.py",
+    "src/wherewolf/desktop/widgets/result_table_view.py",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "src/wherewolf/execution/registry.py"
+  ],
+  "tests_added": [
+    "MainWindow-driven Find/Replace, filter, selection export, diagnostics, call-tip, preferences, empty-state, feedback, Help/reveal tests",
+    "Spark availability matrix",
+    "Hidden-file chooser test"
+  ],
+  "design_decisions": [
+    "Run stays disabled without catalog entries and refreshes when editor activity observes externally populated catalog state.",
+    "Java availability is an inexpensive PATH probe and is never evaluated at module import.",
+    "Raw backend errors remain collapsed behind an explicit details control."
+  ],
+  "verification": {
+    "baseline": "370 passed, 7 deselected",
+    "focused_green": "59 passed",
+    "negative_controls": [
+      "Find/Replace mutation failed exactly test_main_window_find_replace_dialog_changes_editor_text.",
+      "Filter mutation failed exactly test_main_window_preview_filter_reduces_rows_and_clear_restores_them.",
+      "Run-gating mutation failed exactly test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it.",
+      "Spark Java-gate mutation failed exactly the Java-missing matrix case."
+    ],
+    "deferred_manual": "Native file-manager launch, actual dialog appearance, and call-tip rendering are listed in docs/review/manual-acceptance-checklist.md."
+  }
+}

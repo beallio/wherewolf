@@ -1,4 +1,6 @@
 import polars as pl
+import pytest
+
 from wherewolf.execution import DuckDBEngine, SparkEngine
 
 
@@ -16,7 +18,8 @@ def test_excel_support_duckdb(tmp_path):
     assert result.df["col1"].to_list() == [1, 2, 3]
 
 
-def test_excel_support_spark(tmp_path):
+@pytest.mark.spark
+def test_excel_support_spark(tmp_path, spark_session):
     # 1. Create a dummy Excel file
     excel_path = tmp_path / "test_spark.xlsx"
     df_orig = pl.DataFrame({"col1": [10, 20], "col2": ["x", "y"]})
@@ -31,6 +34,5 @@ def test_excel_support_spark(tmp_path):
 
 
 def test_ui_extension_recognition():
-    # This is a bit hard to test without full streamlit, but we can check the extension set
-    # if it's exposed or by mocking. Let's rely on integration tests or manual check if needed.
+    # Native dialog filter behavior is covered by the desktop file-dialog tests.
     pass

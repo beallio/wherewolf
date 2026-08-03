@@ -1,5 +1,6 @@
 import polars as pl
 import pytest
+
 from wherewolf.execution import DuckDBEngine, SparkEngine
 
 
@@ -73,8 +74,8 @@ def test_duckdb_get_schema(csv_path):
     assert "value" in schema_df["Column"].to_list()
 
 
-@pytest.mark.skip(reason="Spark requires complex setup for CI, focus on DuckDB first")
-def test_spark_engine_success(csv_path):
+@pytest.mark.spark
+def test_spark_engine_success(csv_path, spark_session):
     engine = SparkEngine()
     query = "SELECT * FROM dataset WHERE value > 150"
     result = engine.execute(query, csv_path, limit=100)
