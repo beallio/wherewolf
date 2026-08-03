@@ -48,6 +48,7 @@ class CatalogDock(QWidget):
         self._view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._view.setAlternatingRowColors(True)
         self._view.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
