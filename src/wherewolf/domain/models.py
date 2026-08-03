@@ -46,6 +46,10 @@ class CatalogEntry:
     source_format: SourceFormat
     schema: tuple[ColumnSchema, ...] | None = None
     schema_error: str | None = None
+    profile: tuple[ColumnProfile, ...] | None = None
+    profile_error: str | None = None
+    profile_stale: bool = False
+    profile_skipped_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

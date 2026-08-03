@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Final
 from uuid import UUID, uuid4
 
-from wherewolf.domain import CatalogBinding, CatalogEntry, SchemaResult, SourceFormat
+from wherewolf.domain import CatalogBinding, CatalogEntry, ProfileResult, SchemaResult, SourceFormat
 from wherewolf.domain.errors import UnsupportedFormatError
 
 
@@ -142,6 +142,25 @@ class CatalogService:
             entry,
             schema=updated_schema,
             schema_error=schema_error,
+        )
+        self._entries = tuple(entries)
+        self._notify()
+
+    def update_profile(self, profile_result: ProfileResult) -> None:
+        index = next(
+            (i for i, entry in enumerate(self._entries) if entry.id == profile_result.entry_id),
+            None,
+        )
+        if index is None:
+            return
+        entries = list(self._entries)
+        entry = entries[index]
+        entries[index] = replace(
+            entry,
+            profile=profile_result.profiles,
+            profile_error=profile_result.error_message,
+            profile_stale=False,
+            profile_skipped_reason=None,
         )
         self._entries = tuple(entries)
         self._notify()

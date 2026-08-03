@@ -6,13 +6,20 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QHeaderView,
     QLabel,
+    QPushButton,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from wherewolf.domain.models import CatalogEntry, ColumnSchema, SchemaResult
+from wherewolf.domain.models import (
+    CatalogEntry,
+    ColumnProfile,
+    ColumnSchema,
+    ProfileResult,
+    SchemaResult,
+)
 from wherewolf.services.identifier_quoting import quote_identifier
 
 
@@ -24,12 +31,14 @@ class SchemaPanel(QWidget):
     """
 
     insert_columns_requested = pyqtSignal(str)
+    profile_requested = pyqtSignal(CatalogEntry)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
         self._entry: CatalogEntry | None = None
         self._schema_result: SchemaResult | None = None
+        self._profile_result: ProfileResult | None = None
         self._entries_by_alias: dict[str, CatalogEntry] = {}
 
         layout = QVBoxLayout(self)
@@ -41,13 +50,28 @@ class SchemaPanel(QWidget):
         self.dataset_selector.setToolTip("Choose the dataset whose schema is displayed.")
         self.dataset_selector.currentTextChanged.connect(self._on_dataset_selected)
         layout.addWidget(self.dataset_selector)
+        self.profile_button = QPushButton("Profile", self)
+        self.profile_button.clicked.connect(self._request_profile)
+        layout.addWidget(self.profile_button)
 
         self._status_label = QLabel("No table selected", self)
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
 
-        self._table_widget = QTableWidget(0, 4, self)
-        self._table_widget.setHorizontalHeaderLabels(["Name", "Type", "Nullable", "Position"])
+        self._table_widget = QTableWidget(0, 9, self)
+        self._table_widget.setHorizontalHeaderLabels(
+            [
+                "Name",
+                "Type",
+                "Nullable",
+                "Position",
+                "Null %",
+                "Distinct (approx.)",
+                "Min",
+                "Max",
+                "Mean",
+            ]
+        )
         header = self._table_widget.horizontalHeader()
         if header is not None:
             header.setStretchLastSection(True)
@@ -64,6 +88,7 @@ class SchemaPanel(QWidget):
         """Set the catalog entry to display."""
         self._entry = entry
         self._schema_result = None
+        self._profile_result = None
         self._update_view()
 
     def set_entries(self, entries: tuple[CatalogEntry, ...], selected_alias: str | None) -> None:
@@ -80,6 +105,14 @@ class SchemaPanel(QWidget):
         """Update display using a SchemaResult directly."""
         self._schema_result = result
         self._update_view()
+
+    def set_profile_result(self, result: ProfileResult) -> None:
+        self._profile_result = result
+        self._update_view()
+
+    def _request_profile(self) -> None:
+        if self._entry is not None:
+            self.profile_requested.emit(self._entry)
 
     def is_pending(self) -> bool:
         """Return True if schema inspection is currently pending."""
@@ -132,6 +165,7 @@ class SchemaPanel(QWidget):
 
     def _update_view(self) -> None:
         columns: tuple[ColumnSchema, ...] | None = None
+        profiles: tuple[ColumnProfile, ...] | None = None
         error_msg: str | None = None
         alias = self._entry.alias if self._entry is not None else None
 
@@ -141,6 +175,11 @@ class SchemaPanel(QWidget):
         elif self._entry is not None:
             columns = self._entry.schema
             error_msg = self._entry.schema_error
+            profiles = self._entry.profile
+        if self._profile_result is not None:
+            profiles = self._profile_result.profiles
+            if self._profile_result.error_message is not None:
+                error_msg = self._profile_result.error_message
 
         if error_msg is not None:
             prefix = f"{alias} — " if alias is not None else ""
@@ -181,7 +220,23 @@ class SchemaPanel(QWidget):
                     "Yes" if col.nullable is True else "No" if col.nullable is False else "Unknown"
                 )
                 position_item = QTableWidgetItem(str(r + 1))
+                profile = next((item for item in profiles or () if item.name == col.name), None)
                 self._table_widget.setItem(r, 0, name_item)
                 self._table_widget.setItem(r, 1, type_item)
                 self._table_widget.setItem(r, 2, nullable_item)
                 self._table_widget.setItem(r, 3, position_item)
+                for index, value in enumerate(
+                    (
+                        f"{profile.null_percentage:.2f}"
+                        if profile and profile.null_percentage is not None
+                        else "",
+                        str(profile.approx_unique)
+                        if profile and profile.approx_unique is not None
+                        else "",
+                        profile.min if profile and profile.min is not None else "",
+                        profile.max if profile and profile.max is not None else "",
+                        str(profile.avg) if profile and profile.avg is not None else "",
+                    ),
+                    start=4,
+                ):
+                    self._table_widget.setItem(r, index, QTableWidgetItem(value))

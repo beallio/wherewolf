@@ -5,7 +5,13 @@ from pytestqt.qtbot import QtBot
 
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
 from wherewolf.domain.enums import SourceFormat
-from wherewolf.domain.models import CatalogEntry, ColumnSchema, SchemaResult
+from wherewolf.domain.models import (
+    CatalogEntry,
+    ColumnProfile,
+    ColumnSchema,
+    ProfileResult,
+    SchemaResult,
+)
 
 
 def test_schema_panel_pending_state(qtbot: QtBot) -> None:
@@ -72,6 +78,38 @@ def test_schema_panel_displays_nullable_state_and_ordinal(qtbot: QtBot) -> None:
     assert [panel.cell_text(row, 2) for row in range(3)] == ["Yes", "No", "Unknown"]
     assert [panel.cell_text(row, 3) for row in range(3)] == ["1", "2", "3"]
     assert "users.parquet" in panel.status_text()
+
+
+def test_schema_panel_displays_profile_with_approximate_distinct_label(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    entry_id = uuid4()
+    panel.set_entry(
+        CatalogEntry(
+            id=entry_id,
+            alias="users",
+            path=Path("users.csv"),
+            source_format=SourceFormat.CSV,
+            schema=(ColumnSchema("category", "VARCHAR"),),
+        )
+    )
+    panel.set_profile_result(
+        ProfileResult(
+            entry_id=entry_id,
+            profiles=(
+                ColumnProfile(
+                    "category", "VARCHAR", "a", "z", 2, None, None, None, None, None, 2, 0.0
+                ),
+            ),
+        )
+    )
+
+    header = panel._table_widget.horizontalHeaderItem(5)
+    assert header is not None
+    assert "Distinct (approx.)" in header.text()
+    assert panel.cell_text(0, 4) == "0.00"
+    assert panel.cell_text(0, 5) == "2"
+    assert panel.cell_text(0, 8) == ""
 
 
 def test_schema_panel_error_display(qtbot: QtBot) -> None:

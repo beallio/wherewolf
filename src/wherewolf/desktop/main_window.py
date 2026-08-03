@@ -58,6 +58,7 @@ from wherewolf.domain import (
     EngineKind,
     ExecutionRequest,
     ExecutionStatus,
+    ProfileResult,
     QueryResult,
     SchemaResult,
     SqlDiagnostic,
@@ -352,6 +353,11 @@ class MainWindow(QMainWindow):
     def _build_schema_dock(self) -> QDockWidget:
         schema_panel = SchemaPanel(self)
         schema_panel.insert_columns_requested.connect(self.editor_insert_text)
+        schema_panel.profile_requested.connect(
+            lambda entry: self._queue_profile_work(
+                CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
+            )
+        )
 
         dock = QDockWidget("Schema", self)
         dock.setObjectName("schema_dock")
@@ -606,6 +612,7 @@ class MainWindow(QMainWindow):
             binding=binding,
             parent=self,
         )
+        worker.result_ready.connect(self._on_profile_result)
         worker.finished.connect(
             lambda: (
                 self._profile_workers.remove(worker) if worker in self._profile_workers else None
@@ -613,6 +620,19 @@ class MainWindow(QMainWindow):
         )
         self._profile_workers.append(worker)
         worker.start()
+
+    def _on_profile_result(self, profile_result: ProfileResult) -> None:
+        self._catalog_service.update_profile(profile_result)
+        entry = next(
+            (
+                entry
+                for entry in self._catalog_service.entries
+                if entry.id == profile_result.entry_id
+            ),
+            None,
+        )
+        if entry is not None:
+            self.schema_panel.set_entries(self._catalog_service.entries, entry.alias)
 
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
