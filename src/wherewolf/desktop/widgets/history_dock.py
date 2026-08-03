@@ -2,12 +2,36 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 from wherewolf.storage.history import HistoryManager
+
+
+class HistoryItem(QTreeWidgetItem):
+    """History row that orders timestamps by their actual instant."""
+
+    def __init__(self, labels: list[str], raw_timestamp: str) -> None:
+        super().__init__(labels)
+        try:
+            parsed = datetime.fromisoformat(raw_timestamp)
+            self._timestamp = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+        except ValueError:
+            self._timestamp = None
+
+    def __lt__(self, other: QTreeWidgetItem) -> bool:
+        tree = self.treeWidget()
+        if (
+            tree is not None
+            and tree.sortColumn() == 0
+            and isinstance(other, HistoryItem)
+            and self._timestamp is not None
+            and other._timestamp is not None
+        ):
+            return self._timestamp < other._timestamp
+        return super().__lt__(other)
 
 
 class HistoryDock(QWidget):
@@ -28,6 +52,9 @@ class HistoryDock(QWidget):
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
             header.resizeSection(0, 240)
             header.setStretchLastSection(True)
+            header.setSortIndicatorShown(True)
+            header.setSortIndicator(0, Qt.SortOrder.DescendingOrder)
+        self.history_table.setSortingEnabled(True)
         self.history_table.itemActivated.connect(self._on_item_activated)
 
         layout = QVBoxLayout(self)
@@ -46,7 +73,7 @@ class HistoryDock(QWidget):
                 timestamp = datetime.fromisoformat(raw_timestamp).replace(microsecond=0).isoformat()
             except ValueError:
                 timestamp = raw_timestamp
-            item = QTreeWidgetItem([timestamp, truncated])
+            item = HistoryItem([timestamp, truncated], raw_timestamp)
             item.setData(0, Qt.ItemDataRole.UserRole, record["id"])
             item.setToolTip(0, raw_timestamp)
             item.setToolTip(1, str(record["query"]))

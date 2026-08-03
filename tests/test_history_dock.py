@@ -1,5 +1,6 @@
 import json
 
+from PyQt6.QtCore import QPoint, Qt
 from PyQt6.QtWidgets import QHeaderView
 
 from wherewolf.storage.history import HistoryManager
@@ -99,3 +100,51 @@ def test_history_timestamp_hides_microseconds_and_keeps_raw_value_in_tooltip(tmp
 
     assert item.text(0) == "2026-08-02T12:34:56+00:00"
     assert item.toolTip(0) == record["timestamp"]
+
+
+def test_history_sorts_timestamps_chronologically_and_header_click_reverses_order(tmp_path, qtbot):
+    records = [
+        {
+            "schema_version": 2,
+            "id": "9bc2a83a-14f4-4b4a-905f-801cfd0473c1",
+            "timestamp": "2026-08-02T10:00:00+00:00",
+            "engine": "duckdb",
+            "query": "SELECT oldest",
+            "catalog": {},
+        },
+        {
+            "schema_version": 2,
+            "id": "8c07ca1f-8cc9-496d-bc75-e145df0f9606",
+            # This is 30 minutes newer, despite sorting before the preceding string.
+            "timestamp": "2026-08-02T09:30:00-01:00",
+            "engine": "duckdb",
+            "query": "SELECT newest",
+            "catalog": {},
+        },
+    ]
+    history_file = tmp_path / "history.json"
+    history_file.write_text(json.dumps(records))
+
+    from wherewolf.desktop.widgets.history_dock import HistoryDock
+
+    dock = HistoryDock(HistoryManager(storage_path=history_file))
+    qtbot.addWidget(dock)
+    dock.show()
+
+    header = dock.history_table.header()
+    assert header is not None
+    newest = dock.history_table.topLevelItem(0)
+    assert newest is not None
+    assert dock.history_table.isSortingEnabled()
+    assert header.sortIndicatorOrder() is Qt.SortOrder.DescendingOrder
+    assert newest.data(0, Qt.ItemDataRole.UserRole) == "8c07ca1f-8cc9-496d-bc75-e145df0f9606"
+    qtbot.mouseClick(
+        header.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=QPoint(header.sectionPosition(0) + 5, header.height() // 2),
+    )
+
+    assert header.sortIndicatorOrder() is Qt.SortOrder.AscendingOrder
+    oldest = dock.history_table.topLevelItem(0)
+    assert oldest is not None
+    assert oldest.data(0, Qt.ItemDataRole.UserRole) == "9bc2a83a-14f4-4b4a-905f-801cfd0473c1"
