@@ -114,6 +114,18 @@ def test_settings_service_preview_limit_and_editor_theme_round_trip(tmp_path: Pa
     assert service.restore_editor_theme() == "Light"
 
 
+def test_settings_service_export_preferences_round_trip(tmp_path: Path) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "export-preferences"))
+
+    assert service.restore_export_format() == "csv"
+    assert service.restore_export_scope() == "preview"
+    service.save_export_format("parquet")
+    service.save_export_scope("selection")
+
+    assert service.restore_export_format() == "parquet"
+    assert service.restore_export_scope() == "selection"
+
+
 def test_profile_preferences_default_on_and_round_trip(tmp_path: Path) -> None:
     service = SettingsService(_configure_qsettings_path(tmp_path / "profile"))
 

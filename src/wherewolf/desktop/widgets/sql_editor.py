@@ -25,10 +25,13 @@ class SqlEditor(QsciScintilla):
     """QScintilla-based SQL editor with minimal desktop actions."""
 
     diagnostics_reported = pyqtSignal(list)
-    THEME_NAMES = ("Dark", "Light")
+    THEME_NAMES = ("Dark", "Light", "Solarized Dark", "Solarized Light", "High Contrast")
     _THEMES: ClassVar[dict[str, tuple[str, str, str, str, str]]] = {
         "Dark": ("#1E1E1E", "#D4D4D4", "#569CD6", "#B5CEA8", "#CE9178"),
         "Light": ("#FFFFFF", "#202020", "#003D99", "#005F5F", "#8B2F00"),
+        "Solarized Dark": ("#002B36", "#839496", "#268BD2", "#B58900", "#2AA198"),
+        "Solarized Light": ("#FDF6E3", "#657B83", "#268BD2", "#B58900", "#2AA198"),
+        "High Contrast": ("#000000", "#FFFFFF", "#00FFFF", "#FFFF00", "#00FF00"),
     }
 
     def __init__(
@@ -159,6 +162,8 @@ class SqlEditor(QsciScintilla):
         self._apply_margin_colours()
         self.setMarginLineNumbers(0, True)
         self.setWrapMode(QsciScintilla.WrapMode.WrapNone)
+        self.setScrollWidth(1)
+        self.setScrollWidthTracking(True)
 
         self.indicatorDefine(
             QsciScintilla.IndicatorStyle.SquiggleIndicator,
