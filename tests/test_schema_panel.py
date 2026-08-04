@@ -1,6 +1,8 @@
 from pathlib import Path
 from uuid import uuid4
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
@@ -208,3 +210,62 @@ def test_schema_panel_insert_columns_multi_display_order(qtbot: QtBot) -> None:
     assert len(received) == 1
     # Must be in display order (row 0: user_id, row 2: "select")
     assert received[0] == 'user_id, "select"'
+
+
+def test_schema_panel_ctrl_c_copies_selected_rows_as_tsv(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="users",
+            path=Path("users.parquet"),
+            source_format=SourceFormat.PARQUET,
+            schema=(ColumnSchema("id", "BIGINT"), ColumnSchema("name", "VARCHAR")),
+        )
+    )
+    panel._table_widget.selectRow(0)
+    panel._table_widget.setFocus()
+    qtbot.keyClick(panel._table_widget, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    assert clipboard.text() == "id\tBIGINT\tUnknown\t1\t\t\t\t\t"
+
+
+def test_schema_panel_context_menu_copy_matches_keyboard_copy(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="users",
+            path=Path("users.parquet"),
+            source_format=SourceFormat.PARQUET,
+            schema=(ColumnSchema("id", "BIGINT"),),
+        )
+    )
+    panel._table_widget.selectRow(0)
+    panel.copy_selection()
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    keyboard_text = clipboard.text()
+
+    action = next(
+        action for action in panel.create_context_menu().actions() if action.text() == "Copy"
+    )
+    action.trigger()
+
+    assert clipboard.text() == keyboard_text
+
+
+def test_schema_panel_copy_with_empty_selection_does_nothing(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    clipboard.setText("keep me")
+
+    panel.copy_selection()
+
+    assert clipboard.text() == "keep me"

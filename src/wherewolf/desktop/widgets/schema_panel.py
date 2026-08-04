@@ -1,11 +1,15 @@
 """Widget for displaying schema columns, data types, inspection states, and errors."""
 
-from PyQt6.QtCore import QSignalBlocker, pyqtSignal
+import polars as pl
+from PyQt6.QtCore import QPoint, QSignalBlocker, Qt, pyqtSignal
+from PyQt6.QtGui import QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -13,6 +17,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from wherewolf.desktop.clipboard_serializers import serialize_to_tsv
 from wherewolf.domain.models import (
     CatalogEntry,
     ColumnProfile,
@@ -81,6 +86,8 @@ class SchemaPanel(QWidget):
         self._table_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table_widget.setAlternatingRowColors(True)
         self._table_widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table_widget.customContextMenuRequested.connect(self._on_context_menu_requested)
         self._table_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         layout.addWidget(self._table_widget)
 
@@ -158,6 +165,55 @@ class SchemaPanel(QWidget):
             return
         quoted = [quote_identifier(name) for name in names]
         self.insert_columns_requested.emit(", ".join(quoted))
+
+    def create_context_menu(self) -> QMenu:
+        menu = QMenu(self)
+        menu.addAction("Copy", self.copy_selection)
+        return menu
+
+    def _on_context_menu_requested(self, pos: QPoint) -> None:
+        index = self._table_widget.indexAt(pos)
+        viewport = self._table_widget.viewport()
+        if not index.isValid() or viewport is None:
+            return
+        self._table_widget.selectRow(index.row())
+        menu = self.create_context_menu()
+        QMenu.exec(menu, viewport.mapToGlobal(pos))
+
+    def keyPressEvent(self, a0: QKeyEvent | None) -> None:
+        if a0 is not None and a0.matches(QKeySequence.StandardKey.Copy):
+            self.copy_selection()
+            a0.accept()
+            return
+        super().keyPressEvent(a0)
+
+    def copy_selection(self) -> None:
+        selection_model = self._table_widget.selectionModel()
+        clipboard = QApplication.clipboard()
+        if selection_model is None or clipboard is None:
+            return
+        rows = sorted({index.row() for index in selection_model.selectedIndexes()})
+        if not rows:
+            return
+        column_count = self._table_widget.columnCount()
+        headers = [
+            self._table_widget.horizontalHeaderItem(column) for column in range(column_count)
+        ]
+        columns = [header.text() if header is not None else "" for header in headers]
+        values: list[list[str]] = []
+        for row in rows:
+            row_values: list[str] = []
+            for column in range(column_count):
+                item = self._table_widget.item(row, column)
+                row_values.append(item.text() if item is not None else "")
+            values.append(row_values)
+        frame = pl.DataFrame(values, schema=columns, orient="row")
+        selected_cells = [
+            (row_index, column) for row_index in range(len(rows)) for column in range(column_count)
+        ]
+        text = serialize_to_tsv(frame, selected_cells)
+        if text:
+            clipboard.setText(text)
 
     def _on_item_double_clicked(self, item: QTableWidgetItem) -> None:
         self.emit_selected_columns_insert()
