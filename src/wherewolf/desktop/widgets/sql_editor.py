@@ -25,13 +25,23 @@ class SqlEditor(QsciScintilla):
     """QScintilla-based SQL editor with minimal desktop actions."""
 
     diagnostics_reported = pyqtSignal(list)
-    THEME_NAMES = ("Dark", "Light", "Solarized Dark", "Solarized Light", "High Contrast")
+    THEME_NAMES = (
+        "Dark",
+        "Light",
+        "Solarized Dark",
+        "Solarized Light",
+        "High Contrast",
+        "Monokai",
+        "Nord",
+    )
     _THEMES: ClassVar[dict[str, tuple[str, str, str, str, str]]] = {
         "Dark": ("#1E1E1E", "#D4D4D4", "#569CD6", "#B5CEA8", "#CE9178"),
         "Light": ("#FFFFFF", "#202020", "#003D99", "#005F5F", "#8B2F00"),
         "Solarized Dark": ("#002B36", "#839496", "#268BD2", "#B58900", "#2AA198"),
         "Solarized Light": ("#FDF6E3", "#657B83", "#268BD2", "#B58900", "#2AA198"),
         "High Contrast": ("#000000", "#FFFFFF", "#00FFFF", "#FFFF00", "#00FF00"),
+        "Monokai": ("#272822", "#F8F8F2", "#F92672", "#AE81FF", "#E6DB74"),
+        "Nord": ("#2E3440", "#D8DEE9", "#88C0D0", "#B48EAD", "#A3BE8C"),
     }
 
     def __init__(

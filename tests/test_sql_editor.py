@@ -100,6 +100,14 @@ def test_sql_editor_themes_are_complete_and_have_distinct_papers(qtbot) -> None:
     assert len(set(paper_colours)) == len(editor.THEME_NAMES)
 
 
+def test_sql_editor_exposes_additional_complete_themes(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+
+    assert len(editor.THEME_NAMES) >= 7
+    assert all(len(editor._THEMES[name]) == 5 for name in editor.THEME_NAMES)
+
+
 def test_sql_editor_new_theme_persists_and_unknown_theme_is_ignored(qtbot, tmp_path) -> None:
     settings = QSettings(str(tmp_path / "theme-round-trip.ini"), QSettings.Format.IniFormat)
     settings_service = SettingsService(settings)

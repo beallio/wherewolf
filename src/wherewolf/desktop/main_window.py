@@ -1119,6 +1119,13 @@ class MainWindow(QMainWindow):
 
     def _show_preferences(self) -> None:
         self.preferences_dialog = PreferencesDialog(self._settings_service, self)
+        original_editor_theme = self.editor.theme_name
+        self.preferences_dialog.editor_theme_selector.currentTextChanged.connect(
+            self.editor.set_theme
+        )
+        self.preferences_dialog.rejected.connect(
+            lambda: self.editor.set_theme(original_editor_theme)
+        )
         self.preferences_dialog.accepted.connect(self._apply_preferences)
         self.preferences_dialog.show()
 
@@ -1128,7 +1135,6 @@ class MainWindow(QMainWindow):
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
         self._settings_service.save_profile_on_load(dialog.profile_on_load.isChecked())
         self._settings_service.save_profile_max_bytes(dialog.profile_max_bytes.value())
-        self.editor.set_theme(dialog.editor_theme_selector.currentText())
         self.editor.set_font_size(dialog.font_size.value())
 
     def _on_editor_diagnostics(self, payload: tuple) -> None:

@@ -771,6 +771,42 @@ def test_main_window_moves_editor_theme_to_preferences_and_keeps_saved_theme(
     assert window.editor.theme_name == "Dark"
 
 
+def test_main_window_preferences_preview_editor_theme_and_cancel_restores_it(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "theme-preview-cancel")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    original_theme = window.editor.theme_name
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.editor_theme_selector.setCurrentText("Light")
+    assert window.editor.theme_name == "Light"
+
+    dialog.reject()
+
+    assert window.editor.theme_name == original_theme
+    assert settings.restore_editor_theme() == original_theme
+
+
+def test_main_window_preferences_preview_editor_theme_and_accept_persists_it(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "theme-preview-accept")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.editor_theme_selector.setCurrentText("Solarized Light")
+    assert window.editor.theme_name == "Solarized Light"
+    dialog.accept()
+
+    assert window.editor.theme_name == "Solarized Light"
+    assert settings.restore_editor_theme() == "Solarized Light"
+
+
 def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
     tmp_path: Path, qtbot
 ) -> None:
