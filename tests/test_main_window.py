@@ -1464,6 +1464,35 @@ def test_main_window_removes_completed_profile_workers(qtbot, tmp_path: Path) ->
     assert window._profile_workers == []
 
 
+def test_manual_profile_bypasses_over_limit_auto_profile_gate_and_updates_schema_panel(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    csv_file = tmp_path / "over-limit-profile.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._settings_service.save_profile_max_bytes(0)
+    monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
+
+    window.catalog.add_paths((csv_file,))
+
+    entry = window._catalog_service.entries[0]
+    assert entry.profile is None
+    assert entry.profile_skipped_reason is not None
+    assert "size limit" in entry.profile_skipped_reason
+    assert window._profile_workers == []
+
+    window._catalog_service.update_schema(SchemaResult(entry.id, (ColumnSchema("id", "BIGINT"),)))
+    window.schema_panel.set_entries(window._catalog_service.entries, entry.alias)
+    window.schema_panel.profile_button.click()
+    assert len(window._profile_workers) == 1
+    qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
+
+    profiled_entry = window._catalog_service.entries[0]
+    assert profiled_entry.profile is not None
+    assert window.schema_panel.cell_text(0, 5)
+
+
 def test_main_window_close_waits_for_running_profile_workers(qtbot, tmp_path: Path) -> None:
     csv_file = tmp_path / "profile.csv"
     csv_file.write_text("id\n1\n")
