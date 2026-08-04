@@ -200,6 +200,8 @@ def test_main_window_query_selectors_keep_natural_width_at_wide_size(qtbot) -> N
     for selector in (window.engine_selector, window.input_dialect_selector):
         assert abs(selector.width() - selector.sizeHint().width()) <= 8
 
+    assert window.engine_selector.sizeHint().width() < 150
+
 
 def test_main_window_missing_layout_version_skips_state_restore_and_records_current(
     qtbot, tmp_path: Path, monkeypatch
@@ -520,7 +522,10 @@ def test_engine_selector_disables_missing_spark_with_installation_guidance(
     item = cast(QStandardItemModel, selector.model()).item(spark_index)
     assert item is not None
     assert item.isEnabled() is False
-    assert "wherewolf[spark]" in item.text()
+    assert item.text() == "Spark"
+    tooltip = item.data(Qt.ItemDataRole.ToolTipRole)
+    assert isinstance(tooltip, str)
+    assert "wherewolf[spark]" in tooltip
     assert selector.currentData() is EngineKind.DUCKDB
 
 

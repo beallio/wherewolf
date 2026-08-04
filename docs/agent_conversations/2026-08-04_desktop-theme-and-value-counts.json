@@ -60,5 +60,25 @@
     "ruff_format_check": "passed",
     "ty_check": "passed",
     "dependency_diff": "none"
-  }
+  },
+  "review_rounds": [
+    {
+      "round": 1,
+      "status": "CHANGES_REQUESTED",
+      "finding": "The unavailable Spark diagnostic was embedded in the engine combo label, making its natural width 414px and leaving the user's toolbar-width complaint unresolved.",
+      "changes": [
+        "Keep the engine item label as Spark and move the full installation guidance to Qt ToolTipRole while retaining the disabled item state.",
+        "Strengthen the wide-window regression test with an absolute engine-selector sizeHint bound below 150px."
+      ],
+      "red_test": "tests/test_main_window.py::test_main_window_query_selectors_keep_natural_width_at_wide_size failed with 414 < 150; the guidance-label assertion also failed before implementation.",
+      "post_fix_measurements": {
+        "window_width": 1600,
+        "engine_selector": "width=75 sizeHint=75",
+        "input_dialect_selector": "width=95 sizeHint=95",
+        "preview_limit_selector": "width=57 sizeHint=108"
+      },
+      "targeted_tests": "2 passed",
+      "quality_gates": "scripts/orchestration/run-quality-gates passed: 490 passed, 7 deselected; no deleted review notes; cache budget 3444831790 bytes"
+    }
+  ]
 }

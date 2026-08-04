@@ -333,13 +333,16 @@ class MainWindow(QMainWindow):
         model = cast(QStandardItemModel, self.engine_selector.model())
         for descriptor in self._engine_registry.available_engines():
             label = descriptor.display_name
-            if not descriptor.available:
-                assert descriptor.unavailable_reason is not None
-                label = f"{label} (unavailable: {descriptor.unavailable_reason})"
             self.engine_selector.addItem(label, descriptor.kind)
             item = model.item(self.engine_selector.count() - 1)
             assert item is not None
             item.setEnabled(descriptor.available)
+            if not descriptor.available:
+                assert descriptor.unavailable_reason is not None
+                item.setData(
+                    f"{label} is unavailable: {descriptor.unavailable_reason}",
+                    Qt.ItemDataRole.ToolTipRole,
+                )
         self._set_selector_natural_width(self.engine_selector)
         self._add_labelled_control(
             controls_layout,
