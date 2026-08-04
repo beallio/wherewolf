@@ -36,7 +36,6 @@ def test_result_table_view_selection_and_copy(qtbot):
     cb = QApplication.clipboard()
     assert cb is not None
     assert cb.text() == "10\tx\n20\ty"
-
     table_view.keyPressEvent(
         QKeyEvent(
             QKeyEvent.Type.KeyPress,
@@ -45,6 +44,15 @@ def test_result_table_view_selection_and_copy(qtbot):
         )
     )
     assert cb.text() == "10\tx\n20\ty"
+
+
+def test_result_table_view_uses_distinguishable_alternating_row_colors(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+
+    assert table_view.alternatingRowColors()
+    palette = table_view.palette()
+    assert palette.alternateBase().color() != palette.base().color()
 
 
 def test_result_table_view_copy_respects_sort(qtbot):

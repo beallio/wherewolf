@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import polars as pl
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
-from PyQt6.QtGui import QKeyEvent, QKeySequence
+from PyQt6.QtGui import QKeyEvent, QKeySequence, QPalette
 from PyQt6.QtWidgets import QApplication, QMenu, QTableView
 
 from wherewolf.desktop.clipboard_serializers import format_cell_value, format_header_name
@@ -28,6 +28,15 @@ class ResultTableView(QTableView):
 
         self.setModel(self._proxy_model)
         self.setSortingEnabled(True)
+        self.setAlternatingRowColors(True)
+        palette = self.palette()
+        if palette.alternateBase().color() == palette.base().color():
+            base_color = palette.base().color()
+            alternate_color = (
+                base_color.darker(105) if base_color.lightness() > 128 else base_color.lighter(115)
+            )
+            palette.setColor(QPalette.ColorRole.AlternateBase, alternate_color)
+            self.setPalette(palette)
         header = self.horizontalHeader()
         if header is not None:
             header.setSectionsMovable(True)
