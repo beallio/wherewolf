@@ -179,6 +179,90 @@ def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_
             assert control.isVisible(), f"{object_name} is hidden at {width}px"
 
 
+def test_main_window_toolbars_share_one_row_and_remain_movable(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(20)
+
+    assert window.main_toolbar.isMovable()
+    assert window.query_controls_toolbar.isMovable()
+    assert window.main_toolbar.geometry().y() == window.query_controls_toolbar.geometry().y()
+
+
+def test_main_window_query_selectors_keep_natural_width_at_wide_size(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(1600, 768)
+    window.show()
+    qtbot.wait(20)
+
+    for selector in (window.engine_selector, window.input_dialect_selector):
+        assert abs(selector.width() - selector.sizeHint().width()) <= 8
+
+    assert window.engine_selector.sizeHint().width() < 150
+
+
+def test_main_window_missing_layout_version_skips_state_restore_and_records_current(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "missing-layout-version")
+    service.save_window_state(b"old-toolbar-layout")
+    restored_states: list[bytes] = []
+    monkeypatch.setattr(
+        MainWindow,
+        "restoreState",
+        lambda _window, state: restored_states.append(bytes(state)),
+    )
+
+    window = MainWindow(settings_service=service)
+    qtbot.addWidget(window)
+
+    assert restored_states == []
+    assert service.restore_window_layout_version() == MainWindow.LAYOUT_SCHEMA_VERSION
+
+
+def test_main_window_current_layout_version_restores_saved_state(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "current-layout-version")
+    service.save_window_state(b"current-toolbar-layout")
+    service.save_window_layout_version(MainWindow.LAYOUT_SCHEMA_VERSION)
+    restored_states: list[bytes] = []
+    monkeypatch.setattr(
+        MainWindow,
+        "restoreState",
+        lambda _window, state: restored_states.append(bytes(state)),
+    )
+
+    window = MainWindow(settings_service=service)
+    qtbot.addWidget(window)
+
+    assert restored_states == [b"current-toolbar-layout"]
+
+
+def test_main_window_stale_layout_version_preserves_unrelated_settings(
+    qtbot, tmp_path: Path
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "stale-layout-version")
+    geometry = b"geometry"
+    splitter_sizes = (240, 360)
+    service.save_window_geometry(geometry)
+    service.save_window_state(b"stale-toolbar-layout")
+    service.save_splitter_sizes(splitter_sizes)
+    service.save_editor_font_size(17)
+    service.save_window_layout_version(MainWindow.LAYOUT_SCHEMA_VERSION - 1)
+
+    window = MainWindow(settings_service=service)
+    qtbot.addWidget(window)
+
+    assert service.restore_window_geometry() == geometry
+    assert service.restore_window_state() == b"stale-toolbar-layout"
+    assert service.restore_splitter_sizes() == splitter_sizes
+    assert service.restore_editor_font_size() == 17
+    assert service.restore_window_layout_version() == MainWindow.LAYOUT_SCHEMA_VERSION
+
+
 @pytest.mark.parametrize("view_name", ("results", "catalog", "schema", "history"))
 def test_all_tabular_views_allow_column_reordering(qtbot, view_name: str) -> None:
     window = MainWindow()
@@ -438,7 +522,10 @@ def test_engine_selector_disables_missing_spark_with_installation_guidance(
     item = cast(QStandardItemModel, selector.model()).item(spark_index)
     assert item is not None
     assert item.isEnabled() is False
-    assert "wherewolf[spark]" in item.text()
+    assert item.text() == "Spark"
+    tooltip = item.data(Qt.ItemDataRole.ToolTipRole)
+    assert isinstance(tooltip, str)
+    assert "wherewolf[spark]" in tooltip
     assert selector.currentData() is EngineKind.DUCKDB
 
 
@@ -687,6 +774,86 @@ def test_main_window_moves_editor_theme_to_preferences_and_keeps_saved_theme(
 
     assert settings.restore_editor_theme() == "Dark"
     assert window.editor.theme_name == "Dark"
+
+
+def test_main_window_preferences_preview_editor_theme_and_cancel_restores_it(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "theme-preview-cancel")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    original_theme = window.editor.theme_name
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.editor_theme_selector.setCurrentText("Light")
+    assert window.editor.theme_name == "Light"
+
+    dialog.reject()
+
+    assert window.editor.theme_name == original_theme
+    assert settings.restore_editor_theme() == original_theme
+
+
+def test_main_window_preferences_preview_editor_theme_and_accept_persists_it(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "theme-preview-accept")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.editor_theme_selector.setCurrentText("Solarized Light")
+    assert window.editor.theme_name == "Solarized Light"
+    dialog.accept()
+
+    assert window.editor.theme_name == "Solarized Light"
+    assert settings.restore_editor_theme() == "Solarized Light"
+
+
+def test_main_window_preferences_apply_program_theme_live_and_persist_it(
+    tmp_path: Path, qtbot
+) -> None:
+    from wherewolf.desktop.theming import ThemeMode, build_palette
+
+    settings = _configure_qsettings_path(tmp_path / "program-theme-preferences")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.program_theme_selector.setCurrentText(ThemeMode.DARK.value)
+
+    assert app.palette().color(app.palette().ColorRole.Base) == build_palette(ThemeMode.DARK).color(
+        app.palette().ColorRole.Base
+    )
+    dialog.accept()
+
+    assert settings.restore_program_theme() == ThemeMode.DARK.value
+
+
+def test_main_window_opens_value_counts_window_for_schema_request(tmp_path: Path, qtbot) -> None:
+    from wherewolf.domain import CatalogEntry, ColumnSchema, SourceFormat
+
+    source = tmp_path / "users.csv"
+    source.write_text("category\na\n")
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="users",
+        path=source,
+        source_format=SourceFormat.CSV,
+        schema=(ColumnSchema("category", "VARCHAR"),),
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.schema_panel.value_counts_requested.emit(entry, "category")
+    qtbot.waitUntil(lambda: len(window._value_counts_windows) == 1)
+
+    assert window._value_counts_windows[0].windowTitle() == "Value counts: users.category"
 
 
 def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
@@ -1287,6 +1454,7 @@ def test_main_window_restores_geometry_dock_layout_and_splitter_state(
     original.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, original._history_dock_widget)
     service.save_window_geometry(original.saveGeometry().data())
     service.save_window_state(original.saveState().data())
+    service.save_window_layout_version(MainWindow.LAYOUT_SCHEMA_VERSION)
     service.save_splitter_sizes(original._central_splitter.sizes())
 
     restored = MainWindow(settings_service=service)

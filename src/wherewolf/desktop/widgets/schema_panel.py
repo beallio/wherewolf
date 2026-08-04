@@ -1,11 +1,14 @@
 """Widget for displaying schema columns, data types, inspection states, and errors."""
 
-from PyQt6.QtCore import QSignalBlocker, pyqtSignal
+from PyQt6.QtCore import QPoint, QSignalBlocker, Qt, pyqtSignal
+from PyQt6.QtGui import QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QComboBox,
     QHeaderView,
     QLabel,
+    QMenu,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -13,6 +16,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from wherewolf.desktop.clipboard_serializers import serialize_table_widget_to_tsv
 from wherewolf.domain.models import (
     CatalogEntry,
     ColumnProfile,
@@ -32,6 +36,7 @@ class SchemaPanel(QWidget):
 
     insert_columns_requested = pyqtSignal(str)
     profile_requested = pyqtSignal(CatalogEntry)
+    value_counts_requested = pyqtSignal(CatalogEntry, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -81,6 +86,8 @@ class SchemaPanel(QWidget):
         self._table_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table_widget.setAlternatingRowColors(True)
         self._table_widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._table_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table_widget.customContextMenuRequested.connect(self._on_context_menu_requested)
         self._table_widget.itemDoubleClicked.connect(self._on_item_double_clicked)
         layout.addWidget(self._table_widget)
 
@@ -158,6 +165,42 @@ class SchemaPanel(QWidget):
             return
         quoted = [quote_identifier(name) for name in names]
         self.insert_columns_requested.emit(", ".join(quoted))
+
+    def create_context_menu(self, row: int | None = None, column: int | None = None) -> QMenu:
+        menu = QMenu(self)
+        menu.addAction("Copy", self.copy_selection)
+        if row is not None and column is not None and self._entry is not None:
+            column_item = self._table_widget.item(row, 0)
+            if column_item is not None:
+                menu.addAction(
+                    "Value counts",
+                    lambda: self.value_counts_requested.emit(self._entry, column_item.text()),
+                )
+        return menu
+
+    def _on_context_menu_requested(self, pos: QPoint) -> None:
+        index = self._table_widget.indexAt(pos)
+        viewport = self._table_widget.viewport()
+        if not index.isValid() or viewport is None:
+            return
+        self._table_widget.selectRow(index.row())
+        menu = self.create_context_menu(index.row(), index.column())
+        QMenu.exec(menu, viewport.mapToGlobal(pos))
+
+    def keyPressEvent(self, a0: QKeyEvent | None) -> None:
+        if a0 is not None and a0.matches(QKeySequence.StandardKey.Copy):
+            self.copy_selection()
+            a0.accept()
+            return
+        super().keyPressEvent(a0)
+
+    def copy_selection(self) -> None:
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            return
+        text = serialize_table_widget_to_tsv(self._table_widget)
+        if text:
+            clipboard.setText(text)
 
     def _on_item_double_clicked(self, item: QTableWidgetItem) -> None:
         self.emit_selected_columns_insert()

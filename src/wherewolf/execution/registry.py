@@ -37,6 +37,7 @@ from wherewolf.domain import (
 )
 from wherewolf.execution.base import CancellationHandle, ExecutionEngine
 from wherewolf.services.export_destination import ExportFormat, write_atomically
+from wherewolf.services.identifier_quoting import quote_identifier
 
 FULL_XLSX_ROW_LIMIT = 100_000
 
@@ -284,6 +285,40 @@ class _DuckDBAdapter(ExecutionEngine):
                 con.close()
             except Exception:  # noqa: BLE001, S110  # Cleanup boundary: ignore errors during connection closure
                 pass
+
+    def value_counts(
+        self, entry: CatalogEntry, column_name: str, limit: int
+    ) -> tuple[tuple[tuple[object, int], ...], int, int]:
+        """Return top grouped values, distinct count, and total row count."""
+        import duckdb
+
+        con = duckdb.connect(database=":memory:")
+        self._con = con
+        try:
+            self._register_view(con, str(entry.path), entry.alias)
+            column_sql = quote_identifier(column_name)
+            alias_sql = quote_identifier(entry.alias)
+            rows = con.execute(
+                f"SELECT {column_sql}, count(*) FROM {alias_sql} "
+                "GROUP BY 1 ORDER BY 2 DESC LIMIT ?",
+                [max(1, int(limit))],
+            ).fetchall()
+            distinct_row = con.execute(
+                f"SELECT count(DISTINCT {column_sql}) FROM {alias_sql}"
+            ).fetchone()
+            total_row = con.execute(f"SELECT count(*) FROM {alias_sql}").fetchone()
+            if distinct_row is None or total_row is None:
+                raise RuntimeError("DuckDB returned no value-count totals")
+            total_distinct = distinct_row[0]
+            total_rows = total_row[0]
+            return (
+                tuple((row[0], int(row[1])) for row in rows),
+                int(total_distinct),
+                int(total_rows),
+            )
+        finally:
+            self._con = None
+            con.close()
 
     def export_full(
         self, request: ExecutionRequest, destination: Path, export_format: str
@@ -533,6 +568,7 @@ def _frame_to_columns(frame: pl.DataFrame) -> tuple[ColumnSchema, ...] | None:
                 data_type=str(row.get("Type")),
             )
         )
+
     return tuple(columns)
 
 

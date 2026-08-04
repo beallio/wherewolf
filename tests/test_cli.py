@@ -36,6 +36,12 @@ def test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched(monkeypa
         def exec(self) -> int:
             return 0
 
+        def setStyle(self, _style) -> None:
+            pass
+
+        def setPalette(self, _palette) -> None:
+            pass
+
     class FakeMainWindow:
         def __init__(self, *_args, **_kwargs):
             created["count"] += 1

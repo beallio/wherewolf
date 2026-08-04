@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -50,12 +51,15 @@ from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.export_controller import ExportController, ExportResult
 from wherewolf.desktop.query_controller import QueryController
+from wherewolf.desktop.theming import PROGRAM_THEME_NAMES, apply_program_theme
 from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
 from wherewolf.desktop.widgets.translation_panel import TranslationPanel
+from wherewolf.desktop.widgets.value_counts_window import ValueCountsWindow
 from wherewolf.desktop.workers import ProfileWorker, SchemaWorker
+from wherewolf.desktop.workers.value_counts_worker import ValueCountsRegistry
 from wherewolf.domain import (
     CatalogBinding,
     EngineKind,
@@ -141,12 +145,17 @@ class PreferencesDialog(QDialog):
         self.editor_theme_selector.setObjectName("editor_theme_selector")
         self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
         self.editor_theme_selector.setCurrentText(settings_service.restore_editor_theme())
+        self.program_theme_selector = QComboBox(self)
+        self.program_theme_selector.setObjectName("program_theme_selector")
+        self.program_theme_selector.addItems(PROGRAM_THEME_NAMES)
+        self.program_theme_selector.setCurrentText(settings_service.restore_program_theme())
         layout.addRow("Editor font size", self.font_size)
         layout.addRow(self.completion_enabled)
         layout.addRow("Completion threshold", self.completion_threshold)
         layout.addRow(self.profile_on_load)
         layout.addRow("Profile size limit (bytes)", self.profile_max_bytes)
         layout.addRow("Editor theme", self.editor_theme_selector)
+        layout.addRow("Program theme", self.program_theme_selector)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
         )
@@ -203,6 +212,8 @@ class ExportOptionsDialog(QDialog):
 class MainWindow(QMainWindow):
     """A stable, testable application shell for desktop migration phase 3."""
 
+    LAYOUT_SCHEMA_VERSION: Final = 2
+
     def __init__(
         self,
         *,
@@ -233,6 +244,7 @@ class MainWindow(QMainWindow):
         self.history_manager = history_manager or HistoryManager()
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
+        self._value_counts_windows: list[ValueCountsWindow] = []
         self.setWindowTitle(f"Wherewolf {version('wherewolf')}")
 
         self.main_toolbar = self._build_toolbar()
@@ -308,7 +320,6 @@ class MainWindow(QMainWindow):
         Keeping controls on a dedicated row prevents Qt's toolbar overflow menu
         from hiding them at normal desktop window widths.
         """
-        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
         toolbar = self.addToolBar("Query Controls")
         assert toolbar is not None
         toolbar.setObjectName("query_controls_toolbar")
@@ -322,13 +333,17 @@ class MainWindow(QMainWindow):
         model = cast(QStandardItemModel, self.engine_selector.model())
         for descriptor in self._engine_registry.available_engines():
             label = descriptor.display_name
-            if not descriptor.available:
-                assert descriptor.unavailable_reason is not None
-                label = f"{label} (unavailable: {descriptor.unavailable_reason})"
             self.engine_selector.addItem(label, descriptor.kind)
             item = model.item(self.engine_selector.count() - 1)
             assert item is not None
             item.setEnabled(descriptor.available)
+            if not descriptor.available:
+                assert descriptor.unavailable_reason is not None
+                item.setData(
+                    f"{label} is unavailable: {descriptor.unavailable_reason}",
+                    Qt.ItemDataRole.ToolTipRole,
+                )
+        self._set_selector_natural_width(self.engine_selector)
         self._add_labelled_control(
             controls_layout,
             "Execution engine",
@@ -339,6 +354,7 @@ class MainWindow(QMainWindow):
         self.input_dialect_selector.setObjectName("input_dialect_selector")
         for label, dialect in DIALECT_MAPPING.items():
             self.input_dialect_selector.addItem(label, dialect)
+        self._set_selector_natural_width(self.input_dialect_selector)
         self._add_labelled_control(
             controls_layout,
             "Input dialect",
@@ -366,8 +382,14 @@ class MainWindow(QMainWindow):
             self.preview_limit_selector,
             "Choose the maximum number of rows shown in a query preview.",
         )
+        controls_layout.addStretch(1)
         toolbar.addWidget(controls)
         return toolbar
+
+    @staticmethod
+    def _set_selector_natural_width(selector: QComboBox) -> None:
+        selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        selector.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
 
     def _on_preview_limit_changed(self, text: str) -> None:
         if text.isdecimal():
@@ -440,6 +462,7 @@ class MainWindow(QMainWindow):
                 CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
             )
         )
+        schema_panel.value_counts_requested.connect(self._show_value_counts)
 
         dock = QDockWidget("Schema", self)
         dock.setObjectName("schema_dock")
@@ -779,6 +802,21 @@ class MainWindow(QMainWindow):
         self._profile_workers.append(worker)
         worker.start()
 
+    def _show_value_counts(self, entry, column_name: str) -> None:
+        binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
+        window = ValueCountsWindow(
+            binding, column_name, cast(ValueCountsRegistry, self._engine_registry), self
+        )
+        self._value_counts_windows.append(window)
+        window.destroyed.connect(
+            lambda: (
+                self._value_counts_windows.remove(window)
+                if window in self._value_counts_windows
+                else None
+            )
+        )
+        window.show()
+
     def _on_profile_result(self, profile_result: ProfileResult) -> None:
         self._catalog_service.update_profile(profile_result)
         self._catalog_service.refresh_profile_staleness()
@@ -1109,6 +1147,20 @@ class MainWindow(QMainWindow):
 
     def _show_preferences(self) -> None:
         self.preferences_dialog = PreferencesDialog(self._settings_service, self)
+        original_editor_theme = self.editor.theme_name
+        original_program_theme = self._settings_service.restore_program_theme()
+        self.preferences_dialog.editor_theme_selector.currentTextChanged.connect(
+            self.editor.set_theme
+        )
+        self.preferences_dialog.rejected.connect(
+            lambda: self.editor.set_theme(original_editor_theme)
+        )
+        self.preferences_dialog.program_theme_selector.currentTextChanged.connect(
+            self._apply_program_theme
+        )
+        self.preferences_dialog.rejected.connect(
+            lambda: self._apply_program_theme(original_program_theme)
+        )
         self.preferences_dialog.accepted.connect(self._apply_preferences)
         self.preferences_dialog.show()
 
@@ -1118,8 +1170,15 @@ class MainWindow(QMainWindow):
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
         self._settings_service.save_profile_on_load(dialog.profile_on_load.isChecked())
         self._settings_service.save_profile_max_bytes(dialog.profile_max_bytes.value())
-        self.editor.set_theme(dialog.editor_theme_selector.currentText())
+        self._settings_service.save_program_theme(dialog.program_theme_selector.currentText())
+        self._apply_program_theme(dialog.program_theme_selector.currentText())
         self.editor.set_font_size(dialog.font_size.value())
+
+    @staticmethod
+    def _apply_program_theme(mode: str) -> None:
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_program_theme(app, mode)
 
     def _on_editor_diagnostics(self, payload: tuple) -> None:
         for diagnostic in payload:
@@ -1137,9 +1196,11 @@ class MainWindow(QMainWindow):
         if geometry:
             self.restoreGeometry(QByteArray(geometry))
 
-        state = self._settings_service.restore_window_state()
-        if state:
-            self.restoreState(QByteArray(state))
+        if self._settings_service.restore_window_layout_version() == self.LAYOUT_SCHEMA_VERSION:
+            state = self._settings_service.restore_window_state()
+            if state:
+                self.restoreState(QByteArray(state))
+        self._settings_service.save_window_layout_version(self.LAYOUT_SCHEMA_VERSION)
 
         sizes = self._settings_service.restore_splitter_sizes()
         if sizes:
@@ -1172,6 +1233,9 @@ class MainWindow(QMainWindow):
         self.export_controller.cancel()
         self._elapsed_timer.stop()
         self._query_started_at = None
+        for window in list(self._value_counts_windows):
+            window.close()
+        self._value_counts_windows.clear()
         for worker in list(self._schema_workers):
             if worker.isRunning():
                 worker.quit()

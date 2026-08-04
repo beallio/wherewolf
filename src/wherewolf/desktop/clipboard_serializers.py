@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 import polars as pl
+from PyQt6.QtWidgets import QTableWidget
 
 from wherewolf.services.selection import (
     ordered_selected_cells,
@@ -76,3 +77,28 @@ def serialize_to_tsv(
         lines.append("\t".join(row_parts))
 
     return "\n".join(lines)
+
+
+def serialize_table_widget_to_tsv(table: QTableWidget) -> str:
+    """Serialize selected rows from a read-only Qt table using the TSV rules above."""
+    selection_model = table.selectionModel()
+    if selection_model is None:
+        return ""
+    rows = sorted({index.row() for index in selection_model.selectedIndexes()})
+    if not rows:
+        return ""
+    column_count = table.columnCount()
+    headers = [table.horizontalHeaderItem(column) for column in range(column_count)]
+    columns = [header.text() if header is not None else "" for header in headers]
+    values: list[list[str]] = []
+    for row in rows:
+        row_values: list[str] = []
+        for column in range(column_count):
+            item = table.item(row, column)
+            row_values.append(item.text() if item is not None else "")
+        values.append(row_values)
+    frame = pl.DataFrame(values, schema=columns, orient="row")
+    selected_cells = [
+        (row_index, column) for row_index in range(len(rows)) for column in range(column_count)
+    ]
+    return serialize_to_tsv(frame, selected_cells)

@@ -79,6 +79,31 @@ def test_history_timestamp_column_is_resizable(tmp_path, qtbot):
     assert header.sectionSize(0) == before + 75
 
 
+def test_history_first_column_can_be_reordered(tmp_path, qtbot):
+    record = {
+        "schema_version": 2,
+        "id": "d1df60ca-c254-4601-b143-3643642a8e7e",
+        "timestamp": "2026-08-02T12:34:56+00:00",
+        "engine": "duckdb",
+        "query": "SELECT 1",
+        "catalog": {},
+    }
+    history_file = tmp_path / "history.json"
+    history_file.write_text(json.dumps([record]))
+
+    from wherewolf.desktop.widgets.history_dock import HistoryDock
+
+    dock = HistoryDock(HistoryManager(storage_path=history_file))
+    qtbot.addWidget(dock)
+    header = dock.history_table.header()
+    assert header is not None
+    assert header.isFirstSectionMovable()
+
+    before = header.visualIndex(0)
+    header.moveSection(0, 1)
+    assert header.visualIndex(0) != before
+
+
 def test_history_timestamp_hides_microseconds_and_keeps_raw_value_in_tooltip(tmp_path, qtbot):
     record = {
         "schema_version": 2,

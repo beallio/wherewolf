@@ -100,6 +100,14 @@ def test_sql_editor_themes_are_complete_and_have_distinct_papers(qtbot) -> None:
     assert len(set(paper_colours)) == len(editor.THEME_NAMES)
 
 
+def test_sql_editor_exposes_additional_complete_themes(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+
+    assert len(editor.THEME_NAMES) >= 7
+    assert all(len(editor._THEMES[name]) == 5 for name in editor.THEME_NAMES)
+
+
 def test_sql_editor_new_theme_persists_and_unknown_theme_is_ignored(qtbot, tmp_path) -> None:
     settings = QSettings(str(tmp_path / "theme-round-trip.ini"), QSettings.Format.IniFormat)
     settings_service = SettingsService(settings)
@@ -139,6 +147,40 @@ def test_sql_editor_horizontal_scrollbar_tracks_line_width(qtbot) -> None:
 
     editor.setText("x" * 1000)
     qtbot.waitUntil(scrollbar.isVisible, timeout=1000)
+
+
+def test_sql_editor_horizontal_scroll_width_shrinks_after_replacement(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.resize(320, 160)
+    editor.show()
+
+    editor.setText("x" * 1000)
+    qtbot.waitUntil(lambda: editor.SendScintilla(editor.SCI_GETSCROLLWIDTH) > 1000)
+    long_width = editor.SendScintilla(editor.SCI_GETSCROLLWIDTH)
+
+    editor.setText("SELECT 1")
+    qtbot.waitUntil(lambda: editor.SendScintilla(editor.SCI_GETSCROLLWIDTH) < long_width / 2)
+    assert editor.SendScintilla(editor.SCI_GETSCROLLWIDTH) < long_width / 2
+
+
+def test_sql_editor_typing_mid_line_keeps_horizontal_scroll_position(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.resize(320, 160)
+    editor.show()
+    editor.setText("x" * 1000)
+    scrollbar = editor.horizontalScrollBar()
+    assert scrollbar is not None
+    qtbot.waitUntil(lambda: scrollbar.maximum() > 0)
+
+    scrollbar.setValue(scrollbar.maximum() // 2)
+    before = scrollbar.value()
+    editor.setCursorPosition(0, 500)
+    editor.insert("y")
+
+    assert before > 0
+    assert scrollbar.value() > 0
 
 
 def test_sql_editor_undo_redo_cut_copy_paste(qtbot) -> None:
