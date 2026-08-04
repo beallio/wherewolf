@@ -23,6 +23,7 @@ from PyQt6.QtWidgets import (
     QDockWidget,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QPlainTextEdit,
     QScrollArea,
     QSplitter,
@@ -397,6 +398,29 @@ def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypat
     assert "GPL-3.0-only" in shown["text"]
     assert "build" in shown["text"]
     assert "MIT" not in shown["text"]
+
+
+def test_help_menu_exposes_sql_dialect_reference_submenu_and_links(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submenu_action = next(
+        action for action in window.help_menu.actions() if action.text() == "SQL Dialect Reference"
+    )
+    submenu = submenu_action.menu()
+    assert isinstance(submenu, QMenu)
+    assert [action.text() for action in submenu.actions()] == list(
+        main_window.SQL_DIALECT_REFERENCE_URLS
+    )
+    assert all(
+        url.startswith("https://") and url
+        for url in main_window.SQL_DIALECT_REFERENCE_URLS.values()
+    )
+
+    opened: list[str] = []
+    monkeypatch.setattr(main_window.webbrowser, "open", opened.append)
+    for label, url in main_window.SQL_DIALECT_REFERENCE_URLS.items():
+        next(action for action in submenu.actions() if action.text() == label).trigger()
+        assert opened[-1] == url
 
 
 def test_engine_selector_disables_missing_spark_with_installation_guidance(

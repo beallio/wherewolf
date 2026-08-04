@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import webbrowser
 from importlib.metadata import version
-from typing import cast
+from typing import Final, cast
 
 from PyQt6.QtCore import QByteArray, Qt, QTimer
 from PyQt6.QtGui import (
@@ -79,6 +79,16 @@ from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.services.preview_export import write_selection
 from wherewolf.storage.history import HistoryManager
+
+SQL_DIALECT_REFERENCE_URLS: Final = {
+    "DuckDB": "https://duckdb.org/docs/stable/sql/introduction",
+    "PostgreSQL": "https://www.postgresql.org/docs/current/sql.html",
+    "Oracle": "https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/SQL-Statements.html",
+    "MySQL": "https://dev.mysql.com/doc/refman/8.4/en/sql-statements.html",
+    "Microsoft T-SQL": "https://learn.microsoft.com/en-us/sql/t-sql/language-reference",
+    "SQLite": "https://www.sqlite.org/lang.html",
+    "Spark SQL": "https://spark.apache.org/docs/latest/sql-ref.html",
+}
 
 
 class FindReplaceDialog(QDialog):
@@ -1065,6 +1075,12 @@ class MainWindow(QMainWindow):
         self.documentation_action.triggered.connect(
             lambda: webbrowser.open("https://github.com/beallio/wherewolf#readme")
         )
+        dialect_menu = help_menu.addMenu("SQL Dialect Reference")
+        assert dialect_menu is not None
+        for label, url in SQL_DIALECT_REFERENCE_URLS.items():
+            action = dialect_menu.addAction(label)
+            assert action is not None
+            action.triggered.connect(lambda _checked=False, url=url: webbrowser.open(url))
         self.licenses_action = help_menu.addAction("Open-Source Licenses")
         assert self.licenses_action is not None
         self.licenses_action.triggered.connect(self._show_licenses)
