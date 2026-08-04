@@ -1,0 +1,86 @@
+{
+  "date": "2026-08-03",
+  "task_objective": "Implement docs/plans/2026-08-03_desktop-ui-refinements.md.",
+  "branch": "feat/desktop-ui-refinements",
+  "plan_commit": "c58a528 docs(plan): add desktop-ui-refinements implementation plan",
+  "commits": [
+    "0903e50 fix(desktop): make the Quit shortcut reachable",
+    "ddff49f feat(desktop): constrain the preview row limit input width",
+    "eb8cc96 feat(desktop): collapse export options into a modal",
+    "a6b84ea test(profile): cover manual profiling of over-limit datasets",
+    "ceafa83 feat(results): alternate row colors in the results grid",
+    "a1dcf96 feat(desktop): allow column reordering in catalog, schema and history",
+    "5eadcda fix(editor): track scroll width so the h-scrollbar reflects content",
+    "01946d5 feat(editor): add additional SQL editor color themes",
+    "a841b5d feat(desktop): add SQL dialect reference links under Help"
+  ],
+  "files_modified": [
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "src/wherewolf/desktop/widgets/history_dock.py",
+    "src/wherewolf/desktop/widgets/result_table_view.py",
+    "src/wherewolf/desktop/widgets/schema_panel.py",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "src/wherewolf/services/settings_service.py",
+    "tests/test_catalog_dock.py",
+    "tests/test_main_window.py",
+    "tests/test_result_table_view.py",
+    "tests/test_settings_service.py",
+    "tests/test_sql_editor.py",
+    "tests/test_ui_legibility_toolbar.py"
+  ],
+  "tests_added_or_updated": [
+    "Quit Ctrl+Q exact-match and close behavior",
+    "shutdown timeout status suppression and single warning ownership",
+    "font-sized preview limit input",
+    "export options dialog acceptance, cancellation, persistence, and action bypass",
+    "manual profiling bypasses the over-limit automatic profiling gate",
+    "results-grid alternating colors",
+    "column movement across catalog, schema, history, and results headers",
+    "real SQL editor horizontal scrollbar tracking",
+    "complete SQL editor theme application and persistence",
+    "Help SQL dialect reference submenu and webbrowser dispatch"
+  ],
+  "design_decisions": [
+    "Dropped the closeEvent shutdown-timeout status message because a closing window cannot display it durably.",
+    "Made MainWindow the sole owner of add-result warning presentation; CatalogDock no longer emits a duplicate error signal for warnings.",
+    "Kept the NeverFinishesWorker __getattribute__ test shim because ty reports invalid-method-override for the plain wait override.",
+    "Kept export menu actions on their direct scope paths while the toolbar button uses the persisted modal selections.",
+    "Used explicit AlternateBase only when the active palette makes it equal to Base.",
+    "Linked only dialects present in the app's sqlglot-supported dialect set."
+  ],
+  "cache_budget_bytes_by_task": [
+    2218486710,
+    2249204718,
+    2250345479,
+    2296936393,
+    2297992629,
+    2328750856,
+    2344649920,
+    2376454838,
+    2392359972
+  ],
+  "cache_budget_post_task3_commit_recheck_bytes": 2311776349,
+  "mutation_controls": [
+    {"task": 1, "nodeid": "tests/test_main_window.py::test_main_window_file_menu_exposes_add_datasets_and_quit", "assertion": "assert QKeySequence(\"Ctrl+Q\") in shortcuts"},
+    {"task": 2, "nodeid": "tests/test_main_window.py::test_preview_limit_input_is_font_sized_and_accepts_maximum_value", "assertion": "assert 16777215 < 108"},
+    {"task": 3, "nodeid": "tests/test_main_window.py::test_export_options_dialog_accepts_chosen_values_and_persists_them", "assertion": "actual [(False, ExportFormat.CSV)] did not match expected [(True, ExportFormat.XLSX)]"},
+    {"task": 4, "nodeid": "tests/test_main_window.py::test_manual_profile_bypasses_over_limit_auto_profile_gate_and_updates_schema_panel", "assertion": "assert 0 == 1 for queued profile workers"},
+    {"task": 5, "nodeid": "tests/test_result_table_view.py::test_result_table_view_uses_distinguishable_alternating_row_colors", "assertion": "assert False on alternatingRowColors"},
+    {"task": 6, "nodeid": "tests/test_main_window.py::test_all_tabular_views_allow_column_reordering[schema]", "assertion": "AssertionError: schema; assert False"},
+    {"task": 7, "nodeid": "tests/test_sql_editor.py::test_horizontal_scrollbar_tracks_actual_content", "assertion": "pytestqt.exceptions.TimeoutError while waiting for the long scrollbar"},
+    {"task": 8, "nodeid": "tests/test_sql_editor.py::test_sql_editor_themes_are_complete_and_distinct", "assertion": "assert all(len(colours) == 5 ...)"},
+    {"task": 9, "nodeid": "tests/test_main_window.py::test_help_menu_exposes_sql_dialect_reference_submenu_and_links", "assertion": "assert all(url.startswith(\"https://\") and url ...)"}
+  ],
+  "verification": {
+    "baseline": "447 passed, 7 deselected",
+    "v3_pytest": "====================== 461 passed, 7 deselected in 11.76s ======================",
+    "v3_ty_src_exit": 0,
+    "v3_ty_all_exit": 0,
+    "v4_probe": "error[unresolved-import]: Cannot resolve imported module `definitely_not_a_real_module`; Found 1 diagnostic; exit 1",
+    "v4_source_status": "git status --short src/ was empty after deleting the probe",
+    "v5_manual_gui": "Deferred per plan; no live display verification performed",
+    "quality_gates": "Run after this session log is committed"
+  },
+  "results": "All nine planned tasks were implemented in order with TDD and atomic commits. The cache budget gate remained below 4 GiB at every task checkpoint; byte counts generally climbed with expected temporary-file fluctuations."
+}
