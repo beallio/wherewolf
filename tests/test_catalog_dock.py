@@ -85,7 +85,7 @@ def test_catalog_dock_drag_and_drop_rejects_directories(qtbot, tmp_path: Path) -
     assert not event.isAccepted()
 
 
-def test_catalog_dock_drag_drop_unsupported_files_are_single_warning_and_still_add_supported(
+def test_catalog_dock_add_warnings_are_not_emitted_because_main_window_owns_surface(
     qtbot,
     tmp_path: Path,
 ) -> None:

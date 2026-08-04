@@ -82,5 +82,24 @@
     "v5_manual_gui": "Deferred per plan; no live display verification performed",
     "quality_gates": "Run after this session log is committed"
   },
-  "results": "All nine planned tasks were implemented in order with TDD and atomic commits. The cache budget gate remained below 4 GiB at every task checkpoint; byte counts generally climbed with expected temporary-file fluctuations."
+  "results": "All nine planned tasks were implemented in order with TDD and atomic commits. The cache budget gate remained below 4 GiB at every task checkpoint; byte counts generally climbed with expected temporary-file fluctuations.",
+  "review_rounds": [
+    {
+      "round": 1,
+      "status": "CHANGES_REQUESTED",
+      "finding": "The catalog-dock warning test had an inverted zero-signal assertion under a name claiming single-warning coverage, and no MainWindow test covered warning delivery to the status bar.",
+      "changes": [
+        "Renamed the catalog-dock test to state that add-time warnings are not emitted because MainWindow owns the surface.",
+        "Added a MainWindow drag-and-drop test asserting Unsupported source format reaches the status bar while a supported file is still added."
+      ],
+      "targeted_tests": "2 passed",
+      "mutation_control": {
+        "nodeid": "tests/test_main_window.py::test_main_window_drop_surfaces_unsupported_source_warning",
+        "assertion": "assertion failed: status bar was Added `supported` to catalog. instead of containing Unsupported source format",
+        "result": "red as required; warning-delivery branch restored immediately"
+      },
+      "cache_budget_bytes": 2503688639,
+      "quality_gates": "scripts/orchestration/run-quality-gates passed: 462 passed, 7 deselected in 12.25s; no deleted review notes"
+    }
+  ]
 }

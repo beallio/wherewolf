@@ -733,6 +733,38 @@ def test_main_window_drop_routes_through_add_handler_and_queues_schema_work(
     assert "Added `dropped` to catalog." in window.status_bar.currentMessage()
 
 
+def test_main_window_drop_surfaces_unsupported_source_warning(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    unsupported_file = tmp_path / "unsupported.xls"
+    supported_file = tmp_path / "supported.csv"
+    unsupported_file.write_text("id\n1\n")
+    supported_file.write_text("id\n1\n")
+    window = MainWindow(catalog_service=CatalogService())
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
+    mime_data = QMimeData()
+    mime_data.setUrls(
+        [
+            QUrl.fromLocalFile(str(unsupported_file)),
+            QUrl.fromLocalFile(str(supported_file)),
+        ]
+    )
+    event = QDropEvent(
+        QPointF(1.0, 1.0),
+        Qt.DropAction.CopyAction,
+        mime_data,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    window.dropEvent(event)
+
+    assert event.isAccepted()
+    assert "Unsupported source format" in window.status_bar.currentMessage()
+
+
 def test_main_window_menu_add_queues_schema_work_once(tmp_path: Path, qtbot, monkeypatch) -> None:
     csv_file = tmp_path / "menu.csv"
     csv_file.write_text("id\n1\n")
