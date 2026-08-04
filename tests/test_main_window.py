@@ -6,8 +6,16 @@ from uuid import uuid4
 
 import polars as pl
 import pytest
-from PyQt6.QtCore import QCoreApplication, QSettings, Qt
-from PyQt6.QtGui import QStandardItemModel
+from PyQt6.QtCore import (
+    QCoreApplication,
+    QMimeData,
+    QPointF,
+    QSettings,
+    Qt,
+    QThread,
+    QUrl,
+)
+from PyQt6.QtGui import QDropEvent, QKeySequence, QStandardItemModel
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -26,6 +34,7 @@ from PyQt6.QtWidgets import (
 from wherewolf.desktop import main_window
 from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
+from wherewolf.desktop.workers.schema_worker import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
     ColumnSchema,
@@ -72,7 +81,50 @@ def test_main_window_structure(qtbot) -> None:
         assert dock.objectName()
 
     menu_titles = [action.text() for action in menu_bar.actions()]
-    assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+    assert menu_titles == ["&File", "&Edit", "&Query", "&View", "&Help"]
+
+
+def test_main_window_top_level_menus_have_distinct_mnemonics(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    menus = (
+        window.file_menu,
+        window.edit_menu,
+        window.query_menu,
+        window.view_menu,
+        window.help_menu,
+    )
+    titles = [menu.title() for menu in menus]
+    mnemonics = [title[1].lower() for title in titles]
+
+    assert all(title.startswith("&") for title in titles)
+    assert len(mnemonics) == len(set(mnemonics))
+
+
+def test_main_window_file_menu_exposes_add_datasets_and_quit(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    file_actions = window.file_menu.actions()
+    assert file_actions[0] is window.desktop_actions.add_datasets
+    assert window.quit_action in file_actions
+    assert window.quit_action.shortcut() == QKeySequence(QKeySequence.StandardKey.Quit)
+    assert window.desktop_actions.clear_history not in file_actions
+    assert window.desktop_actions.clear_history in window.edit_menu.actions()
+
+
+def test_main_window_quit_action_closes_the_window(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+
+    window.quit_action.trigger()
+
+    assert not window.isVisible()
+    app = QCoreApplication.instance()
+    assert app is not None
+    app.processEvents()
 
 
 def test_main_window_view_menu_reopens_a_closed_dock_without_affecting_siblings(qtbot) -> None:
@@ -338,6 +390,7 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Select All",
         "Find / Replace…",
         "Toggle Comment",
+        "Clear History",
     ]
     assert actions[:2] == list(window.editor.edit_actions[:2])
     assert actions[2:5] == [window.cut_action, window.copy_action, window.paste_action]
@@ -501,6 +554,83 @@ def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
     assert window.desktop_actions.run.isEnabled()
     assert "Wherewolf" in window.windowTitle()
     assert "Added `people` to catalog." in window.status_bar.currentMessage()
+
+
+def test_main_window_drop_routes_through_add_handler_and_queues_schema_work(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    csv_file = tmp_path / "dropped.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(catalog_service=CatalogService())
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    queued_schema_work: list[CatalogBinding] = []
+    monkeypatch.setattr(window, "_queue_schema_work", queued_schema_work.append)
+    mime_data = QMimeData()
+    mime_data.setUrls([QUrl.fromLocalFile(str(csv_file))])
+    event = QDropEvent(
+        QPointF(1.0, 1.0),
+        Qt.DropAction.CopyAction,
+        mime_data,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    window.dropEvent(event)
+
+    assert event.isAccepted()
+    assert len(queued_schema_work) == 1
+    assert "Added `dropped` to catalog." in window.status_bar.currentMessage()
+
+
+def test_main_window_menu_add_queues_schema_work_once(tmp_path: Path, qtbot, monkeypatch) -> None:
+    csv_file = tmp_path / "menu.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(
+        catalog_service=CatalogService(),
+        file_dialog_service=FakeFileDialogService(paths=(csv_file,)),
+    )
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    queued_schema_work: list[CatalogBinding] = []
+    monkeypatch.setattr(window, "_queue_schema_work", queued_schema_work.append)
+
+    window.desktop_actions.add_datasets.trigger()
+
+    assert len(queued_schema_work) == 1
+
+
+def test_main_window_reports_a_skipped_duplicate_dataset(tmp_path: Path, qtbot) -> None:
+    csv_file = tmp_path / "already-loaded.csv"
+    csv_file.write_text("id\n1\n")
+    catalog_service = CatalogService()
+    catalog_service.add_paths((csv_file,))
+    window = MainWindow(catalog_service=catalog_service)
+    qtbot.addWidget(window)
+
+    window.catalog.add_paths((csv_file,))
+
+    message = window.status_bar.currentMessage()
+    assert "duplicate" in message.lower()
+    assert "already-loaded.csv" in message
+
+
+def test_main_window_reports_added_and_skipped_datasets_together(tmp_path: Path, qtbot) -> None:
+    duplicate = tmp_path / "duplicate.csv"
+    new_dataset = tmp_path / "new.csv"
+    duplicate.write_text("id\n1\n")
+    new_dataset.write_text("id\n2\n")
+    catalog_service = CatalogService()
+    catalog_service.add_paths((duplicate,))
+    window = MainWindow(catalog_service=catalog_service)
+    qtbot.addWidget(window)
+
+    window.catalog.add_paths((duplicate, new_dataset))
+
+    message = window.status_bar.currentMessage()
+    assert "Added `new` to catalog." in message
+    assert "duplicate" in message.lower()
+    assert "duplicate.csv" in message
 
 
 def test_main_window_explains_truncation_and_keeps_raw_error_details_collapsed(qtbot) -> None:
@@ -1092,6 +1222,58 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     assert "Total Rows: 2" not in msg
 
 
+def test_main_window_elapsed_timer_reports_query_duration_and_stops_on_terminal_states(
+    qtbot, monkeypatch
+) -> None:
+    current_time = [100.0]
+    monkeypatch.setattr(main_window.time, "monotonic", lambda: current_time[0])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not window._elapsed_timer.isActive()
+
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+    assert window._elapsed_timer.isActive()
+    current_time[0] = 103.9
+    window._update_elapsed_status()
+    assert window.status_bar.currentMessage() == "Executing query... (3s)"
+
+    for terminal_status in (
+        ExecutionStatus.SUCCEEDED,
+        ExecutionStatus.FAILED,
+        ExecutionStatus.CANCELLED,
+    ):
+        window._on_query_status_changed(ExecutionStatus.RUNNING)
+        assert window._elapsed_timer.isActive()
+        window._on_query_status_changed(terminal_status)
+        assert not window._elapsed_timer.isActive()
+
+
+def test_main_window_elapsed_timer_preserves_cancellation_status(qtbot, monkeypatch) -> None:
+    current_time = [100.0]
+    monkeypatch.setattr(main_window.time, "monotonic", lambda: current_time[0])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+    current_time[0] = 103.9
+    window._on_query_status_changed(ExecutionStatus.CANCELLATION_REQUESTED)
+    window._update_elapsed_status()
+
+    assert "cancell" in window.status_bar.currentMessage().lower()
+    assert "Executing query..." not in window.status_bar.currentMessage()
+
+
+def test_main_window_close_stops_elapsed_timer(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+
+    window.close()
+
+    assert not window._elapsed_timer.isActive()
+
+
 def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Path) -> None:
     csv_file = tmp_path / "fast.csv"
     csv_file.write_text("id\n1\n")
@@ -1107,6 +1289,62 @@ def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Pat
     window.close()
 
     assert len(window._schema_workers) == 0
+
+
+def test_main_window_close_bounds_worker_wait_and_saves_settings_on_timeout(
+    qtbot, monkeypatch
+) -> None:
+    events: list[object] = []
+
+    class NeverFinishesWorker(SchemaWorker):
+        def __init__(self) -> None:
+            QThread.__init__(self)
+
+        def isRunning(self) -> bool:
+            return True
+
+        def quit(self) -> None:
+            events.append("quit")
+
+        def _fake_wait(self, *args: object) -> bool:
+            events.append(("wait", args[0] if args else -1))
+            return False
+
+        def __getattribute__(self, name: str) -> object:
+            if name == "wait":
+                return object.__getattribute__(self, "_fake_wait")
+            return super().__getattribute__(name)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._schema_workers = [NeverFinishesWorker()]
+    monkeypatch.setattr(window.query_controller, "cancel", lambda: events.append("query_cancel"))
+    monkeypatch.setattr(window.export_controller, "cancel", lambda: events.append("export_cancel"))
+    monkeypatch.setattr(window.query_controller, "shutdown", lambda: True)
+    monkeypatch.setattr(window.export_controller, "shutdown", lambda: True)
+    saved_settings: list[str] = []
+    for method_name in (
+        "save_window_geometry",
+        "save_window_state",
+        "save_splitter_sizes",
+        "save_editor_font_size",
+    ):
+        monkeypatch.setattr(
+            window._settings_service,
+            method_name,
+            lambda *args, method_name=method_name: saved_settings.append(method_name),
+        )
+
+    window.close()
+
+    assert events[:4] == ["query_cancel", "export_cancel", "quit", ("wait", 5000)]
+    assert set(saved_settings) == {
+        "save_window_geometry",
+        "save_window_state",
+        "save_splitter_sizes",
+        "save_editor_font_size",
+    }
+    assert "shutdown" in window.status_bar.currentMessage().lower()
 
 
 def test_main_window_removes_completed_profile_workers(qtbot, tmp_path: Path) -> None:
@@ -1190,6 +1428,22 @@ def test_main_window_result_grid_integration(qtbot) -> None:
         grid.proxy_model().data(grid.proxy_model().index(1, 1), Qt.ItemDataRole.UserRole) == "beta"
     )
     assert "Preview Rows: 2" in window.status_bar.currentMessage()
+    assert not window.empty_result_banner.isVisible()
+
+    # 1b. A successful query with no rows has a distinct empty-result state.
+    res_empty = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame(),
+        execution_seconds=0.02,
+        preview_row_count=0,
+        total_row_count=0,
+        truncated=False,
+        completed_at=now,
+    )
+    window._on_query_result_ready(res_empty, request)
+    assert window.empty_result_banner.isVisible()
+    assert window.empty_result_banner.text() == "Query returned 0 rows."
 
     # 2. Failed result: grid cleared, error message shown
     res_failed = QueryResult(
@@ -1206,6 +1460,7 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
+    assert not window.empty_result_banner.isVisible()
     assert window.result_error_message.isVisible()
     assert "near SELECT" in window.result_error_message.text()
     msg, severity = window.messages_panel.message_at(0)
@@ -1230,6 +1485,7 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_cancelled, request)
     assert grid.proxy_model().rowCount() == 0
+    assert not window.empty_result_banner.isVisible()
     msg, severity = window.messages_panel.message_at(0)
     assert "cancelled" in msg.lower()
     assert severity == "warning"

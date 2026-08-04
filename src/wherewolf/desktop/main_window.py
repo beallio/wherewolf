@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import time
 import webbrowser
 from importlib.metadata import version
 from typing import cast
 
-from PyQt6.QtCore import QByteArray, Qt
+from PyQt6.QtCore import QByteArray, Qt, QTimer
 from PyQt6.QtGui import (
     QAction,
     QCloseEvent,
@@ -68,6 +69,7 @@ from wherewolf.domain import (
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import (
     CatalogService,
+    CatalogServiceReport,
     ExecutionRequestBuilder,
     ExportFormat,
     SettingsService,
@@ -186,6 +188,11 @@ class MainWindow(QMainWindow):
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._update_elapsed_status)
+        self._query_started_at: float | None = None
+        self._query_status = ExecutionStatus.IDLE
 
         self.setCentralWidget(self._central_splitter)
         self._build_menus()
@@ -346,6 +353,7 @@ class MainWindow(QMainWindow):
 
     def _build_catalog_dock(self) -> QDockWidget:
         catalog = CatalogDock(self._catalog_service, self)
+        catalog.datasets_added.connect(self._handle_add_result)
         catalog.error_reported.connect(self._show_status)
         catalog.refresh_schema_requested.connect(self._on_refresh_catalog_schema)
         catalog.insert_alias_requested.connect(self.editor_insert_text)
@@ -439,16 +447,31 @@ class MainWindow(QMainWindow):
             self.query_controller.cancel()
 
     def _on_query_status_changed(self, status: ExecutionStatus) -> None:
-        if status in (ExecutionStatus.RUNNING, ExecutionStatus.CANCELLATION_REQUESTED):
+        self._query_status = status
+        if status is ExecutionStatus.RUNNING:
+            self._query_started_at = time.monotonic()
+            self._elapsed_timer.start()
             self.desktop_actions.run.setEnabled(False)
             self.desktop_actions.cancel.setEnabled(True)
-            if status is ExecutionStatus.CANCELLATION_REQUESTED:
-                self._show_status("Cancellation requested")
-            else:
-                self._show_status("Executing query...")
+            self._show_status("Executing query...")
+        elif status is ExecutionStatus.CANCELLATION_REQUESTED:
+            self.desktop_actions.run.setEnabled(False)
+            self.desktop_actions.cancel.setEnabled(True)
+            self._show_status("Cancellation requested")
         else:
+            self._elapsed_timer.stop()
+            self._query_started_at = None
             self.desktop_actions.run.setEnabled(bool(self._catalog_service.entries))
             self.desktop_actions.cancel.setEnabled(False)
+
+    def _update_elapsed_status(self) -> None:
+        if self._query_started_at is None:
+            return
+        elapsed_seconds = max(0, int(time.monotonic() - self._query_started_at))
+        if self._query_status is ExecutionStatus.CANCELLATION_REQUESTED:
+            self._show_status(f"Cancelling... ({elapsed_seconds}s)")
+        else:
+            self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
         self._last_request, self._last_result = request, result
@@ -461,6 +484,16 @@ class MainWindow(QMainWindow):
             self.result_table_view.set_frame(result.frame)
         else:
             self.result_table_view.set_frame(None)
+        is_empty_result = (
+            result.status is ExecutionStatus.SUCCEEDED
+            and result.frame is not None
+            and result.frame.height == 0
+        )
+        if is_empty_result:
+            self.empty_result_banner.setText("Query returned 0 rows.")
+        else:
+            self.empty_result_banner.clear()
+        self.empty_result_banner.setVisible(is_empty_result)
         if result.status is ExecutionStatus.FAILED:
             self.result_error_message.setText(
                 f"Query failed: {result.error_message or 'Unknown error'}"
@@ -601,10 +634,18 @@ class MainWindow(QMainWindow):
         if not paths:
             return
 
-        was_empty_catalog = not self._catalog_service.entries
-        result = self._catalog_service.add_paths(paths)
+        self.catalog.add_paths(paths)
+
+    def _handle_add_result(self, result: CatalogServiceReport) -> None:
+        duplicate_message = ""
+        if result.duplicates:
+            duplicate_names = ", ".join(path.name for path in result.duplicates)
+            duplicate_message = (
+                f"Skipped {len(result.duplicates)} duplicate dataset(s): {duplicate_names}"
+            )
         if result.added:
             first = result.added[0]
+            was_empty_catalog = len(self._catalog_service.entries) == len(result.added)
             if was_empty_catalog and not self.editor.text().strip():
                 self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)}")
             self._settings_service.save_last_dataset_directory(first.path.parent)
@@ -621,8 +662,13 @@ class MainWindow(QMainWindow):
                         self._catalog_service.mark_profile_skipped(
                             entry.id, "Profiling skipped: source exceeds the configured size limit."
                         )
-            self._show_status(f"Added `{first.alias}` to catalog.")
+            message = f"Added `{first.alias}` to catalog."
+            if duplicate_message:
+                message = f"{message} {duplicate_message}"
+            self._show_status(message)
             self._update_catalog_affordances()
+        elif duplicate_message:
+            self._show_status(duplicate_message)
         if result.warnings:
             self._show_status("\n".join(sorted(set(result.warnings))))
 
@@ -830,6 +876,10 @@ class MainWindow(QMainWindow):
         self.empty_catalog_banner = QLabel("Please add a dataset to begin.", results)
         self.empty_catalog_banner.setObjectName("empty_catalog_banner")
         results_layout.insertWidget(0, self.empty_catalog_banner)
+        self.empty_result_banner = QLabel(results)
+        self.empty_result_banner.setObjectName("empty_result_banner")
+        self.empty_result_banner.setVisible(False)
+        results_layout.insertWidget(1, self.empty_result_banner)
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
@@ -887,11 +937,16 @@ class MainWindow(QMainWindow):
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
         assert menu_bar is not None
-        file_menu = cast(QMenu, menu_bar.addMenu("File"))
+        file_menu = cast(QMenu, menu_bar.addMenu("&File"))
         file_menu.setObjectName("file_menu")
-        file_menu.addAction(self.desktop_actions.clear_history)
+        file_menu.addAction(self.desktop_actions.add_datasets)
+        file_menu.addSeparator()
+        self.quit_action = QAction("Quit", self)
+        self.quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        self.quit_action.triggered.connect(self.close)
+        file_menu.addAction(self.quit_action)
 
-        edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
+        edit_menu = cast(QMenu, menu_bar.addMenu("&Edit"))
         edit_menu.setObjectName("edit_menu")
         undo, redo, _cut, _copy, _paste, toggle_comment = self.editor.edit_actions
         edit_menu.addAction(undo)
@@ -927,8 +982,10 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.find_replace_action)
         edit_menu.addSeparator()
         edit_menu.addAction(toggle_comment)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.desktop_actions.clear_history)
 
-        query_menu = cast(QMenu, menu_bar.addMenu("Query"))
+        query_menu = cast(QMenu, menu_bar.addMenu("&Query"))
         query_menu.setObjectName("query_menu")
         query_menu.addAction(self.desktop_actions.run)
         query_menu.addAction(self.desktop_actions.cancel)
@@ -939,7 +996,7 @@ class MainWindow(QMainWindow):
         query_menu.addAction(self.desktop_actions.export_full)
         query_menu.addAction(self.desktop_actions.export_selection)
 
-        view_menu = cast(QMenu, menu_bar.addMenu("View"))
+        view_menu = cast(QMenu, menu_bar.addMenu("&View"))
         view_menu.setObjectName("view_menu")
         for dock in (
             self._catalog_dock_widget,
@@ -957,7 +1014,7 @@ class MainWindow(QMainWindow):
         self.preferences_action.triggered.connect(self._show_preferences)
         view_menu.addAction(self.preferences_action)
 
-        help_menu = cast(QMenu, menu_bar.addMenu("Help"))
+        help_menu = cast(QMenu, menu_bar.addMenu("&Help"))
         help_menu.setObjectName("help_menu")
         self.about_action = help_menu.addAction("About")
         assert self.about_action is not None
@@ -1054,20 +1111,31 @@ class MainWindow(QMainWindow):
         self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        self.query_controller.cancel()
+        self.export_controller.cancel()
+        self._elapsed_timer.stop()
+        self._query_started_at = None
+        shutdown_timed_out = False
         for worker in list(self._schema_workers):
             if worker.isRunning():
                 worker.quit()
-                worker.wait()
+                if not worker.wait(5000):
+                    shutdown_timed_out = True
         self._schema_workers.clear()
 
         for worker in list(self._profile_workers):
             if worker.isRunning():
                 worker.quit()
-                worker.wait()
+                if not worker.wait(5000):
+                    shutdown_timed_out = True
         self._profile_workers.clear()
 
-        self.query_controller.shutdown()
-        self.export_controller.shutdown()
+        if self.query_controller.shutdown() is False:
+            shutdown_timed_out = True
+        if self.export_controller.shutdown() is False:
+            shutdown_timed_out = True
+        if shutdown_timed_out:
+            self._show_status("Shutdown timed out waiting for background workers.")
 
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())

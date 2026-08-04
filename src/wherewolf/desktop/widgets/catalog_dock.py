@@ -30,6 +30,7 @@ class CatalogDock(QWidget):
 
     insert_alias_requested = pyqtSignal(str)
     refresh_schema_requested = pyqtSignal(CatalogBinding)
+    datasets_added = pyqtSignal(object)
     error_reported = pyqtSignal(str)
 
     def __init__(
@@ -85,6 +86,7 @@ class CatalogDock(QWidget):
 
     def add_paths(self, paths: tuple[Path, ...]) -> None:
         report = self._catalog_service.add_paths(paths)
+        self.datasets_added.emit(report)
         if report.warnings:
             self.error_reported.emit("\n".join(sorted(set(report.warnings))))
 
