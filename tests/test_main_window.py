@@ -15,7 +15,7 @@ from PyQt6.QtCore import (
     QThread,
     QUrl,
 )
-from PyQt6.QtGui import QDropEvent, QKeySequence, QStandardItemModel
+from PyQt6.QtGui import QDropEvent, QFontMetrics, QKeySequence, QStandardItemModel
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -175,6 +175,23 @@ def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_
             control = window.findChild(QWidget, object_name)
             assert control is not None
             assert control.isVisible(), f"{object_name} is hidden at {width}px"
+
+
+def test_preview_limit_input_is_font_sized_and_accepts_maximum_value(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    unconstrained = QLineEdit()
+    qtbot.addWidget(unconstrained)
+
+    assert window.preview_limit_selector.maximumWidth() < unconstrained.sizeHint().width()
+    expected_text_width = QFontMetrics(window.preview_limit_selector.font()).horizontalAdvance(
+        "100000"
+    )
+    assert window.preview_limit_selector.maximumWidth() >= expected_text_width
+    validator = window.preview_limit_selector.validator()
+    assert validator is not None
+    state, _, _ = validator.validate("100000", 0)
+    assert state.name == "Acceptable"
 
 
 def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(

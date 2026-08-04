@@ -14,6 +14,7 @@ from PyQt6.QtGui import (
     QDragEnterEvent,
     QDropEvent,
     QFont,
+    QFontMetrics,
     QIntValidator,
     QKeySequence,
     QStandardItemModel,
@@ -292,6 +293,8 @@ class MainWindow(QMainWindow):
         self._preview_limit_value = self._settings_service.restore_preview_limit()
         self.preview_limit_selector = QLineEdit(toolbar)
         self.preview_limit_selector.setObjectName("preview_limit_selector")
+        preview_width = QFontMetrics(self.preview_limit_selector.font()).horizontalAdvance("100000")
+        self.preview_limit_selector.setMaximumWidth(preview_width + 16)
         self.preview_limit_selector.setValidator(
             QIntValidator(
                 SettingsService.MIN_PREVIEW_LIMIT,
