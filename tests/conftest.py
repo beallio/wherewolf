@@ -24,7 +24,9 @@ def spark_session() -> Iterator[Any]:
     os.environ["SPARK_LOCAL_DIRS"] = str(spark_local_dir)
 
     try:
-        from pyspark.sql import SparkSession
+        from pyspark.sql import (  # ty: ignore[unresolved-import]  # Unresolvable without Spark extra.
+            SparkSession,
+        )
 
         session = (
             SparkSession.builder.appName("wherewolf-tests")

@@ -73,9 +73,6 @@ markers = [
 data_file = "/tmp/wherewolf/.coverage"
 timid = true
 
-[tool.ty.rules]
-unresolved-import = "ignore"
-
 [dependency-groups]
 dev = [
     "hatch>=1.17.0",

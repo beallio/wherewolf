@@ -23,7 +23,7 @@
     "The add-datasets service report is emitted by CatalogDock on every add_paths call and handled once by MainWindow, so menu and drop paths share schema/profile/status behavior.",
     "Elapsed time uses time.monotonic and a one-second QTimer; terminal query states and closeEvent stop it.",
     "QueryController and ExportController shutdown waits are also bounded at 5000 ms because closeEvent invokes both controller shutdown paths.",
-    "The external /tmp/wherewolf/ty-baseline.toml was deleted. Stale ty suppressions were removed, and pyproject.toml now records unresolved-import = \"ignore\" for the optional pyspark test import."
+    "The external /tmp/wherewolf/ty-baseline.toml was deleted. The repo-wide unresolved-import suppression was removed, and the optional pyspark test import now carries the narrow inline ty suppression."
   ],
   "cache_budget_bytes_after_tasks": [
     1835115512,
@@ -59,6 +59,14 @@
       "ty_environment": "Python 3.14.6 in /tmp/wherewolf/.venv; pyspark is not installed; committed [tool.ty.rules] unresolved-import = \"ignore\" handles the optional Spark test import.",
       "./run.sh uv run ty check src/": "exit 0; All checks passed!",
       "./run.sh uv run ty check .": "exit 0; All checks passed!"
+    },
+    "review_round_03": {
+      "./run.sh uv run ty check src/": "exit 0; All checks passed!",
+      "./run.sh uv run ty check .": "exit 0; All checks passed!",
+      "bogus_import_probe": "exit 1; error[unresolved-import]: Cannot resolve imported module `definitely_not_a_real_module` at src/wherewolf/_ty_probe.py:1:6; Found 1 diagnostic",
+      "quality_gates": "ruff check passed; ruff format left 152 files unchanged; ty check src passed; pytest passed 447 tests with 7 deselected in 11.59s; review-note deletion check passed",
+      "cache_budget": "exit 0; cache bytes: 2199322720",
+      "commit_hook_retry": "The first commit attempt failed because ruff expanded the import and ty reported the unresolved module on the from-line while the suppression was on SparkSession; moving the inline suppression to the from-line made ty check src and ty check . pass with exit 0."
     }
   },
   "results": "Tasks 0-7 were implemented as separate conventional commits on feat/desktop-shell-ui-fixes."
