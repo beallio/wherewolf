@@ -50,6 +50,7 @@ class HistoryDock(QWidget):
         header = self.history_table.header()
         if header is not None:
             header.setSectionsMovable(True)
+            header.setFirstSectionMovable(True)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
             header.resizeSection(0, 240)
             header.setStretchLastSection(True)

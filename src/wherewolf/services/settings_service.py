@@ -25,10 +25,12 @@ class SettingsService:
     MAX_PREVIEW_LIMIT: Final = 100000
     DEFAULT_PREVIEW_LIMIT: Final = 1000
     DEFAULT_EDITOR_THEME: Final = "Dark"
+    DEFAULT_PROGRAM_THEME: Final = "Follow system"
     DEFAULT_EXPORT_FORMAT: Final = "csv"
     DEFAULT_EXPORT_SCOPE: Final = "preview"
     DEFAULT_PROFILE_ON_LOAD: Final = True
     DEFAULT_PROFILE_MAX_BYTES: Final = 268_435_456
+    DEFAULT_LAYOUT_VERSION: Final = 0
 
     def __init__(self, settings: QSettings | None = None):
         self._settings = settings or QSettings(self.ORGANIZATION, self.APPLICATION)
@@ -70,6 +72,10 @@ class SettingsService:
         return f"{schema_version}/editor/theme"
 
     @staticmethod
+    def _program_theme_key(schema_version: str) -> str:
+        return f"{schema_version}/program/theme"
+
+    @staticmethod
     def _export_format_key(schema_version: str) -> str:
         return f"{schema_version}/export/format"
 
@@ -84,6 +90,10 @@ class SettingsService:
     @staticmethod
     def _profile_max_bytes_key(schema_version: str) -> str:
         return f"{schema_version}/profile/max_bytes"
+
+    @staticmethod
+    def _window_layout_version_key(schema_version: str) -> str:
+        return f"{schema_version}/window/layout_version"
 
     @property
     def namespace_prefix(self) -> str:
@@ -126,12 +136,20 @@ class SettingsService:
         return self._editor_theme_key(self.namespace_prefix)
 
     @property
+    def program_theme_key(self) -> str:
+        return self._program_theme_key(self.namespace_prefix)
+
+    @property
     def profile_on_load_key(self) -> str:
         return self._profile_on_load_key(self.namespace_prefix)
 
     @property
     def profile_max_bytes_key(self) -> str:
         return self._profile_max_bytes_key(self.namespace_prefix)
+
+    @property
+    def window_layout_version_key(self) -> str:
+        return self._window_layout_version_key(self.namespace_prefix)
 
     def restore_window_geometry(self) -> bytes:
         return self._read_bytes(self.window_geometry_key, b"")
@@ -144,6 +162,18 @@ class SettingsService:
 
     def save_window_state(self, state: bytes) -> None:
         self._settings.setValue(self.window_state_key, QByteArray(state))
+
+    def restore_window_layout_version(self) -> int:
+        value = self._settings.value(
+            self.window_layout_version_key,
+            self.DEFAULT_LAYOUT_VERSION,
+        )
+        if not isinstance(value, int) or isinstance(value, bool):
+            return self.DEFAULT_LAYOUT_VERSION
+        return value
+
+    def save_window_layout_version(self, version: int) -> None:
+        self._settings.setValue(self.window_layout_version_key, int(version))
 
     def restore_splitter_sizes(self) -> tuple[int, int]:
         return self._read_splitter_sizes(self.splitter_sizes_key, self.DEFAULT_SPLITTER_SIZES)
@@ -214,6 +244,13 @@ class SettingsService:
 
     def save_editor_theme(self, theme: str) -> None:
         self._settings.setValue(self.editor_theme_key, str(theme))
+
+    def restore_program_theme(self) -> str:
+        value = self._settings.value(self.program_theme_key, self.DEFAULT_PROGRAM_THEME)
+        return value if isinstance(value, str) and value else self.DEFAULT_PROGRAM_THEME
+
+    def save_program_theme(self, theme: str) -> None:
+        self._settings.setValue(self.program_theme_key, str(theme))
 
     @property
     def export_format_key(self) -> str:
