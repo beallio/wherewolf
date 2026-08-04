@@ -117,6 +117,16 @@ class SqlEditor(QsciScintilla):
     def set_catalog(self, catalog: tuple[CatalogEntry, ...]) -> None:
         self._catalog = tuple(catalog)
 
+    def setText(self, text: str) -> None:
+        """Replace the document and let scroll-width tracking recompute from scratch.
+
+        QScintilla's tracking only expands its cached width.  Resetting only for
+        wholesale replacements avoids changing the horizontal scroll position on every
+        character typed into an existing line.
+        """
+        super().setText(text)
+        self.setScrollWidth(1)
+
     def request_completion(self, forced: bool = False) -> None:
         text = self.text()
         line, col = self.getCursorPosition()

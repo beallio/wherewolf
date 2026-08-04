@@ -141,6 +141,40 @@ def test_sql_editor_horizontal_scrollbar_tracks_line_width(qtbot) -> None:
     qtbot.waitUntil(scrollbar.isVisible, timeout=1000)
 
 
+def test_sql_editor_horizontal_scroll_width_shrinks_after_replacement(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.resize(320, 160)
+    editor.show()
+
+    editor.setText("x" * 1000)
+    qtbot.waitUntil(lambda: editor.SendScintilla(editor.SCI_GETSCROLLWIDTH) > 1000)
+    long_width = editor.SendScintilla(editor.SCI_GETSCROLLWIDTH)
+
+    editor.setText("SELECT 1")
+    qtbot.waitUntil(lambda: editor.SendScintilla(editor.SCI_GETSCROLLWIDTH) < long_width / 2)
+    assert editor.SendScintilla(editor.SCI_GETSCROLLWIDTH) < long_width / 2
+
+
+def test_sql_editor_typing_mid_line_keeps_horizontal_scroll_position(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.resize(320, 160)
+    editor.show()
+    editor.setText("x" * 1000)
+    scrollbar = editor.horizontalScrollBar()
+    assert scrollbar is not None
+    qtbot.waitUntil(lambda: scrollbar.maximum() > 0)
+
+    scrollbar.setValue(scrollbar.maximum() // 2)
+    before = scrollbar.value()
+    editor.setCursorPosition(0, 500)
+    editor.insert("y")
+
+    assert before > 0
+    assert scrollbar.value() > 0
+
+
 def test_sql_editor_undo_redo_cut_copy_paste(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)
