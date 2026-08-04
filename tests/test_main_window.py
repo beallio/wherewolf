@@ -19,6 +19,7 @@ from PyQt6.QtGui import QDropEvent, QFontMetrics, QKeySequence, QStandardItemMod
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QDockWidget,
     QLineEdit,
     QMainWindow,
@@ -205,13 +206,14 @@ def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(
 
     for object_name in (
         "preview_filter_input",
-        "export_format_selector",
-        "export_scope_selector",
         "export_button",
     ):
         control = window.findChild(QWidget, object_name)
         assert control is not None
         assert control.isVisible(), f"{object_name} is hidden at 1024px"
+
+    assert window.findChild(QWidget, "export_format_selector") is None
+    assert window.findChild(QWidget, "export_scope_selector") is None
 
     for object_name in (
         "export_preview_button",
@@ -234,7 +236,9 @@ def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(
     assert window.desktop_actions.export_selection in query_actions
 
 
-def test_main_window_export_button_writes_selected_parquet_scope(tmp_path: Path, qtbot) -> None:
+def test_main_window_export_button_writes_selected_parquet_scope(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
     destination = tmp_path / "result"
     window = MainWindow(
         file_dialog_service=FakeFileDialogService(paths=(), export_path=destination)
@@ -262,10 +266,15 @@ def test_main_window_export_button_writes_selected_parquet_scope(tmp_path: Path,
         completed_at=datetime.now(UTC),
     )
     window._on_query_result_ready(result, request)
-    window.export_format_selector.setCurrentIndex(
-        window.export_format_selector.findData(ExportFormat.PARQUET)
-    )
-    window.export_scope_selector.setCurrentIndex(window.export_scope_selector.findData("preview"))
+
+    def accept_parquet_preview(dialog: main_window.ExportOptionsDialog) -> int:
+        dialog.format_selector.setCurrentIndex(
+            dialog.format_selector.findData(ExportFormat.PARQUET)
+        )
+        dialog.scope_selector.setCurrentIndex(dialog.scope_selector.findData("preview"))
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(main_window.ExportOptionsDialog, "exec", accept_parquet_preview)
 
     with qtbot.waitSignal(window.export_controller.result_ready, timeout=3000):
         window.export_button.click()
@@ -273,6 +282,82 @@ def test_main_window_export_button_writes_selected_parquet_scope(tmp_path: Path,
     artifact = destination.with_suffix(".parquet")
     assert artifact.exists()
     assert pl.read_parquet(artifact).to_dicts() == [{"id": 1}, {"id": 2}]
+
+
+def test_export_options_dialog_accepts_chosen_values_and_persists_them(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.export_button.setEnabled(True)
+    calls: list[tuple[bool, ExportFormat | None]] = []
+    monkeypatch.setattr(
+        window,
+        "_start_export",
+        lambda full_export, export_format=None: calls.append((full_export, export_format)),
+    )
+    dialogs: list[main_window.ExportOptionsDialog] = []
+
+    def accept_full_excel(dialog: main_window.ExportOptionsDialog) -> int:
+        dialogs.append(dialog)
+        dialog.format_selector.setCurrentIndex(dialog.format_selector.findData(ExportFormat.XLSX))
+        dialog.scope_selector.setCurrentIndex(dialog.scope_selector.findData("full"))
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(main_window.ExportOptionsDialog, "exec", accept_full_excel)
+
+    window.export_button.click()
+
+    assert len(dialogs) == 1
+    assert calls == [(True, ExportFormat.XLSX)]
+    assert window._settings_service.restore_export_format() == ExportFormat.XLSX.value
+    assert window._settings_service.restore_export_scope() == "full"
+
+    def cancel(dialog: main_window.ExportOptionsDialog) -> int:
+        dialogs.append(dialog)
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(main_window.ExportOptionsDialog, "exec", cancel)
+    window.export_button.click()
+
+    assert len(dialogs) == 2
+    assert dialogs[-1].format_selector.currentData() is ExportFormat.XLSX
+    assert dialogs[-1].scope_selector.currentData() == "full"
+    assert calls == [(True, ExportFormat.XLSX)]
+
+
+def test_export_scope_actions_bypass_export_options_dialog(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    for action in (
+        window.desktop_actions.export_preview,
+        window.desktop_actions.export_full,
+        window.desktop_actions.export_selection,
+    ):
+        action.setEnabled(True)
+    window._settings_service.save_export_format(ExportFormat.PARQUET.value)
+    starts: list[tuple[bool, ExportFormat | None]] = []
+    selections: list[ExportFormat | None] = []
+    monkeypatch.setattr(
+        window,
+        "_start_export",
+        lambda full_export, export_format=None: starts.append((full_export, export_format)),
+    )
+    monkeypatch.setattr(
+        window,
+        "_export_selection",
+        lambda export_format=None: selections.append(export_format),
+    )
+    monkeypatch.setattr(
+        main_window.ExportOptionsDialog,
+        "exec",
+        lambda _dialog: pytest.fail("scope actions must not open the options dialog"),
+    )
+
+    window.desktop_actions.export_preview.trigger()
+    window.desktop_actions.export_full.trigger()
+    window.desktop_actions.export_selection.trigger()
+
+    assert starts == [(False, ExportFormat.PARQUET), (True, ExportFormat.PARQUET)]
+    assert selections == [ExportFormat.PARQUET]
 
 
 def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:
@@ -1000,9 +1085,7 @@ def test_main_window_exports_selected_format_to_readable_artifact(
     )
     window._on_query_result_ready(result, request)
 
-    format_index = window.export_format_selector.findData(export_format)
-    assert format_index >= 0
-    window.export_format_selector.setCurrentIndex(format_index)
+    window._settings_service.save_export_format(export_format.value)
     with qtbot.waitSignal(window.export_controller.result_ready, timeout=3000):
         window.desktop_actions.export_preview.trigger()
 

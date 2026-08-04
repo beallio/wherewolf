@@ -145,6 +145,51 @@ class PreferencesDialog(QDialog):
         layout.addRow(buttons)
 
 
+class ExportOptionsDialog(QDialog):
+    """Modal format and result-scope selection for the results-page Export button."""
+
+    def __init__(self, settings_service: SettingsService, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Export Options")
+        layout = QFormLayout(self)
+        self.format_selector = QComboBox(self)
+        self.format_selector.setObjectName("export_format_selector")
+        for label, export_format in (
+            ("CSV", ExportFormat.CSV),
+            ("Excel", ExportFormat.XLSX),
+            ("Parquet", ExportFormat.PARQUET),
+        ):
+            self.format_selector.addItem(label, export_format)
+        format_index = self.format_selector.findData(
+            self._parse_export_format(settings_service.restore_export_format())
+        )
+        self.format_selector.setCurrentIndex(max(format_index, 0))
+
+        self.scope_selector = QComboBox(self)
+        self.scope_selector.setObjectName("export_scope_selector")
+        self.scope_selector.addItem("Preview", "preview")
+        self.scope_selector.addItem("Full results", "full")
+        self.scope_selector.addItem("Selection", "selection")
+        scope_index = self.scope_selector.findData(settings_service.restore_export_scope())
+        self.scope_selector.setCurrentIndex(max(scope_index, 0))
+
+        layout.addRow("Export format", self.format_selector)
+        layout.addRow("Export scope", self.scope_selector)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    @staticmethod
+    def _parse_export_format(value: str) -> ExportFormat:
+        try:
+            return ExportFormat(value)
+        except ValueError:
+            return ExportFormat.CSV
+
+
 class MainWindow(QMainWindow):
     """A stable, testable application shell for desktop migration phase 3."""
 
@@ -400,9 +445,15 @@ class MainWindow(QMainWindow):
         self.desktop_actions.clear_history.triggered.connect(self._clear_history)
         self.desktop_actions.run.triggered.connect(self._on_run_triggered)
         self.desktop_actions.cancel.triggered.connect(self._on_cancel_triggered)
-        self.desktop_actions.export_preview.triggered.connect(lambda: self._start_export(False))
-        self.desktop_actions.export_full.triggered.connect(lambda: self._start_export(True))
-        self.desktop_actions.export_selection.triggered.connect(self._export_selection)
+        self.desktop_actions.export_preview.triggered.connect(
+            lambda: self._start_export(False, self._current_export_format())
+        )
+        self.desktop_actions.export_full.triggered.connect(
+            lambda: self._start_export(True, self._current_export_format())
+        )
+        self.desktop_actions.export_selection.triggered.connect(
+            lambda: self._export_selection(self._current_export_format())
+        )
 
         self.query_controller.status_changed.connect(self._on_query_status_changed)
         self.query_controller.result_ready.connect(self._on_query_result_ready)
@@ -540,7 +591,7 @@ class MainWindow(QMainWindow):
                 10000,
             )
 
-    def _start_export(self, full_export: bool) -> None:
+    def _start_export(self, full_export: bool, export_format: ExportFormat | None = None) -> None:
         if (
             self._last_result is None
             or self._last_result.frame is None
@@ -551,10 +602,7 @@ class MainWindow(QMainWindow):
         if choose_export_path is None:
             self._show_status("Export dialog is unavailable", 5000)
             return
-        export_format = self.export_format_selector.currentData()
-        if not isinstance(export_format, ExportFormat):
-            self._show_status("No export format is selected", 5000)
-            return
+        export_format = export_format or self._current_export_format()
         destination = choose_export_path(None, export_format, self)
         if destination is not None:
             self.export_controller.export(
@@ -565,20 +613,35 @@ class MainWindow(QMainWindow):
                 full_export,
             )
 
-    def _export_selected_scope(self) -> None:
-        scope = self.export_scope_selector.currentData()
+    def _show_export_options(self) -> None:
+        dialog = ExportOptionsDialog(self._settings_service, self)
+        self.export_options_dialog = dialog
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        export_format = dialog.format_selector.currentData()
+        scope = dialog.scope_selector.currentData()
+        if not isinstance(export_format, ExportFormat) or not isinstance(scope, str):
+            return
+        self._settings_service.save_export_format(export_format.value)
+        self._settings_service.save_export_scope(scope)
         if scope == "preview":
-            self._start_export(False)
+            self._start_export(False, export_format)
         elif scope == "full":
-            self._start_export(True)
+            self._start_export(True, export_format)
         elif scope == "selection":
-            self._export_selection()
+            self._export_selection(export_format)
+
+    def _current_export_format(self) -> ExportFormat:
+        try:
+            return ExportFormat(self._settings_service.restore_export_format())
+        except ValueError:
+            return ExportFormat.CSV
 
     def _on_preview_filter_error(self, message: str) -> None:
         self.preview_filter_error.setText(message)
         self.preview_filter_error.setVisible(bool(message))
 
-    def _export_selection(self) -> None:
+    def _export_selection(self, export_format: ExportFormat | None = None) -> None:
         if not self.result_table_view.has_result():
             return
         frame = self.result_table_view.frame()
@@ -587,8 +650,8 @@ class MainWindow(QMainWindow):
             self._show_status("Select result cells to export", 5000)
             return
         choose_export_path = getattr(self._file_dialog_service, "choose_export_path", None)
-        export_format = self.export_format_selector.currentData()
-        if choose_export_path is None or not isinstance(export_format, ExportFormat):
+        export_format = export_format or self._current_export_format()
+        if choose_export_path is None:
             return
         destination = choose_export_path(None, export_format, self)
         if destination is None:
@@ -798,38 +861,11 @@ class MainWindow(QMainWindow):
             self.preview_filter_input.toolTip(),
         )
 
-        self.export_format_selector = QComboBox(results_page)
-        self.export_format_selector.setObjectName("export_format_selector")
-        for label, export_format in (
-            ("CSV", ExportFormat.CSV),
-            ("Excel", ExportFormat.XLSX),
-            ("Parquet", ExportFormat.PARQUET),
-        ):
-            self.export_format_selector.addItem(label, export_format)
-        self._add_labelled_control(
-            export_controls,
-            "Export format",
-            self.export_format_selector,
-            "Choose the file format for exported query results.",
-        )
-
-        self.export_scope_selector = QComboBox(results_page)
-        self.export_scope_selector.setObjectName("export_scope_selector")
-        self.export_scope_selector.addItem("Preview", "preview")
-        self.export_scope_selector.addItem("Full results", "full")
-        self.export_scope_selector.addItem("Selection", "selection")
-        self._add_labelled_control(
-            export_controls,
-            "Export scope",
-            self.export_scope_selector,
-            "Choose which result scope to export.",
-        )
-
         self.export_button = QPushButton("Export", results_page)
         self.export_button.setObjectName("export_button")
         self.export_button.setToolTip("Export results using the selected format and scope.")
         self.export_button.setEnabled(False)
-        self.export_button.clicked.connect(self._export_selected_scope)
+        self.export_button.clicked.connect(self._show_export_options)
         export_controls.addWidget(self.export_button)
 
         export_controls.setStretch(1, 1)
