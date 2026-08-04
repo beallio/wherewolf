@@ -112,14 +112,16 @@ class ExportController(QObject):
         self._handle.cancel()
         return True
 
-    def shutdown(self) -> None:
+    def shutdown(self) -> bool:
+        all_workers_stopped = True
         if self._worker is not None and self._worker.isRunning():
             permit_export = getattr(self._worker, "permit_export", None)
             if callable(permit_export):
                 permit_export()
             self._worker.quit()
-            self._worker.wait()
+            all_workers_stopped = self._worker.wait(5000)
         self._worker = None
+        return all_workers_stopped
 
     def _on_handle(self, handle) -> None:
         self._handle = handle

@@ -100,13 +100,16 @@ class QueryController(QObject):
 
         return True
 
-    def shutdown(self) -> None:
-        """Quits and waits for all active worker threads and clears the worker list."""
+    def shutdown(self) -> bool:
+        """Quits active worker threads, waiting at most five seconds for each."""
+        all_workers_stopped = True
         for worker in list(self._workers):
             if worker.isRunning():
                 worker.quit()
-                worker.wait()
+                if not worker.wait(5000):
+                    all_workers_stopped = False
         self._workers.clear()
+        return all_workers_stopped
 
     def _on_handle_published(self, handle: object) -> None:
         if (

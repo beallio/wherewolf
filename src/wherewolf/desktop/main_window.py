@@ -1106,22 +1106,31 @@ class MainWindow(QMainWindow):
         self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        self.query_controller.cancel()
+        self.export_controller.cancel()
         self._elapsed_timer.stop()
         self._query_started_at = None
+        shutdown_timed_out = False
         for worker in list(self._schema_workers):
             if worker.isRunning():
                 worker.quit()
-                worker.wait()
+                if not worker.wait(5000):
+                    shutdown_timed_out = True
         self._schema_workers.clear()
 
         for worker in list(self._profile_workers):
             if worker.isRunning():
                 worker.quit()
-                worker.wait()
+                if not worker.wait(5000):
+                    shutdown_timed_out = True
         self._profile_workers.clear()
 
-        self.query_controller.shutdown()
-        self.export_controller.shutdown()
+        if self.query_controller.shutdown() is False:
+            shutdown_timed_out = True
+        if self.export_controller.shutdown() is False:
+            shutdown_timed_out = True
+        if shutdown_timed_out:
+            self._show_status("Shutdown timed out waiting for background workers.")
 
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())

@@ -1267,6 +1267,54 @@ def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Pat
     assert len(window._schema_workers) == 0
 
 
+def test_main_window_close_bounds_worker_wait_and_saves_settings_on_timeout(
+    qtbot, monkeypatch
+) -> None:
+    events: list[object] = []
+
+    class NeverFinishesWorker:
+        def isRunning(self) -> bool:
+            return True
+
+        def quit(self) -> None:
+            events.append("quit")
+
+        def wait(self, timeout: int) -> bool:
+            events.append(("wait", timeout))
+            return False
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._schema_workers = [NeverFinishesWorker()]  # type: ignore[list-item]
+    monkeypatch.setattr(window.query_controller, "cancel", lambda: events.append("query_cancel"))
+    monkeypatch.setattr(window.export_controller, "cancel", lambda: events.append("export_cancel"))
+    monkeypatch.setattr(window.query_controller, "shutdown", lambda: True)
+    monkeypatch.setattr(window.export_controller, "shutdown", lambda: True)
+    saved_settings: list[str] = []
+    for method_name in (
+        "save_window_geometry",
+        "save_window_state",
+        "save_splitter_sizes",
+        "save_editor_font_size",
+    ):
+        monkeypatch.setattr(
+            window._settings_service,
+            method_name,
+            lambda *args, method_name=method_name: saved_settings.append(method_name),
+        )
+
+    window.close()
+
+    assert events[:4] == ["query_cancel", "export_cancel", "quit", ("wait", 5000)]
+    assert set(saved_settings) == {
+        "save_window_geometry",
+        "save_window_state",
+        "save_splitter_sizes",
+        "save_editor_font_size",
+    }
+    assert "shutdown" in window.status_bar.currentMessage().lower()
+
+
 def test_main_window_removes_completed_profile_workers(qtbot, tmp_path: Path) -> None:
     csv_file = tmp_path / "profile.csv"
     csv_file.write_text("id\n1\n")
