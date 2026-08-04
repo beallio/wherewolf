@@ -159,6 +159,8 @@ class SqlEditor(QsciScintilla):
         self._apply_margin_colours()
         self.setMarginLineNumbers(0, True)
         self.setWrapMode(QsciScintilla.WrapMode.WrapNone)
+        self.setScrollWidth(1)
+        self.setScrollWidthTracking(True)
 
         self.indicatorDefine(
             QsciScintilla.IndicatorStyle.SquiggleIndicator,

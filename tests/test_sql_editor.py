@@ -96,6 +96,23 @@ def test_sql_editor_line_margin_and_features_configured(qtbot) -> None:
     assert editor.SendScintilla(editor.SCI_GETCARETLINEVISIBLE) == 1
 
 
+def test_sql_editor_horizontal_scrollbar_tracks_line_width(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.resize(320, 160)
+    editor.show()
+    scrollbar = editor.horizontalScrollBar()
+    assert scrollbar is not None
+
+    editor.setText("SELECT 1")
+    qtbot.wait(50)
+    assert not scrollbar.isVisible()
+
+    editor.setText("x" * 1000)
+    qtbot.wait(50)
+    assert scrollbar.isVisible()
+
+
 def test_sql_editor_undo_redo_cut_copy_paste(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)
