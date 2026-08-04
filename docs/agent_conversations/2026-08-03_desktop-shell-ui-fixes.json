@@ -1,0 +1,57 @@
+{
+  "date": "2026-08-03",
+  "task_objective": "Implement docs/plans/2026-08-03_desktop-shell-ui-fixes.md on feat/desktop-shell-ui-fixes.",
+  "files_modified": [
+    "scripts/check_cache_budget.sh",
+    "tests/test_cache_budget.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "src/wherewolf/desktop/query_controller.py",
+    "src/wherewolf/desktop/export_controller.py",
+    "tests/test_main_window.py",
+    "docs/agent_conversations/2026-08-03_desktop-shell-ui-fixes.json"
+  ],
+  "tests_added_or_updated": [
+    "tests/test_cache_budget.py",
+    "tests/test_main_window.py: File menu, menu mnemonics, elapsed timer, empty results, add/drop convergence, duplicates, and bounded shutdown"
+  ],
+  "design_decisions": [
+    "Task 0 restored /tmp/wherewolf as a symlink to /home/beallio/.local/state/wherewolf-cache and added a 4 GiB budget gate.",
+    "The add-datasets service report is emitted by CatalogDock on every add_paths call and handled once by MainWindow, so menu and drop paths share schema/profile/status behavior.",
+    "Elapsed time uses time.monotonic and a one-second QTimer; terminal query states and closeEvent stop it.",
+    "QueryController and ExportController shutdown waits are also bounded at 5000 ms because closeEvent invokes both controller shutdown paths.",
+    "The existing optional Spark type-check warning was isolated with /tmp/wherewolf/ty-baseline.toml; no unrelated Spark source was changed."
+  ],
+  "cache_budget_bytes_after_tasks": [
+    1835115512,
+    1851013696,
+    1881673900,
+    1897557148,
+    1913443028,
+    1929331602,
+    1945222907,
+    1961116727
+  ],
+  "cache_budget_v2": {
+    "over_budget": "cache budget exceeded: 4294967297 > 4294967296",
+    "non_symlink": "cache root is not a symlink; it is back on the tmpfs",
+    "restored_readlink": "/home/beallio/.local/state/wherewolf-cache"
+  },
+  "mutation_controls": [
+    {"task": 1, "node": "tests/test_main_window.py::test_main_window_file_menu_exposes_add_datasets_and_quit", "assertion": "file_actions[0] is window.desktop_actions.add_datasets"},
+    {"task": 2, "node": "tests/test_main_window.py::test_main_window_top_level_menus_have_distinct_mnemonics", "assertion": "all(title.startswith(\"&\") for title in titles)"},
+    {"task": 3, "node": "tests/test_main_window.py::test_main_window_elapsed_timer_reports_query_duration_and_stops_on_terminal_states", "assertion": "not window._elapsed_timer.isActive()"},
+    {"task": 4, "node": "tests/test_main_window.py::test_main_window_result_grid_integration", "assertion": "not window.empty_result_banner.isVisible()"},
+    {"task": 5, "node": "tests/test_main_window.py::test_main_window_drop_routes_through_add_handler_and_queues_schema_work", "assertion": "len(queued_schema_work) == 1"},
+    {"task": 6, "node": "tests/test_main_window.py::test_main_window_reports_a_skipped_duplicate_dataset", "assertion": "duplicate in message.lower()"},
+    {"task": 7, "node": "tests/test_main_window.py::test_main_window_close_bounds_worker_wait_and_saves_settings_on_timeout", "assertion": "(wait, None) != (wait, 5000)"}
+  ],
+  "verification": {
+    "baseline": "433 passed, 7 deselected",
+    "v4_full_suite": "446 passed, 7 deselected in 11.77s",
+    "v4_pytest_exit": 0,
+    "v4_cache_bytes": 1992930214,
+    "manual_gui_verification": "Deferred per plan."
+  },
+  "results": "Tasks 0-7 were implemented as separate conventional commits on feat/desktop-shell-ui-fixes."
+}
