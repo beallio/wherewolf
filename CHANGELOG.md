@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.6.1] - 2026-08-04
+
+### Added
+
+- File menu now exposes `Add Datasets…` and a `Quit` action bound to `Ctrl+Q`.
+- Keyboard mnemonics on every top-level menu (`Alt+F`, `Alt+E`, `Alt+Q`, `Alt+V`, `Alt+H`).
+- An elapsed-time counter in the status bar while a query runs, continuing through cancellation.
+- A banner distinguishing a successful zero-row result from no result at all.
+- Datasets skipped as duplicates are now reported rather than silently ignored.
+- Alternating row colours in the results grid.
+- Column reordering in the dataset catalog, schema and history views, matching the results grid.
+- Three further SQL editor themes: Solarized Dark, Solarized Light and High Contrast.
+- A `Help` → `SQL Dialect Reference` submenu linking to the DuckDB, PostgreSQL, Oracle, MySQL,
+  Microsoft T-SQL, SQLite and Spark SQL documentation.
+
+### Changed
+
+- Export format and scope moved out of the results toolbar into a modal dialog opened from the
+  `Export` button, which remembers the last format and scope used. The `Export Preview…`,
+  `Export Full Results…` and `Export Selection…` menu actions still export directly.
+- Dropping files onto the window now takes the same path as `Add Datasets…`, so dropped files
+  get schema inspection and status feedback instead of being added silently.
+- The preview-row limit input is constrained to the width of its longest valid value.
+
+### Fixed
+
+- Quitting no longer blocks indefinitely when background workers are running: cancellation is
+  requested before waiting, and every wait is bounded.
+- Cancelling a query no longer has its status message immediately overwritten by the elapsed-time
+  counter.
+- The SQL editor's horizontal scrollbar now tracks actual content width, so it no longer appears
+  for text that fits.
+
 ## [0.6.0] - 2026-08-02
 
 ### Changed
