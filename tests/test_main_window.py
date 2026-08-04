@@ -1271,6 +1271,22 @@ def test_main_window_result_grid_integration(qtbot) -> None:
         grid.proxy_model().data(grid.proxy_model().index(1, 1), Qt.ItemDataRole.UserRole) == "beta"
     )
     assert "Preview Rows: 2" in window.status_bar.currentMessage()
+    assert not window.empty_result_banner.isVisible()
+
+    # 1b. A successful query with no rows has a distinct empty-result state.
+    res_empty = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame(),
+        execution_seconds=0.02,
+        preview_row_count=0,
+        total_row_count=0,
+        truncated=False,
+        completed_at=now,
+    )
+    window._on_query_result_ready(res_empty, request)
+    assert window.empty_result_banner.isVisible()
+    assert window.empty_result_banner.text() == "Query returned 0 rows."
 
     # 2. Failed result: grid cleared, error message shown
     res_failed = QueryResult(
@@ -1287,6 +1303,7 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
+    assert not window.empty_result_banner.isVisible()
     assert window.result_error_message.isVisible()
     assert "near SELECT" in window.result_error_message.text()
     msg, severity = window.messages_panel.message_at(0)
@@ -1311,6 +1328,7 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_cancelled, request)
     assert grid.proxy_model().rowCount() == 0
+    assert not window.empty_result_banner.isVisible()
     msg, severity = window.messages_panel.message_at(0)
     assert "cancelled" in msg.lower()
     assert severity == "warning"

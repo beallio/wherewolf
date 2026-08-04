@@ -477,6 +477,16 @@ class MainWindow(QMainWindow):
             self.result_table_view.set_frame(result.frame)
         else:
             self.result_table_view.set_frame(None)
+        is_empty_result = (
+            result.status is ExecutionStatus.SUCCEEDED
+            and result.frame is not None
+            and result.frame.height == 0
+        )
+        if is_empty_result:
+            self.empty_result_banner.setText("Query returned 0 rows.")
+        else:
+            self.empty_result_banner.clear()
+        self.empty_result_banner.setVisible(is_empty_result)
         if result.status is ExecutionStatus.FAILED:
             self.result_error_message.setText(
                 f"Query failed: {result.error_message or 'Unknown error'}"
@@ -846,6 +856,10 @@ class MainWindow(QMainWindow):
         self.empty_catalog_banner = QLabel("Please add a dataset to begin.", results)
         self.empty_catalog_banner.setObjectName("empty_catalog_banner")
         results_layout.insertWidget(0, self.empty_catalog_banner)
+        self.empty_result_banner = QLabel(results)
+        self.empty_result_banner.setObjectName("empty_result_banner")
+        self.empty_result_banner.setVisible(False)
+        results_layout.insertWidget(1, self.empty_result_banner)
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
