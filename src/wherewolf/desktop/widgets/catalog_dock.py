@@ -46,6 +46,9 @@ class CatalogDock(QWidget):
         self._view = QTableView(self)
         self._view.setObjectName("catalog_view")
         self._view.setModel(self._model)
+        header = self._view.horizontalHeader()
+        if header is not None:
+            header.setSectionsMovable(True)
         self._view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)

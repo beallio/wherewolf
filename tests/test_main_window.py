@@ -178,6 +178,25 @@ def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_
             assert control.isVisible(), f"{object_name} is hidden at {width}px"
 
 
+@pytest.mark.parametrize("view_name", ("results", "catalog", "schema", "history"))
+def test_all_tabular_views_allow_column_reordering(qtbot, view_name: str) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    headers = {
+        "results": window.result_table_view.horizontalHeader(),
+        "catalog": window.catalog.view.horizontalHeader(),
+        "schema": window.schema_panel._table_widget.horizontalHeader(),
+        "history": window.history_dock.history_table.header(),
+    }
+    header = headers[view_name]
+    assert header is not None
+    assert header.sectionsMovable(), view_name
+
+    if view_name == "schema":
+        header.moveSection(0, 1)
+        assert header.visualIndex(0) == 1
+
+
 def test_preview_limit_input_is_font_sized_and_accepts_maximum_value(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

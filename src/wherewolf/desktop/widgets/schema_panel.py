@@ -74,6 +74,7 @@ class SchemaPanel(QWidget):
         )
         header = self._table_widget.horizontalHeader()
         if header is not None:
+            header.setSectionsMovable(True)
             header.setStretchLastSection(True)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         self._table_widget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
