@@ -6,8 +6,8 @@ from uuid import uuid4
 
 import polars as pl
 import pytest
-from PyQt6.QtCore import QCoreApplication, QSettings, Qt
-from PyQt6.QtGui import QKeySequence, QStandardItemModel
+from PyQt6.QtCore import QCoreApplication, QMimeData, QPointF, QSettings, Qt, QUrl
+from PyQt6.QtGui import QDropEvent, QKeySequence, QStandardItemModel
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -545,6 +545,50 @@ def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
     assert window.desktop_actions.run.isEnabled()
     assert "Wherewolf" in window.windowTitle()
     assert "Added `people` to catalog." in window.status_bar.currentMessage()
+
+
+def test_main_window_drop_routes_through_add_handler_and_queues_schema_work(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    csv_file = tmp_path / "dropped.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(catalog_service=CatalogService())
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    queued_schema_work: list[CatalogBinding] = []
+    monkeypatch.setattr(window, "_queue_schema_work", queued_schema_work.append)
+    mime_data = QMimeData()
+    mime_data.setUrls([QUrl.fromLocalFile(str(csv_file))])
+    event = QDropEvent(
+        QPointF(1.0, 1.0),
+        Qt.DropAction.CopyAction,
+        mime_data,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    window.dropEvent(event)
+
+    assert event.isAccepted()
+    assert len(queued_schema_work) == 1
+    assert "Added `dropped` to catalog." in window.status_bar.currentMessage()
+
+
+def test_main_window_menu_add_queues_schema_work_once(tmp_path: Path, qtbot, monkeypatch) -> None:
+    csv_file = tmp_path / "menu.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(
+        catalog_service=CatalogService(),
+        file_dialog_service=FakeFileDialogService(paths=(csv_file,)),
+    )
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    queued_schema_work: list[CatalogBinding] = []
+    monkeypatch.setattr(window, "_queue_schema_work", queued_schema_work.append)
+
+    window.desktop_actions.add_datasets.trigger()
+
+    assert len(queued_schema_work) == 1
 
 
 def test_main_window_explains_truncation_and_keeps_raw_error_details_collapsed(qtbot) -> None:

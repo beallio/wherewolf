@@ -69,6 +69,7 @@ from wherewolf.domain import (
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import (
     CatalogService,
+    CatalogServiceReport,
     ExecutionRequestBuilder,
     ExportFormat,
     SettingsService,
@@ -351,6 +352,7 @@ class MainWindow(QMainWindow):
 
     def _build_catalog_dock(self) -> QDockWidget:
         catalog = CatalogDock(self._catalog_service, self)
+        catalog.datasets_added.connect(self._handle_add_result)
         catalog.error_reported.connect(self._show_status)
         catalog.refresh_schema_requested.connect(self._on_refresh_catalog_schema)
         catalog.insert_alias_requested.connect(self.editor_insert_text)
@@ -627,10 +629,12 @@ class MainWindow(QMainWindow):
         if not paths:
             return
 
-        was_empty_catalog = not self._catalog_service.entries
-        result = self._catalog_service.add_paths(paths)
+        self.catalog.add_paths(paths)
+
+    def _handle_add_result(self, result: CatalogServiceReport) -> None:
         if result.added:
             first = result.added[0]
+            was_empty_catalog = len(self._catalog_service.entries) == len(result.added)
             if was_empty_catalog and not self.editor.text().strip():
                 self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)}")
             self._settings_service.save_last_dataset_directory(first.path.parent)
