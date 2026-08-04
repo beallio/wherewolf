@@ -192,6 +192,7 @@ class MainWindow(QMainWindow):
         self._elapsed_timer.setInterval(1000)
         self._elapsed_timer.timeout.connect(self._update_elapsed_status)
         self._query_started_at: float | None = None
+        self._query_status = ExecutionStatus.IDLE
 
         self.setCentralWidget(self._central_splitter)
         self._build_menus()
@@ -446,6 +447,7 @@ class MainWindow(QMainWindow):
             self.query_controller.cancel()
 
     def _on_query_status_changed(self, status: ExecutionStatus) -> None:
+        self._query_status = status
         if status is ExecutionStatus.RUNNING:
             self._query_started_at = time.monotonic()
             self._elapsed_timer.start()
@@ -466,7 +468,10 @@ class MainWindow(QMainWindow):
         if self._query_started_at is None:
             return
         elapsed_seconds = max(0, int(time.monotonic() - self._query_started_at))
-        self._show_status(f"Executing query... ({elapsed_seconds}s)")
+        if self._query_status is ExecutionStatus.CANCELLATION_REQUESTED:
+            self._show_status(f"Cancelling... ({elapsed_seconds}s)")
+        else:
+            self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
         self._last_request, self._last_result = request, result

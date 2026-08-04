@@ -6,7 +6,15 @@ from uuid import uuid4
 
 import polars as pl
 import pytest
-from PyQt6.QtCore import QCoreApplication, QMimeData, QPointF, QSettings, Qt, QUrl
+from PyQt6.QtCore import (
+    QCoreApplication,
+    QMimeData,
+    QPointF,
+    QSettings,
+    Qt,
+    QThread,
+    QUrl,
+)
 from PyQt6.QtGui import QDropEvent, QKeySequence, QStandardItemModel
 from PyQt6.QtWidgets import (
     QApplication,
@@ -26,6 +34,7 @@ from PyQt6.QtWidgets import (
 from wherewolf.desktop import main_window
 from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
+from wherewolf.desktop.workers.schema_worker import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
     ColumnSchema,
@@ -1240,6 +1249,21 @@ def test_main_window_elapsed_timer_reports_query_duration_and_stops_on_terminal_
         assert not window._elapsed_timer.isActive()
 
 
+def test_main_window_elapsed_timer_preserves_cancellation_status(qtbot, monkeypatch) -> None:
+    current_time = [100.0]
+    monkeypatch.setattr(main_window.time, "monotonic", lambda: current_time[0])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+    current_time[0] = 103.9
+    window._on_query_status_changed(ExecutionStatus.CANCELLATION_REQUESTED)
+    window._update_elapsed_status()
+
+    assert "cancell" in window.status_bar.currentMessage().lower()
+    assert "Executing query..." not in window.status_bar.currentMessage()
+
+
 def test_main_window_close_stops_elapsed_timer(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
@@ -1272,20 +1296,28 @@ def test_main_window_close_bounds_worker_wait_and_saves_settings_on_timeout(
 ) -> None:
     events: list[object] = []
 
-    class NeverFinishesWorker:
+    class NeverFinishesWorker(SchemaWorker):
+        def __init__(self) -> None:
+            QThread.__init__(self)
+
         def isRunning(self) -> bool:
             return True
 
         def quit(self) -> None:
             events.append("quit")
 
-        def wait(self, timeout: int) -> bool:
-            events.append(("wait", timeout))
+        def _fake_wait(self, *args: object) -> bool:
+            events.append(("wait", args[0] if args else -1))
             return False
+
+        def __getattribute__(self, name: str) -> object:
+            if name == "wait":
+                return object.__getattribute__(self, "_fake_wait")
+            return super().__getattribute__(name)
 
     window = MainWindow()
     qtbot.addWidget(window)
-    window._schema_workers = [NeverFinishesWorker()]  # type: ignore[list-item]
+    window._schema_workers = [NeverFinishesWorker()]
     monkeypatch.setattr(window.query_controller, "cancel", lambda: events.append("query_cancel"))
     monkeypatch.setattr(window.export_controller, "cancel", lambda: events.append("export_cancel"))
     monkeypatch.setattr(window.query_controller, "shutdown", lambda: True)

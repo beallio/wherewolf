@@ -27,7 +27,7 @@ def spark_session() -> Iterator[Any]:
         from pyspark.sql import SparkSession
 
         session = (
-            SparkSession.builder.appName("wherewolf-tests")  # ty: ignore[unresolved-attribute]
+            SparkSession.builder.appName("wherewolf-tests")
             .master("local[1]")
             .config("spark.driver.memory", "512m")
             .config("spark.ui.enabled", "false")

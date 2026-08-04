@@ -32,7 +32,7 @@ class SparkEngine:
             spark_session = import_module("pyspark.sql").SparkSession
             root_session = (
                 # pyspark exposes `builder` dynamically, which ty cannot resolve.
-                spark_session.builder.appName("Wherewolf")  # ty: ignore[unresolved-attribute]
+                spark_session.builder.appName("Wherewolf")
                 .master("local[1]")
                 .config("spark.driver.memory", "512m")
                 .config("spark.ui.enabled", "false")
