@@ -179,6 +179,77 @@ def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_
             assert control.isVisible(), f"{object_name} is hidden at {width}px"
 
 
+def test_main_window_toolbars_share_one_row_and_remain_movable(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    qtbot.wait(20)
+
+    assert window.main_toolbar.isMovable()
+    assert window.query_controls_toolbar.isMovable()
+    assert window.main_toolbar.geometry().y() == window.query_controls_toolbar.geometry().y()
+
+
+def test_main_window_missing_layout_version_skips_state_restore_and_records_current(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "missing-layout-version")
+    service.save_window_state(b"old-toolbar-layout")
+    restored_states: list[bytes] = []
+    monkeypatch.setattr(
+        MainWindow,
+        "restoreState",
+        lambda _window, state: restored_states.append(bytes(state)),
+    )
+
+    window = MainWindow(settings_service=service)
+    qtbot.addWidget(window)
+
+    assert restored_states == []
+    assert service.restore_window_layout_version() == MainWindow.LAYOUT_SCHEMA_VERSION
+
+
+def test_main_window_current_layout_version_restores_saved_state(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "current-layout-version")
+    service.save_window_state(b"current-toolbar-layout")
+    service.save_window_layout_version(MainWindow.LAYOUT_SCHEMA_VERSION)
+    restored_states: list[bytes] = []
+    monkeypatch.setattr(
+        MainWindow,
+        "restoreState",
+        lambda _window, state: restored_states.append(bytes(state)),
+    )
+
+    window = MainWindow(settings_service=service)
+    qtbot.addWidget(window)
+
+    assert restored_states == [b"current-toolbar-layout"]
+
+
+def test_main_window_stale_layout_version_preserves_unrelated_settings(
+    qtbot, tmp_path: Path
+) -> None:
+    service = _configure_qsettings_path(tmp_path / "stale-layout-version")
+    geometry = b"geometry"
+    splitter_sizes = (240, 360)
+    service.save_window_geometry(geometry)
+    service.save_window_state(b"stale-toolbar-layout")
+    service.save_splitter_sizes(splitter_sizes)
+    service.save_editor_font_size(17)
+    service.save_window_layout_version(MainWindow.LAYOUT_SCHEMA_VERSION - 1)
+
+    window = MainWindow(settings_service=service)
+    qtbot.addWidget(window)
+
+    assert service.restore_window_geometry() == geometry
+    assert service.restore_window_state() == b"stale-toolbar-layout"
+    assert service.restore_splitter_sizes() == splitter_sizes
+    assert service.restore_editor_font_size() == 17
+    assert service.restore_window_layout_version() == MainWindow.LAYOUT_SCHEMA_VERSION
+
+
 @pytest.mark.parametrize("view_name", ("results", "catalog", "schema", "history"))
 def test_all_tabular_views_allow_column_reordering(qtbot, view_name: str) -> None:
     window = MainWindow()
@@ -1287,6 +1358,7 @@ def test_main_window_restores_geometry_dock_layout_and_splitter_state(
     original.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, original._history_dock_widget)
     service.save_window_geometry(original.saveGeometry().data())
     service.save_window_state(original.saveState().data())
+    service.save_window_layout_version(MainWindow.LAYOUT_SCHEMA_VERSION)
     service.save_splitter_sizes(original._central_splitter.sizes())
 
     restored = MainWindow(settings_service=service)

@@ -33,6 +33,15 @@ def test_settings_service_geometry_and_state_round_trip(tmp_path: Path) -> None:
     assert service.restore_splitter_sizes() == tuple(splitter_sizes)
 
 
+def test_settings_service_window_layout_version_round_trip(tmp_path: Path) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "layout-version"))
+
+    assert service.restore_window_layout_version() == service.DEFAULT_LAYOUT_VERSION
+    service.save_window_layout_version(2)
+
+    assert service.restore_window_layout_version() == 2
+
+
 def test_settings_service_returns_defaults_for_missing_keys(tmp_path: Path) -> None:
     settings = _configure_qsettings_path(tmp_path / "defaults")
     service = SettingsService(settings)

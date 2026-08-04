@@ -203,6 +203,8 @@ class ExportOptionsDialog(QDialog):
 class MainWindow(QMainWindow):
     """A stable, testable application shell for desktop migration phase 3."""
 
+    LAYOUT_SCHEMA_VERSION: Final = 2
+
     def __init__(
         self,
         *,
@@ -308,7 +310,6 @@ class MainWindow(QMainWindow):
         Keeping controls on a dedicated row prevents Qt's toolbar overflow menu
         from hiding them at normal desktop window widths.
         """
-        self.addToolBarBreak(Qt.ToolBarArea.TopToolBarArea)
         toolbar = self.addToolBar("Query Controls")
         assert toolbar is not None
         toolbar.setObjectName("query_controls_toolbar")
@@ -1137,9 +1138,11 @@ class MainWindow(QMainWindow):
         if geometry:
             self.restoreGeometry(QByteArray(geometry))
 
-        state = self._settings_service.restore_window_state()
-        if state:
-            self.restoreState(QByteArray(state))
+        if self._settings_service.restore_window_layout_version() == self.LAYOUT_SCHEMA_VERSION:
+            state = self._settings_service.restore_window_state()
+            if state:
+                self.restoreState(QByteArray(state))
+        self._settings_service.save_window_layout_version(self.LAYOUT_SCHEMA_VERSION)
 
         sizes = self._settings_service.restore_splitter_sizes()
         if sizes:
