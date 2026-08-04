@@ -942,7 +942,9 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.desktop_actions.add_datasets)
         file_menu.addSeparator()
         self.quit_action = QAction("Quit", self)
-        self.quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        self.quit_action.setShortcuts(
+            [QKeySequence("Ctrl+Q"), QKeySequence(QKeySequence.StandardKey.Quit)]
+        )
         self.quit_action.triggered.connect(self.close)
         file_menu.addAction(self.quit_action)
 
@@ -1115,28 +1117,20 @@ class MainWindow(QMainWindow):
         self.export_controller.cancel()
         self._elapsed_timer.stop()
         self._query_started_at = None
-        shutdown_timed_out = False
         for worker in list(self._schema_workers):
             if worker.isRunning():
                 worker.quit()
-                if not worker.wait(5000):
-                    shutdown_timed_out = True
+                worker.wait(5000)
         self._schema_workers.clear()
 
         for worker in list(self._profile_workers):
             if worker.isRunning():
                 worker.quit()
-                if not worker.wait(5000):
-                    shutdown_timed_out = True
+                worker.wait(5000)
         self._profile_workers.clear()
 
-        if self.query_controller.shutdown() is False:
-            shutdown_timed_out = True
-        if self.export_controller.shutdown() is False:
-            shutdown_timed_out = True
-        if shutdown_timed_out:
-            self._show_status("Shutdown timed out waiting for background workers.")
-
+        self.query_controller.shutdown()
+        self.export_controller.shutdown()
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())

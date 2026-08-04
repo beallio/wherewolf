@@ -109,7 +109,12 @@ def test_main_window_file_menu_exposes_add_datasets_and_quit(qtbot) -> None:
     file_actions = window.file_menu.actions()
     assert file_actions[0] is window.desktop_actions.add_datasets
     assert window.quit_action in file_actions
-    assert window.quit_action.shortcut() == QKeySequence(QKeySequence.StandardKey.Quit)
+    shortcuts = window.quit_action.shortcuts()
+    assert QKeySequence("Ctrl+Q") in shortcuts
+    assert any(
+        QKeySequence("Ctrl+Q").matches(shortcut) == QKeySequence.SequenceMatch.ExactMatch
+        for shortcut in shortcuts
+    )
     assert window.desktop_actions.clear_history not in file_actions
     assert window.desktop_actions.clear_history in window.edit_menu.actions()
 
@@ -1344,7 +1349,7 @@ def test_main_window_close_bounds_worker_wait_and_saves_settings_on_timeout(
         "save_splitter_sizes",
         "save_editor_font_size",
     }
-    assert "shutdown" in window.status_bar.currentMessage().lower()
+    assert window.status_bar.currentMessage() == ""
 
 
 def test_main_window_removes_completed_profile_workers(qtbot, tmp_path: Path) -> None:

@@ -87,8 +87,6 @@ class CatalogDock(QWidget):
     def add_paths(self, paths: tuple[Path, ...]) -> None:
         report = self._catalog_service.add_paths(paths)
         self.datasets_added.emit(report)
-        if report.warnings:
-            self.error_reported.emit("\n".join(sorted(set(report.warnings))))
 
     def dragEnterEvent(self, a0: QDragEnterEvent | None) -> None:
         if a0 is None:

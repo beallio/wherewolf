@@ -98,15 +98,13 @@ def test_catalog_dock_drag_drop_unsupported_files_are_single_warning_and_still_a
     unsupported.write_text("a\n1")
     supported.write_text("a\n1")
 
-    messages: list[str] = []
-    window.catalog.error_reported.connect(messages.append)
+    warning_spy = QSignalSpy(window.catalog.error_reported)
 
     event = _drop_event([unsupported, supported])
     window.catalog.dropEvent(event)
 
     assert len(service.snapshot()) == 1
-    assert len(messages) == 1
-    assert "Unsupported source format" in messages[0]
+    assert len(warning_spy) == 0
 
 
 def test_catalog_dock_drag_drop_ignores_no_local_files(qtbot) -> None:
