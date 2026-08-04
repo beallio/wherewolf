@@ -73,6 +73,19 @@ markers = [
 data_file = "/tmp/wherewolf/.coverage"
 timid = true
 
+[tool.ty.rules]
+# pyspark is an optional extra, so ty sees two different worlds. Without the extra
+# installed, `from pyspark.sql import ...` is an unresolved-import; with it, that
+# import resolves but `SparkSession.builder` does not (pyspark declares it as a
+# classproperty ty cannot follow), producing unresolved-attribute instead. The two
+# configurations therefore need opposite `ty: ignore` comments, and whichever set is
+# not needed is reported as an unused directive. CI's lint leg installs
+# `--extra spark`; a plain `uv sync` does not. Silencing unused-directive reports is
+# what lets both suppressions coexist. Do not remove the `ty: ignore` comments in
+# src/wherewolf/execution/spark_engine.py or tests/conftest.py because they look
+# unused locally — they are load-bearing in the other configuration.
+unused-ignore-comment = "ignore"
+
 [dependency-groups]
 dev = [
     "hatch>=1.17.0",
