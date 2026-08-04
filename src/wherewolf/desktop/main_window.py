@@ -632,6 +632,12 @@ class MainWindow(QMainWindow):
         self.catalog.add_paths(paths)
 
     def _handle_add_result(self, result: CatalogServiceReport) -> None:
+        duplicate_message = ""
+        if result.duplicates:
+            duplicate_names = ", ".join(path.name for path in result.duplicates)
+            duplicate_message = (
+                f"Skipped {len(result.duplicates)} duplicate dataset(s): {duplicate_names}"
+            )
         if result.added:
             first = result.added[0]
             was_empty_catalog = len(self._catalog_service.entries) == len(result.added)
@@ -651,8 +657,13 @@ class MainWindow(QMainWindow):
                         self._catalog_service.mark_profile_skipped(
                             entry.id, "Profiling skipped: source exceeds the configured size limit."
                         )
-            self._show_status(f"Added `{first.alias}` to catalog.")
+            message = f"Added `{first.alias}` to catalog."
+            if duplicate_message:
+                message = f"{message} {duplicate_message}"
+            self._show_status(message)
             self._update_catalog_affordances()
+        elif duplicate_message:
+            self._show_status(duplicate_message)
         if result.warnings:
             self._show_status("\n".join(sorted(set(result.warnings))))
 

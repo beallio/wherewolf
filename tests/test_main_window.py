@@ -591,6 +591,39 @@ def test_main_window_menu_add_queues_schema_work_once(tmp_path: Path, qtbot, mon
     assert len(queued_schema_work) == 1
 
 
+def test_main_window_reports_a_skipped_duplicate_dataset(tmp_path: Path, qtbot) -> None:
+    csv_file = tmp_path / "already-loaded.csv"
+    csv_file.write_text("id\n1\n")
+    catalog_service = CatalogService()
+    catalog_service.add_paths((csv_file,))
+    window = MainWindow(catalog_service=catalog_service)
+    qtbot.addWidget(window)
+
+    window.catalog.add_paths((csv_file,))
+
+    message = window.status_bar.currentMessage()
+    assert "duplicate" in message.lower()
+    assert "already-loaded.csv" in message
+
+
+def test_main_window_reports_added_and_skipped_datasets_together(tmp_path: Path, qtbot) -> None:
+    duplicate = tmp_path / "duplicate.csv"
+    new_dataset = tmp_path / "new.csv"
+    duplicate.write_text("id\n1\n")
+    new_dataset.write_text("id\n2\n")
+    catalog_service = CatalogService()
+    catalog_service.add_paths((duplicate,))
+    window = MainWindow(catalog_service=catalog_service)
+    qtbot.addWidget(window)
+
+    window.catalog.add_paths((duplicate, new_dataset))
+
+    message = window.status_bar.currentMessage()
+    assert "Added `new` to catalog." in message
+    assert "duplicate" in message.lower()
+    assert "duplicate.csv" in message
+
+
 def test_main_window_explains_truncation_and_keeps_raw_error_details_collapsed(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
