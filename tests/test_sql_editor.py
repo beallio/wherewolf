@@ -86,6 +86,36 @@ def test_sql_editor_text_lexer_styles_contrast_with_caret_line(qtbot) -> None:
     assert all(ratio >= 4.5 for ratio in contrasts.values()), contrasts
 
 
+def test_sql_editor_themes_are_complete_and_have_distinct_papers(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    assert set(editor.THEME_NAMES) == set(editor._THEMES)
+    assert all(len(colours) == 5 for colours in editor._THEMES.values())
+
+    paper_colours: list[str] = []
+    for theme in editor.THEME_NAMES:
+        editor.set_theme(theme)
+        paper_colours.append(editor._PAPER.name())
+
+    assert len(set(paper_colours)) == len(editor.THEME_NAMES)
+
+
+def test_sql_editor_new_theme_persists_and_unknown_theme_is_ignored(qtbot, tmp_path) -> None:
+    settings = QSettings(str(tmp_path / "theme-round-trip.ini"), QSettings.Format.IniFormat)
+    settings_service = SettingsService(settings)
+    editor = SqlEditor(settings_service=settings_service)
+    qtbot.addWidget(editor)
+
+    editor.set_theme("Solarized Dark")
+    assert editor.theme_name == "Solarized Dark"
+    restored = SqlEditor(settings_service=settings_service)
+    qtbot.addWidget(restored)
+    assert restored.theme_name == "Solarized Dark"
+
+    restored.set_theme("Not a real theme")
+    assert restored.theme_name == "Solarized Dark"
+
+
 def test_sql_editor_line_margin_and_features_configured(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)
@@ -105,12 +135,10 @@ def test_sql_editor_horizontal_scrollbar_tracks_line_width(qtbot) -> None:
     assert scrollbar is not None
 
     editor.setText("SELECT 1")
-    qtbot.wait(50)
-    assert not scrollbar.isVisible()
+    qtbot.waitUntil(lambda: not scrollbar.isVisible(), timeout=1000)
 
     editor.setText("x" * 1000)
-    qtbot.wait(50)
-    assert scrollbar.isVisible()
+    qtbot.waitUntil(scrollbar.isVisible, timeout=1000)
 
 
 def test_sql_editor_undo_redo_cut_copy_paste(qtbot) -> None:
