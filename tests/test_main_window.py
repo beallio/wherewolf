@@ -190,6 +190,17 @@ def test_main_window_toolbars_share_one_row_and_remain_movable(qtbot) -> None:
     assert window.main_toolbar.geometry().y() == window.query_controls_toolbar.geometry().y()
 
 
+def test_main_window_query_selectors_keep_natural_width_at_wide_size(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(1600, 768)
+    window.show()
+    qtbot.wait(20)
+
+    for selector in (window.engine_selector, window.input_dialect_selector):
+        assert abs(selector.width() - selector.sizeHint().width()) <= 8
+
+
 def test_main_window_missing_layout_version_skips_state_restore_and_records_current(
     qtbot, tmp_path: Path, monkeypatch
 ) -> None:

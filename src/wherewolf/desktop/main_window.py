@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QStatusBar,
@@ -330,6 +331,7 @@ class MainWindow(QMainWindow):
             item = model.item(self.engine_selector.count() - 1)
             assert item is not None
             item.setEnabled(descriptor.available)
+        self._set_selector_natural_width(self.engine_selector)
         self._add_labelled_control(
             controls_layout,
             "Execution engine",
@@ -340,6 +342,7 @@ class MainWindow(QMainWindow):
         self.input_dialect_selector.setObjectName("input_dialect_selector")
         for label, dialect in DIALECT_MAPPING.items():
             self.input_dialect_selector.addItem(label, dialect)
+        self._set_selector_natural_width(self.input_dialect_selector)
         self._add_labelled_control(
             controls_layout,
             "Input dialect",
@@ -367,8 +370,14 @@ class MainWindow(QMainWindow):
             self.preview_limit_selector,
             "Choose the maximum number of rows shown in a query preview.",
         )
+        controls_layout.addStretch(1)
         toolbar.addWidget(controls)
         return toolbar
+
+    @staticmethod
+    def _set_selector_natural_width(selector: QComboBox) -> None:
+        selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        selector.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Preferred)
 
     def _on_preview_limit_changed(self, text: str) -> None:
         if text.isdecimal():
