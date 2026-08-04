@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import time
 import webbrowser
 from importlib.metadata import version
 from typing import cast
 
-from PyQt6.QtCore import QByteArray, Qt
+from PyQt6.QtCore import QByteArray, Qt, QTimer
 from PyQt6.QtGui import (
     QAction,
     QCloseEvent,
@@ -186,6 +187,10 @@ class MainWindow(QMainWindow):
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._update_elapsed_status)
+        self._query_started_at: float | None = None
 
         self.setCentralWidget(self._central_splitter)
         self._build_menus()
@@ -439,16 +444,27 @@ class MainWindow(QMainWindow):
             self.query_controller.cancel()
 
     def _on_query_status_changed(self, status: ExecutionStatus) -> None:
-        if status in (ExecutionStatus.RUNNING, ExecutionStatus.CANCELLATION_REQUESTED):
+        if status is ExecutionStatus.RUNNING:
+            self._query_started_at = time.monotonic()
+            self._elapsed_timer.start()
             self.desktop_actions.run.setEnabled(False)
             self.desktop_actions.cancel.setEnabled(True)
-            if status is ExecutionStatus.CANCELLATION_REQUESTED:
-                self._show_status("Cancellation requested")
-            else:
-                self._show_status("Executing query...")
+            self._show_status("Executing query...")
+        elif status is ExecutionStatus.CANCELLATION_REQUESTED:
+            self.desktop_actions.run.setEnabled(False)
+            self.desktop_actions.cancel.setEnabled(True)
+            self._show_status("Cancellation requested")
         else:
+            self._elapsed_timer.stop()
+            self._query_started_at = None
             self.desktop_actions.run.setEnabled(bool(self._catalog_service.entries))
             self.desktop_actions.cancel.setEnabled(False)
+
+    def _update_elapsed_status(self) -> None:
+        if self._query_started_at is None:
+            return
+        elapsed_seconds = max(0, int(time.monotonic() - self._query_started_at))
+        self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
         self._last_request, self._last_result = request, result
@@ -1061,6 +1077,8 @@ class MainWindow(QMainWindow):
         self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        self._elapsed_timer.stop()
+        self._query_started_at = None
         for worker in list(self._schema_workers):
             if worker.isRunning():
                 worker.quit()

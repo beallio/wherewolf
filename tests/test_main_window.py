@@ -1136,6 +1136,43 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     assert "Total Rows: 2" not in msg
 
 
+def test_main_window_elapsed_timer_reports_query_duration_and_stops_on_terminal_states(
+    qtbot, monkeypatch
+) -> None:
+    current_time = [100.0]
+    monkeypatch.setattr(main_window.time, "monotonic", lambda: current_time[0])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not window._elapsed_timer.isActive()
+
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+    assert window._elapsed_timer.isActive()
+    current_time[0] = 103.9
+    window._update_elapsed_status()
+    assert window.status_bar.currentMessage() == "Executing query... (3s)"
+
+    for terminal_status in (
+        ExecutionStatus.SUCCEEDED,
+        ExecutionStatus.FAILED,
+        ExecutionStatus.CANCELLED,
+    ):
+        window._on_query_status_changed(ExecutionStatus.RUNNING)
+        assert window._elapsed_timer.isActive()
+        window._on_query_status_changed(terminal_status)
+        assert not window._elapsed_timer.isActive()
+
+
+def test_main_window_close_stops_elapsed_timer(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+
+    window.close()
+
+    assert not window._elapsed_timer.isActive()
+
+
 def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Path) -> None:
     csv_file = tmp_path / "fast.csv"
     csv_file.write_text("id\n1\n")
