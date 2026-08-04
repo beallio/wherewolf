@@ -57,7 +57,9 @@ from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
 from wherewolf.desktop.widgets.translation_panel import TranslationPanel
+from wherewolf.desktop.widgets.value_counts_window import ValueCountsWindow
 from wherewolf.desktop.workers import ProfileWorker, SchemaWorker
+from wherewolf.desktop.workers.value_counts_worker import ValueCountsRegistry
 from wherewolf.domain import (
     CatalogBinding,
     EngineKind,
@@ -242,6 +244,7 @@ class MainWindow(QMainWindow):
         self.history_manager = history_manager or HistoryManager()
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
+        self._value_counts_windows: list[ValueCountsWindow] = []
         self.setWindowTitle(f"Wherewolf {version('wherewolf')}")
 
         self.main_toolbar = self._build_toolbar()
@@ -456,6 +459,7 @@ class MainWindow(QMainWindow):
                 CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
             )
         )
+        schema_panel.value_counts_requested.connect(self._show_value_counts)
 
         dock = QDockWidget("Schema", self)
         dock.setObjectName("schema_dock")
@@ -794,6 +798,21 @@ class MainWindow(QMainWindow):
         )
         self._profile_workers.append(worker)
         worker.start()
+
+    def _show_value_counts(self, entry, column_name: str) -> None:
+        binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
+        window = ValueCountsWindow(
+            binding, column_name, cast(ValueCountsRegistry, self._engine_registry), self
+        )
+        self._value_counts_windows.append(window)
+        window.destroyed.connect(
+            lambda: (
+                self._value_counts_windows.remove(window)
+                if window in self._value_counts_windows
+                else None
+            )
+        )
+        window.show()
 
     def _on_profile_result(self, profile_result: ProfileResult) -> None:
         self._catalog_service.update_profile(profile_result)
@@ -1211,6 +1230,9 @@ class MainWindow(QMainWindow):
         self.export_controller.cancel()
         self._elapsed_timer.stop()
         self._query_started_at = None
+        for window in list(self._value_counts_windows):
+            window.close()
+        self._value_counts_windows.clear()
         for worker in list(self._schema_workers):
             if worker.isRunning():
                 worker.quit()

@@ -830,6 +830,27 @@ def test_main_window_preferences_apply_program_theme_live_and_persist_it(
     assert settings.restore_program_theme() == ThemeMode.DARK.value
 
 
+def test_main_window_opens_value_counts_window_for_schema_request(tmp_path: Path, qtbot) -> None:
+    from wherewolf.domain import CatalogEntry, ColumnSchema, SourceFormat
+
+    source = tmp_path / "users.csv"
+    source.write_text("category\na\n")
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="users",
+        path=source,
+        source_format=SourceFormat.CSV,
+        schema=(ColumnSchema("category", "VARCHAR"),),
+    )
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window.schema_panel.value_counts_requested.emit(entry, "category")
+    qtbot.waitUntil(lambda: len(window._value_counts_windows) == 1)
+
+    assert window._value_counts_windows[0].windowTitle() == "Value counts: users.category"
+
+
 def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
     tmp_path: Path, qtbot
 ) -> None:

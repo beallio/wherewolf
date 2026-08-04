@@ -1,11 +1,13 @@
 import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 from uuid import uuid4
 
 import polars as pl
 import pytest
 
+from wherewolf.desktop.workers.value_counts_worker import ValueCountsAdapter
 from wherewolf.domain import (
     CatalogEntry,
     EngineKind,
@@ -97,6 +99,22 @@ def test_duckdb_adapter_profiles_mixed_columns_from_a_fixture_file(tmp_path: Pat
     assert profiles["category"].q25 is None
     assert profiles["category"].q50 is None
     assert profiles["category"].q75 is None
+
+
+def test_duckdb_adapter_value_counts_quotes_column_names_and_honours_limit(
+    tmp_path: Path,
+) -> None:
+    fixture = tmp_path / "quoted-column.csv"
+    fixture.write_text('"a""b",other\nalpha,1\nalpha,2\nbeta,3\n')
+    entry = CatalogEntry(id=uuid4(), alias="quoted", path=fixture, source_format=SourceFormat.CSV)
+    adapter = cast(ValueCountsAdapter, EngineRegistry().create(EngineKind.DUCKDB, uuid4()))
+
+    counts, total_distinct, total_rows = adapter.value_counts(entry, 'a"b', 1)
+
+    assert counts == (("alpha", 2),)
+    assert total_distinct == 2
+    assert total_rows == 3
+    adapter.close()
 
 
 def test_spark_adapter_reports_that_profiling_is_unsupported(monkeypatch, tmp_path: Path) -> None:

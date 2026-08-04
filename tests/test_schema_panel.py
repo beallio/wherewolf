@@ -269,3 +269,21 @@ def test_schema_panel_copy_with_empty_selection_does_nothing(qtbot: QtBot) -> No
     panel.copy_selection()
 
     assert clipboard.text() == "keep me"
+
+
+def test_schema_panel_value_counts_context_action_emits_entry_and_column(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    entry = CatalogEntry(
+        id=uuid4(),
+        alias="users",
+        path=Path("users.parquet"),
+        source_format=SourceFormat.PARQUET,
+        schema=(ColumnSchema("category", "VARCHAR"),),
+    )
+    panel.set_entry(entry)
+
+    with qtbot.waitSignal(panel.value_counts_requested) as signal:
+        panel.create_context_menu(0, 0).actions()[-1].trigger()
+
+    assert signal.args == [entry, "category"]

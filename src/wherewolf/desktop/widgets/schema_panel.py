@@ -1,6 +1,5 @@
 """Widget for displaying schema columns, data types, inspection states, and errors."""
 
-import polars as pl
 from PyQt6.QtCore import QPoint, QSignalBlocker, Qt, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
@@ -17,7 +16,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wherewolf.desktop.clipboard_serializers import serialize_to_tsv
+from wherewolf.desktop.clipboard_serializers import serialize_table_widget_to_tsv
 from wherewolf.domain.models import (
     CatalogEntry,
     ColumnProfile,
@@ -37,6 +36,7 @@ class SchemaPanel(QWidget):
 
     insert_columns_requested = pyqtSignal(str)
     profile_requested = pyqtSignal(CatalogEntry)
+    value_counts_requested = pyqtSignal(CatalogEntry, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -166,9 +166,16 @@ class SchemaPanel(QWidget):
         quoted = [quote_identifier(name) for name in names]
         self.insert_columns_requested.emit(", ".join(quoted))
 
-    def create_context_menu(self) -> QMenu:
+    def create_context_menu(self, row: int | None = None, column: int | None = None) -> QMenu:
         menu = QMenu(self)
         menu.addAction("Copy", self.copy_selection)
+        if row is not None and column is not None and self._entry is not None:
+            column_item = self._table_widget.item(row, 0)
+            if column_item is not None:
+                menu.addAction(
+                    "Value counts",
+                    lambda: self.value_counts_requested.emit(self._entry, column_item.text()),
+                )
         return menu
 
     def _on_context_menu_requested(self, pos: QPoint) -> None:
@@ -177,7 +184,7 @@ class SchemaPanel(QWidget):
         if not index.isValid() or viewport is None:
             return
         self._table_widget.selectRow(index.row())
-        menu = self.create_context_menu()
+        menu = self.create_context_menu(index.row(), index.column())
         QMenu.exec(menu, viewport.mapToGlobal(pos))
 
     def keyPressEvent(self, a0: QKeyEvent | None) -> None:
@@ -188,30 +195,10 @@ class SchemaPanel(QWidget):
         super().keyPressEvent(a0)
 
     def copy_selection(self) -> None:
-        selection_model = self._table_widget.selectionModel()
         clipboard = QApplication.clipboard()
-        if selection_model is None or clipboard is None:
+        if clipboard is None:
             return
-        rows = sorted({index.row() for index in selection_model.selectedIndexes()})
-        if not rows:
-            return
-        column_count = self._table_widget.columnCount()
-        headers = [
-            self._table_widget.horizontalHeaderItem(column) for column in range(column_count)
-        ]
-        columns = [header.text() if header is not None else "" for header in headers]
-        values: list[list[str]] = []
-        for row in rows:
-            row_values: list[str] = []
-            for column in range(column_count):
-                item = self._table_widget.item(row, column)
-                row_values.append(item.text() if item is not None else "")
-            values.append(row_values)
-        frame = pl.DataFrame(values, schema=columns, orient="row")
-        selected_cells = [
-            (row_index, column) for row_index in range(len(rows)) for column in range(column_count)
-        ]
-        text = serialize_to_tsv(frame, selected_cells)
+        text = serialize_table_widget_to_tsv(self._table_widget)
         if text:
             clipboard.setText(text)
 

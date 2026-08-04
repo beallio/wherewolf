@@ -1,0 +1,64 @@
+{
+  "date": "2026-08-04",
+  "task_objective": "Implement the existing desktop theme and value-counts plan.",
+  "files_modified": [
+    "src/wherewolf/desktop/clipboard_serializers.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/schema_panel.py",
+    "src/wherewolf/desktop/widgets/value_counts_window.py",
+    "src/wherewolf/desktop/workers/__init__.py",
+    "src/wherewolf/desktop/workers/value_counts_worker.py",
+    "src/wherewolf/execution/registry.py",
+    "tests/test_main_window.py",
+    "tests/test_registry.py",
+    "tests/test_schema_panel.py",
+    "tests/test_value_counts_window.py",
+    "tests/test_value_counts_worker.py"
+  ],
+  "tests_added": [
+    "Value-counts worker percentages, cleanup, and bounded query results",
+    "Value-counts window reruns, table copying, and zero/single-row chart painting",
+    "Schema value-counts context action",
+    "Main-window value-counts window integration",
+    "Quoted DuckDB value-counts identifiers and limit handling"
+  ],
+  "design_decisions": [
+    "Use the existing serialization service for schema and value-counts clipboard output.",
+    "Run grouped value-count queries in a QThread and close the engine adapter in all paths.",
+    "Use a non-modal floating window with a palette-aware QPainter bar chart and a bounded Top-N control.",
+    "Keep Spark optional and make no dependency or plotting-library changes.",
+    "Manual GUI verification is deferred as specified by the plan."
+  ],
+  "cache_gates_bytes": {
+    "history": 3188707285,
+    "editor": 3204606483,
+    "toolbar_layout": 3220740929,
+    "query_controls": 3221653116,
+    "schema_copy": 3252331931,
+    "editor_themes": 3268252254,
+    "program_theme": 3284191873,
+    "value_counts": 3379937102
+  },
+  "direct_probes": [
+    "History header isFirstSectionMovable=True; visualIndex(0) changed from 0 to 1 after moveSection(0, 1).",
+    "SqlEditor SCI_GETSCROLLWIDTH changed from 8453 for a long line to 67 after replacing it with SELECT 1."
+  ],
+  "mutation_evidence": [
+    "history-first-column-movable: assertion isFirstSectionMovable() failed with False",
+    "editor-scroll-width-reset: waitUntil for width below half the long width timed out",
+    "toolbar-single-row: assertion failed with toolbar y positions 22 and 54",
+    "query-control-width: assertion failed with width 500 versus sizeHint 414",
+    "schema-copy-serializer: clipboard was id instead of the expected TSV row",
+    "editor-theme-preview: editor theme remained Dark instead of changing to Light",
+    "program-theme-palette: dark Window colour assertion failed",
+    "value-counts-limit: worker calls never changed to limit 1"
+  ],
+  "results": {
+    "targeted_task8_tests": "18 passed",
+    "negative_control_pytest": "490 passed, 7 deselected in 13.08s",
+    "ruff_check": "passed",
+    "ruff_format_check": "passed",
+    "ty_check": "passed",
+    "dependency_diff": "none"
+  }
+}
