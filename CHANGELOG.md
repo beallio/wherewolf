@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.7.0] - 2026-08-04
+
+### Added
+
+- An application-wide colour theme with **Light**, **Dark** and **Follow system** modes,
+  selectable in Preferences and applied at startup. Previously only the SQL editor was themed.
+- **Value counts** for any column: right-click a row in the schema panel to open a floating
+  window showing a value/count/percentage table alongside a bar chart, with a configurable
+  Top N and the total distinct count. Values can be selected and copied. The chart is drawn
+  with `QPainter`, so no plotting dependency is added.
+- Schema panel rows can now be selected and copied with `Ctrl+C` or the right-click menu.
+- Two further SQL editor themes, Monokai and Nord, bringing the total to seven.
+
+### Changed
+
+- Editor themes now preview live as you move through the Preferences drop-down, and revert
+  if you cancel, instead of only applying after OK.
+- Both toolbars share a single row by default while remaining independently movable. Saved
+  layouts from earlier versions are reset once so the change takes effect.
+- The execution-engine drop-down no longer widens to fit an unavailability message. An
+  unavailable engine stays greyed out and explains itself in a tooltip, which takes the
+  control from 414px to 75px.
+
+### Fixed
+
+- History columns can be reordered. The first column needed `setFirstSectionMovable`, which
+  `setSectionsMovable` alone does not imply, so the Timestamp column was frozen in 0.6.1.
+- The SQL editor's horizontal scrollbar disappears again when long text is removed. Scroll
+  width only ever grew, so it stayed visible over short text.
+
 ## [0.6.1] - 2026-08-04
 
 ### Added
