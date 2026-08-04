@@ -807,6 +807,29 @@ def test_main_window_preferences_preview_editor_theme_and_accept_persists_it(
     assert settings.restore_editor_theme() == "Solarized Light"
 
 
+def test_main_window_preferences_apply_program_theme_live_and_persist_it(
+    tmp_path: Path, qtbot
+) -> None:
+    from wherewolf.desktop.theming import ThemeMode, build_palette
+
+    settings = _configure_qsettings_path(tmp_path / "program-theme-preferences")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.program_theme_selector.setCurrentText(ThemeMode.DARK.value)
+
+    assert app.palette().color(app.palette().ColorRole.Base) == build_palette(ThemeMode.DARK).color(
+        app.palette().ColorRole.Base
+    )
+    dialog.accept()
+
+    assert settings.restore_program_theme() == ThemeMode.DARK.value
+
+
 def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
     tmp_path: Path, qtbot
 ) -> None:

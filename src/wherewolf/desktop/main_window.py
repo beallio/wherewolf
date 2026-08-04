@@ -51,6 +51,7 @@ from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.export_controller import ExportController, ExportResult
 from wherewolf.desktop.query_controller import QueryController
+from wherewolf.desktop.theming import PROGRAM_THEME_NAMES, apply_program_theme
 from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
@@ -142,12 +143,17 @@ class PreferencesDialog(QDialog):
         self.editor_theme_selector.setObjectName("editor_theme_selector")
         self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
         self.editor_theme_selector.setCurrentText(settings_service.restore_editor_theme())
+        self.program_theme_selector = QComboBox(self)
+        self.program_theme_selector.setObjectName("program_theme_selector")
+        self.program_theme_selector.addItems(PROGRAM_THEME_NAMES)
+        self.program_theme_selector.setCurrentText(settings_service.restore_program_theme())
         layout.addRow("Editor font size", self.font_size)
         layout.addRow(self.completion_enabled)
         layout.addRow("Completion threshold", self.completion_threshold)
         layout.addRow(self.profile_on_load)
         layout.addRow("Profile size limit (bytes)", self.profile_max_bytes)
         layout.addRow("Editor theme", self.editor_theme_selector)
+        layout.addRow("Program theme", self.program_theme_selector)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
         )
@@ -1120,11 +1126,18 @@ class MainWindow(QMainWindow):
     def _show_preferences(self) -> None:
         self.preferences_dialog = PreferencesDialog(self._settings_service, self)
         original_editor_theme = self.editor.theme_name
+        original_program_theme = self._settings_service.restore_program_theme()
         self.preferences_dialog.editor_theme_selector.currentTextChanged.connect(
             self.editor.set_theme
         )
         self.preferences_dialog.rejected.connect(
             lambda: self.editor.set_theme(original_editor_theme)
+        )
+        self.preferences_dialog.program_theme_selector.currentTextChanged.connect(
+            self._apply_program_theme
+        )
+        self.preferences_dialog.rejected.connect(
+            lambda: self._apply_program_theme(original_program_theme)
         )
         self.preferences_dialog.accepted.connect(self._apply_preferences)
         self.preferences_dialog.show()
@@ -1135,7 +1148,15 @@ class MainWindow(QMainWindow):
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
         self._settings_service.save_profile_on_load(dialog.profile_on_load.isChecked())
         self._settings_service.save_profile_max_bytes(dialog.profile_max_bytes.value())
+        self._settings_service.save_program_theme(dialog.program_theme_selector.currentText())
+        self._apply_program_theme(dialog.program_theme_selector.currentText())
         self.editor.set_font_size(dialog.font_size.value())
+
+    @staticmethod
+    def _apply_program_theme(mode: str) -> None:
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_program_theme(app, mode)
 
     def _on_editor_diagnostics(self, payload: tuple) -> None:
         for diagnostic in payload:

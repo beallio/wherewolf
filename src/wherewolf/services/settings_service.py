@@ -25,6 +25,7 @@ class SettingsService:
     MAX_PREVIEW_LIMIT: Final = 100000
     DEFAULT_PREVIEW_LIMIT: Final = 1000
     DEFAULT_EDITOR_THEME: Final = "Dark"
+    DEFAULT_PROGRAM_THEME: Final = "Follow system"
     DEFAULT_EXPORT_FORMAT: Final = "csv"
     DEFAULT_EXPORT_SCOPE: Final = "preview"
     DEFAULT_PROFILE_ON_LOAD: Final = True
@@ -69,6 +70,10 @@ class SettingsService:
     @staticmethod
     def _editor_theme_key(schema_version: str) -> str:
         return f"{schema_version}/editor/theme"
+
+    @staticmethod
+    def _program_theme_key(schema_version: str) -> str:
+        return f"{schema_version}/program/theme"
 
     @staticmethod
     def _export_format_key(schema_version: str) -> str:
@@ -129,6 +134,10 @@ class SettingsService:
     @property
     def editor_theme_key(self) -> str:
         return self._editor_theme_key(self.namespace_prefix)
+
+    @property
+    def program_theme_key(self) -> str:
+        return self._program_theme_key(self.namespace_prefix)
 
     @property
     def profile_on_load_key(self) -> str:
@@ -235,6 +244,13 @@ class SettingsService:
 
     def save_editor_theme(self, theme: str) -> None:
         self._settings.setValue(self.editor_theme_key, str(theme))
+
+    def restore_program_theme(self) -> str:
+        value = self._settings.value(self.program_theme_key, self.DEFAULT_PROGRAM_THEME)
+        return value if isinstance(value, str) and value else self.DEFAULT_PROGRAM_THEME
+
+    def save_program_theme(self, theme: str) -> None:
+        self._settings.setValue(self.program_theme_key, str(theme))
 
     @property
     def export_format_key(self) -> str:

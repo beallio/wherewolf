@@ -42,6 +42,15 @@ def test_settings_service_window_layout_version_round_trip(tmp_path: Path) -> No
     assert service.restore_window_layout_version() == 2
 
 
+def test_settings_service_program_theme_round_trip(tmp_path: Path) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "program-theme"))
+
+    assert service.restore_program_theme() == service.DEFAULT_PROGRAM_THEME
+    service.save_program_theme("Dark")
+
+    assert service.restore_program_theme() == "Dark"
+
+
 def test_settings_service_returns_defaults_for_missing_keys(tmp_path: Path) -> None:
     settings = _configure_qsettings_path(tmp_path / "defaults")
     service = SettingsService(settings)
