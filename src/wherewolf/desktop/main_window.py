@@ -889,7 +889,12 @@ class MainWindow(QMainWindow):
         assert menu_bar is not None
         file_menu = cast(QMenu, menu_bar.addMenu("File"))
         file_menu.setObjectName("file_menu")
-        file_menu.addAction(self.desktop_actions.clear_history)
+        file_menu.addAction(self.desktop_actions.add_datasets)
+        file_menu.addSeparator()
+        self.quit_action = QAction("Quit", self)
+        self.quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        self.quit_action.triggered.connect(self.close)
+        file_menu.addAction(self.quit_action)
 
         edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
         edit_menu.setObjectName("edit_menu")
@@ -927,6 +932,8 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.find_replace_action)
         edit_menu.addSeparator()
         edit_menu.addAction(toggle_comment)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.desktop_actions.clear_history)
 
         query_menu = cast(QMenu, menu_bar.addMenu("Query"))
         query_menu.setObjectName("query_menu")

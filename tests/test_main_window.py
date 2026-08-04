@@ -7,7 +7,7 @@ from uuid import uuid4
 import polars as pl
 import pytest
 from PyQt6.QtCore import QCoreApplication, QSettings, Qt
-from PyQt6.QtGui import QStandardItemModel
+from PyQt6.QtGui import QKeySequence, QStandardItemModel
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -73,6 +73,31 @@ def test_main_window_structure(qtbot) -> None:
 
     menu_titles = [action.text() for action in menu_bar.actions()]
     assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+
+
+def test_main_window_file_menu_exposes_add_datasets_and_quit(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    file_actions = window.file_menu.actions()
+    assert file_actions[0] is window.desktop_actions.add_datasets
+    assert window.quit_action in file_actions
+    assert window.quit_action.shortcut() == QKeySequence(QKeySequence.StandardKey.Quit)
+    assert window.desktop_actions.clear_history not in file_actions
+    assert window.desktop_actions.clear_history in window.edit_menu.actions()
+
+
+def test_main_window_quit_action_closes_the_window(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+
+    window.quit_action.trigger()
+
+    assert not window.isVisible()
+    app = QCoreApplication.instance()
+    assert app is not None
+    app.processEvents()
 
 
 def test_main_window_view_menu_reopens_a_closed_dock_without_affecting_siblings(qtbot) -> None:
@@ -338,6 +363,7 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Select All",
         "Find / Replace…",
         "Toggle Comment",
+        "Clear History",
     ]
     assert actions[:2] == list(window.editor.edit_actions[:2])
     assert actions[2:5] == [window.cut_action, window.copy_action, window.paste_action]
