@@ -72,7 +72,25 @@ def test_main_window_structure(qtbot) -> None:
         assert dock.objectName()
 
     menu_titles = [action.text() for action in menu_bar.actions()]
-    assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+    assert menu_titles == ["&File", "&Edit", "&Query", "&View", "&Help"]
+
+
+def test_main_window_top_level_menus_have_distinct_mnemonics(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    menus = (
+        window.file_menu,
+        window.edit_menu,
+        window.query_menu,
+        window.view_menu,
+        window.help_menu,
+    )
+    titles = [menu.title() for menu in menus]
+    mnemonics = [title[1].lower() for title in titles]
+
+    assert all(title.startswith("&") for title in titles)
+    assert len(mnemonics) == len(set(mnemonics))
 
 
 def test_main_window_file_menu_exposes_add_datasets_and_quit(qtbot) -> None:

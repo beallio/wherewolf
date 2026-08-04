@@ -887,7 +887,7 @@ class MainWindow(QMainWindow):
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
         assert menu_bar is not None
-        file_menu = cast(QMenu, menu_bar.addMenu("File"))
+        file_menu = cast(QMenu, menu_bar.addMenu("&File"))
         file_menu.setObjectName("file_menu")
         file_menu.addAction(self.desktop_actions.add_datasets)
         file_menu.addSeparator()
@@ -896,7 +896,7 @@ class MainWindow(QMainWindow):
         self.quit_action.triggered.connect(self.close)
         file_menu.addAction(self.quit_action)
 
-        edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
+        edit_menu = cast(QMenu, menu_bar.addMenu("&Edit"))
         edit_menu.setObjectName("edit_menu")
         undo, redo, _cut, _copy, _paste, toggle_comment = self.editor.edit_actions
         edit_menu.addAction(undo)
@@ -935,7 +935,7 @@ class MainWindow(QMainWindow):
         edit_menu.addSeparator()
         edit_menu.addAction(self.desktop_actions.clear_history)
 
-        query_menu = cast(QMenu, menu_bar.addMenu("Query"))
+        query_menu = cast(QMenu, menu_bar.addMenu("&Query"))
         query_menu.setObjectName("query_menu")
         query_menu.addAction(self.desktop_actions.run)
         query_menu.addAction(self.desktop_actions.cancel)
@@ -946,7 +946,7 @@ class MainWindow(QMainWindow):
         query_menu.addAction(self.desktop_actions.export_full)
         query_menu.addAction(self.desktop_actions.export_selection)
 
-        view_menu = cast(QMenu, menu_bar.addMenu("View"))
+        view_menu = cast(QMenu, menu_bar.addMenu("&View"))
         view_menu.setObjectName("view_menu")
         for dock in (
             self._catalog_dock_widget,
@@ -964,7 +964,7 @@ class MainWindow(QMainWindow):
         self.preferences_action.triggered.connect(self._show_preferences)
         view_menu.addAction(self.preferences_action)
 
-        help_menu = cast(QMenu, menu_bar.addMenu("Help"))
+        help_menu = cast(QMenu, menu_bar.addMenu("&Help"))
         help_menu.setObjectName("help_menu")
         self.about_action = help_menu.addAction("About")
         assert self.about_action is not None
