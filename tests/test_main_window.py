@@ -6,14 +6,24 @@ from uuid import uuid4
 
 import polars as pl
 import pytest
-from PyQt6.QtCore import QCoreApplication, QSettings, Qt
-from PyQt6.QtGui import QStandardItemModel
+from PyQt6.QtCore import (
+    QCoreApplication,
+    QMimeData,
+    QPointF,
+    QSettings,
+    Qt,
+    QThread,
+    QUrl,
+)
+from PyQt6.QtGui import QDropEvent, QFontMetrics, QKeySequence, QStandardItemModel
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QDockWidget,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QPlainTextEdit,
     QScrollArea,
     QSplitter,
@@ -26,6 +36,7 @@ from PyQt6.QtWidgets import (
 from wherewolf.desktop import main_window
 from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
+from wherewolf.desktop.workers.schema_worker import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
     ColumnSchema,
@@ -72,7 +83,55 @@ def test_main_window_structure(qtbot) -> None:
         assert dock.objectName()
 
     menu_titles = [action.text() for action in menu_bar.actions()]
-    assert menu_titles == ["File", "Edit", "Query", "View", "Help"]
+    assert menu_titles == ["&File", "&Edit", "&Query", "&View", "&Help"]
+
+
+def test_main_window_top_level_menus_have_distinct_mnemonics(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    menus = (
+        window.file_menu,
+        window.edit_menu,
+        window.query_menu,
+        window.view_menu,
+        window.help_menu,
+    )
+    titles = [menu.title() for menu in menus]
+    mnemonics = [title[1].lower() for title in titles]
+
+    assert all(title.startswith("&") for title in titles)
+    assert len(mnemonics) == len(set(mnemonics))
+
+
+def test_main_window_file_menu_exposes_add_datasets_and_quit(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    file_actions = window.file_menu.actions()
+    assert file_actions[0] is window.desktop_actions.add_datasets
+    assert window.quit_action in file_actions
+    shortcuts = window.quit_action.shortcuts()
+    assert QKeySequence("Ctrl+Q") in shortcuts
+    assert any(
+        QKeySequence("Ctrl+Q").matches(shortcut) == QKeySequence.SequenceMatch.ExactMatch
+        for shortcut in shortcuts
+    )
+    assert window.desktop_actions.clear_history not in file_actions
+    assert window.desktop_actions.clear_history in window.edit_menu.actions()
+
+
+def test_main_window_quit_action_closes_the_window(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+
+    window.quit_action.trigger()
+
+    assert not window.isVisible()
+    app = QCoreApplication.instance()
+    assert app is not None
+    app.processEvents()
 
 
 def test_main_window_view_menu_reopens_a_closed_dock_without_affecting_siblings(qtbot) -> None:
@@ -120,6 +179,42 @@ def test_main_window_query_controls_are_visible_without_a_scroll_area_at_normal_
             assert control.isVisible(), f"{object_name} is hidden at {width}px"
 
 
+@pytest.mark.parametrize("view_name", ("results", "catalog", "schema", "history"))
+def test_all_tabular_views_allow_column_reordering(qtbot, view_name: str) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    headers = {
+        "results": window.result_table_view.horizontalHeader(),
+        "catalog": window.catalog.view.horizontalHeader(),
+        "schema": window.schema_panel._table_widget.horizontalHeader(),
+        "history": window.history_dock.history_table.header(),
+    }
+    header = headers[view_name]
+    assert header is not None
+    assert header.sectionsMovable(), view_name
+
+    if view_name == "schema":
+        header.moveSection(0, 1)
+        assert header.visualIndex(0) == 1
+
+
+def test_preview_limit_input_is_font_sized_and_accepts_maximum_value(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    unconstrained = QLineEdit()
+    qtbot.addWidget(unconstrained)
+
+    assert window.preview_limit_selector.maximumWidth() < unconstrained.sizeHint().width()
+    expected_text_width = QFontMetrics(window.preview_limit_selector.font()).horizontalAdvance(
+        "100000"
+    )
+    assert window.preview_limit_selector.maximumWidth() >= expected_text_width
+    validator = window.preview_limit_selector.validator()
+    assert validator is not None
+    state, _, _ = validator.validate("100000", 0)
+    assert state.name == "Acceptable"
+
+
 def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(
     qtbot,
 ) -> None:
@@ -131,13 +226,14 @@ def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(
 
     for object_name in (
         "preview_filter_input",
-        "export_format_selector",
-        "export_scope_selector",
         "export_button",
     ):
         control = window.findChild(QWidget, object_name)
         assert control is not None
         assert control.isVisible(), f"{object_name} is hidden at 1024px"
+
+    assert window.findChild(QWidget, "export_format_selector") is None
+    assert window.findChild(QWidget, "export_scope_selector") is None
 
     for object_name in (
         "export_preview_button",
@@ -160,7 +256,9 @@ def test_main_window_results_expose_export_controls_and_query_actions_at_1024px(
     assert window.desktop_actions.export_selection in query_actions
 
 
-def test_main_window_export_button_writes_selected_parquet_scope(tmp_path: Path, qtbot) -> None:
+def test_main_window_export_button_writes_selected_parquet_scope(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
     destination = tmp_path / "result"
     window = MainWindow(
         file_dialog_service=FakeFileDialogService(paths=(), export_path=destination)
@@ -188,10 +286,15 @@ def test_main_window_export_button_writes_selected_parquet_scope(tmp_path: Path,
         completed_at=datetime.now(UTC),
     )
     window._on_query_result_ready(result, request)
-    window.export_format_selector.setCurrentIndex(
-        window.export_format_selector.findData(ExportFormat.PARQUET)
-    )
-    window.export_scope_selector.setCurrentIndex(window.export_scope_selector.findData("preview"))
+
+    def accept_parquet_preview(dialog: main_window.ExportOptionsDialog) -> int:
+        dialog.format_selector.setCurrentIndex(
+            dialog.format_selector.findData(ExportFormat.PARQUET)
+        )
+        dialog.scope_selector.setCurrentIndex(dialog.scope_selector.findData("preview"))
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(main_window.ExportOptionsDialog, "exec", accept_parquet_preview)
 
     with qtbot.waitSignal(window.export_controller.result_ready, timeout=3000):
         window.export_button.click()
@@ -199,6 +302,82 @@ def test_main_window_export_button_writes_selected_parquet_scope(tmp_path: Path,
     artifact = destination.with_suffix(".parquet")
     assert artifact.exists()
     assert pl.read_parquet(artifact).to_dicts() == [{"id": 1}, {"id": 2}]
+
+
+def test_export_options_dialog_accepts_chosen_values_and_persists_them(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.export_button.setEnabled(True)
+    calls: list[tuple[bool, ExportFormat | None]] = []
+    monkeypatch.setattr(
+        window,
+        "_start_export",
+        lambda full_export, export_format=None: calls.append((full_export, export_format)),
+    )
+    dialogs: list[main_window.ExportOptionsDialog] = []
+
+    def accept_full_excel(dialog: main_window.ExportOptionsDialog) -> int:
+        dialogs.append(dialog)
+        dialog.format_selector.setCurrentIndex(dialog.format_selector.findData(ExportFormat.XLSX))
+        dialog.scope_selector.setCurrentIndex(dialog.scope_selector.findData("full"))
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(main_window.ExportOptionsDialog, "exec", accept_full_excel)
+
+    window.export_button.click()
+
+    assert len(dialogs) == 1
+    assert calls == [(True, ExportFormat.XLSX)]
+    assert window._settings_service.restore_export_format() == ExportFormat.XLSX.value
+    assert window._settings_service.restore_export_scope() == "full"
+
+    def cancel(dialog: main_window.ExportOptionsDialog) -> int:
+        dialogs.append(dialog)
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(main_window.ExportOptionsDialog, "exec", cancel)
+    window.export_button.click()
+
+    assert len(dialogs) == 2
+    assert dialogs[-1].format_selector.currentData() is ExportFormat.XLSX
+    assert dialogs[-1].scope_selector.currentData() == "full"
+    assert calls == [(True, ExportFormat.XLSX)]
+
+
+def test_export_scope_actions_bypass_export_options_dialog(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    for action in (
+        window.desktop_actions.export_preview,
+        window.desktop_actions.export_full,
+        window.desktop_actions.export_selection,
+    ):
+        action.setEnabled(True)
+    window._settings_service.save_export_format(ExportFormat.PARQUET.value)
+    starts: list[tuple[bool, ExportFormat | None]] = []
+    selections: list[ExportFormat | None] = []
+    monkeypatch.setattr(
+        window,
+        "_start_export",
+        lambda full_export, export_format=None: starts.append((full_export, export_format)),
+    )
+    monkeypatch.setattr(
+        window,
+        "_export_selection",
+        lambda export_format=None: selections.append(export_format),
+    )
+    monkeypatch.setattr(
+        main_window.ExportOptionsDialog,
+        "exec",
+        lambda _dialog: pytest.fail("scope actions must not open the options dialog"),
+    )
+
+    window.desktop_actions.export_preview.trigger()
+    window.desktop_actions.export_full.trigger()
+    window.desktop_actions.export_selection.trigger()
+
+    assert starts == [(False, ExportFormat.PARQUET), (True, ExportFormat.PARQUET)]
+    assert selections == [ExportFormat.PARQUET]
 
 
 def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypatch) -> None:
@@ -219,6 +398,29 @@ def test_main_window_help_menu_exposes_about_and_license_notice(qtbot, monkeypat
     assert "GPL-3.0-only" in shown["text"]
     assert "build" in shown["text"]
     assert "MIT" not in shown["text"]
+
+
+def test_help_menu_exposes_sql_dialect_reference_submenu_and_links(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submenu_action = next(
+        action for action in window.help_menu.actions() if action.text() == "SQL Dialect Reference"
+    )
+    submenu = submenu_action.menu()
+    assert isinstance(submenu, QMenu)
+    assert [action.text() for action in submenu.actions()] == list(
+        main_window.SQL_DIALECT_REFERENCE_URLS
+    )
+    assert all(
+        url.startswith("https://") and url
+        for url in main_window.SQL_DIALECT_REFERENCE_URLS.values()
+    )
+
+    opened: list[str] = []
+    monkeypatch.setattr(main_window.webbrowser, "open", opened.append)
+    for label, url in main_window.SQL_DIALECT_REFERENCE_URLS.items():
+        next(action for action in submenu.actions() if action.text() == label).trigger()
+        assert opened[-1] == url
 
 
 def test_engine_selector_disables_missing_spark_with_installation_guidance(
@@ -338,6 +540,7 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Select All",
         "Find / Replace…",
         "Toggle Comment",
+        "Clear History",
     ]
     assert actions[:2] == list(window.editor.edit_actions[:2])
     assert actions[2:5] == [window.cut_action, window.copy_action, window.paste_action]
@@ -501,6 +704,115 @@ def test_main_window_empty_catalog_gates_run_and_added_dataset_enables_it(
     assert window.desktop_actions.run.isEnabled()
     assert "Wherewolf" in window.windowTitle()
     assert "Added `people` to catalog." in window.status_bar.currentMessage()
+
+
+def test_main_window_drop_routes_through_add_handler_and_queues_schema_work(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    csv_file = tmp_path / "dropped.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(catalog_service=CatalogService())
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    queued_schema_work: list[CatalogBinding] = []
+    monkeypatch.setattr(window, "_queue_schema_work", queued_schema_work.append)
+    mime_data = QMimeData()
+    mime_data.setUrls([QUrl.fromLocalFile(str(csv_file))])
+    event = QDropEvent(
+        QPointF(1.0, 1.0),
+        Qt.DropAction.CopyAction,
+        mime_data,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    window.dropEvent(event)
+
+    assert event.isAccepted()
+    assert len(queued_schema_work) == 1
+    assert "Added `dropped` to catalog." in window.status_bar.currentMessage()
+
+
+def test_main_window_drop_surfaces_unsupported_source_warning(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    unsupported_file = tmp_path / "unsupported.xls"
+    supported_file = tmp_path / "supported.csv"
+    unsupported_file.write_text("id\n1\n")
+    supported_file.write_text("id\n1\n")
+    window = MainWindow(catalog_service=CatalogService())
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
+    mime_data = QMimeData()
+    mime_data.setUrls(
+        [
+            QUrl.fromLocalFile(str(unsupported_file)),
+            QUrl.fromLocalFile(str(supported_file)),
+        ]
+    )
+    event = QDropEvent(
+        QPointF(1.0, 1.0),
+        Qt.DropAction.CopyAction,
+        mime_data,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+
+    window.dropEvent(event)
+
+    assert event.isAccepted()
+    assert "Unsupported source format" in window.status_bar.currentMessage()
+
+
+def test_main_window_menu_add_queues_schema_work_once(tmp_path: Path, qtbot, monkeypatch) -> None:
+    csv_file = tmp_path / "menu.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow(
+        catalog_service=CatalogService(),
+        file_dialog_service=FakeFileDialogService(paths=(csv_file,)),
+    )
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    queued_schema_work: list[CatalogBinding] = []
+    monkeypatch.setattr(window, "_queue_schema_work", queued_schema_work.append)
+
+    window.desktop_actions.add_datasets.trigger()
+
+    assert len(queued_schema_work) == 1
+
+
+def test_main_window_reports_a_skipped_duplicate_dataset(tmp_path: Path, qtbot) -> None:
+    csv_file = tmp_path / "already-loaded.csv"
+    csv_file.write_text("id\n1\n")
+    catalog_service = CatalogService()
+    catalog_service.add_paths((csv_file,))
+    window = MainWindow(catalog_service=catalog_service)
+    qtbot.addWidget(window)
+
+    window.catalog.add_paths((csv_file,))
+
+    message = window.status_bar.currentMessage()
+    assert "duplicate" in message.lower()
+    assert "already-loaded.csv" in message
+
+
+def test_main_window_reports_added_and_skipped_datasets_together(tmp_path: Path, qtbot) -> None:
+    duplicate = tmp_path / "duplicate.csv"
+    new_dataset = tmp_path / "new.csv"
+    duplicate.write_text("id\n1\n")
+    new_dataset.write_text("id\n2\n")
+    catalog_service = CatalogService()
+    catalog_service.add_paths((duplicate,))
+    window = MainWindow(catalog_service=catalog_service)
+    qtbot.addWidget(window)
+
+    window.catalog.add_paths((duplicate, new_dataset))
+
+    message = window.status_bar.currentMessage()
+    assert "Added `new` to catalog." in message
+    assert "duplicate" in message.lower()
+    assert "duplicate.csv" in message
 
 
 def test_main_window_explains_truncation_and_keeps_raw_error_details_collapsed(qtbot) -> None:
@@ -848,9 +1160,7 @@ def test_main_window_exports_selected_format_to_readable_artifact(
     )
     window._on_query_result_ready(result, request)
 
-    format_index = window.export_format_selector.findData(export_format)
-    assert format_index >= 0
-    window.export_format_selector.setCurrentIndex(format_index)
+    window._settings_service.save_export_format(export_format.value)
     with qtbot.waitSignal(window.export_controller.result_ready, timeout=3000):
         window.desktop_actions.export_preview.trigger()
 
@@ -1092,6 +1402,58 @@ def test_main_window_action_enabled_states_and_status_bar_during_execution(
     assert "Total Rows: 2" not in msg
 
 
+def test_main_window_elapsed_timer_reports_query_duration_and_stops_on_terminal_states(
+    qtbot, monkeypatch
+) -> None:
+    current_time = [100.0]
+    monkeypatch.setattr(main_window.time, "monotonic", lambda: current_time[0])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert not window._elapsed_timer.isActive()
+
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+    assert window._elapsed_timer.isActive()
+    current_time[0] = 103.9
+    window._update_elapsed_status()
+    assert window.status_bar.currentMessage() == "Executing query... (3s)"
+
+    for terminal_status in (
+        ExecutionStatus.SUCCEEDED,
+        ExecutionStatus.FAILED,
+        ExecutionStatus.CANCELLED,
+    ):
+        window._on_query_status_changed(ExecutionStatus.RUNNING)
+        assert window._elapsed_timer.isActive()
+        window._on_query_status_changed(terminal_status)
+        assert not window._elapsed_timer.isActive()
+
+
+def test_main_window_elapsed_timer_preserves_cancellation_status(qtbot, monkeypatch) -> None:
+    current_time = [100.0]
+    monkeypatch.setattr(main_window.time, "monotonic", lambda: current_time[0])
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+    current_time[0] = 103.9
+    window._on_query_status_changed(ExecutionStatus.CANCELLATION_REQUESTED)
+    window._update_elapsed_status()
+
+    assert "cancell" in window.status_bar.currentMessage().lower()
+    assert "Executing query..." not in window.status_bar.currentMessage()
+
+
+def test_main_window_close_stops_elapsed_timer(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+
+    window.close()
+
+    assert not window._elapsed_timer.isActive()
+
+
 def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Path) -> None:
     csv_file = tmp_path / "fast.csv"
     csv_file.write_text("id\n1\n")
@@ -1109,6 +1471,62 @@ def test_main_window_close_waits_for_running_schema_workers(qtbot, tmp_path: Pat
     assert len(window._schema_workers) == 0
 
 
+def test_main_window_close_bounds_worker_wait_and_saves_settings_on_timeout(
+    qtbot, monkeypatch
+) -> None:
+    events: list[object] = []
+
+    class NeverFinishesWorker(SchemaWorker):
+        def __init__(self) -> None:
+            QThread.__init__(self)
+
+        def isRunning(self) -> bool:
+            return True
+
+        def quit(self) -> None:
+            events.append("quit")
+
+        def _fake_wait(self, *args: object) -> bool:
+            events.append(("wait", args[0] if args else -1))
+            return False
+
+        def __getattribute__(self, name: str) -> object:
+            if name == "wait":
+                return object.__getattribute__(self, "_fake_wait")
+            return super().__getattribute__(name)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._schema_workers = [NeverFinishesWorker()]
+    monkeypatch.setattr(window.query_controller, "cancel", lambda: events.append("query_cancel"))
+    monkeypatch.setattr(window.export_controller, "cancel", lambda: events.append("export_cancel"))
+    monkeypatch.setattr(window.query_controller, "shutdown", lambda: True)
+    monkeypatch.setattr(window.export_controller, "shutdown", lambda: True)
+    saved_settings: list[str] = []
+    for method_name in (
+        "save_window_geometry",
+        "save_window_state",
+        "save_splitter_sizes",
+        "save_editor_font_size",
+    ):
+        monkeypatch.setattr(
+            window._settings_service,
+            method_name,
+            lambda *args, method_name=method_name: saved_settings.append(method_name),
+        )
+
+    window.close()
+
+    assert events[:4] == ["query_cancel", "export_cancel", "quit", ("wait", 5000)]
+    assert set(saved_settings) == {
+        "save_window_geometry",
+        "save_window_state",
+        "save_splitter_sizes",
+        "save_editor_font_size",
+    }
+    assert window.status_bar.currentMessage() == ""
+
+
 def test_main_window_removes_completed_profile_workers(qtbot, tmp_path: Path) -> None:
     csv_file = tmp_path / "profile.csv"
     csv_file.write_text("id\n1\n")
@@ -1119,6 +1537,35 @@ def test_main_window_removes_completed_profile_workers(qtbot, tmp_path: Path) ->
 
     qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
     assert window._profile_workers == []
+
+
+def test_manual_profile_bypasses_over_limit_auto_profile_gate_and_updates_schema_panel(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    csv_file = tmp_path / "over-limit-profile.csv"
+    csv_file.write_text("id\n1\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._settings_service.save_profile_max_bytes(0)
+    monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
+
+    window.catalog.add_paths((csv_file,))
+
+    entry = window._catalog_service.entries[0]
+    assert entry.profile is None
+    assert entry.profile_skipped_reason is not None
+    assert "size limit" in entry.profile_skipped_reason
+    assert window._profile_workers == []
+
+    window._catalog_service.update_schema(SchemaResult(entry.id, (ColumnSchema("id", "BIGINT"),)))
+    window.schema_panel.set_entries(window._catalog_service.entries, entry.alias)
+    window.schema_panel.profile_button.click()
+    assert len(window._profile_workers) == 1
+    qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
+
+    profiled_entry = window._catalog_service.entries[0]
+    assert profiled_entry.profile is not None
+    assert window.schema_panel.cell_text(0, 5)
 
 
 def test_main_window_close_waits_for_running_profile_workers(qtbot, tmp_path: Path) -> None:
@@ -1190,6 +1637,22 @@ def test_main_window_result_grid_integration(qtbot) -> None:
         grid.proxy_model().data(grid.proxy_model().index(1, 1), Qt.ItemDataRole.UserRole) == "beta"
     )
     assert "Preview Rows: 2" in window.status_bar.currentMessage()
+    assert not window.empty_result_banner.isVisible()
+
+    # 1b. A successful query with no rows has a distinct empty-result state.
+    res_empty = QueryResult(
+        request_id=req_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame(),
+        execution_seconds=0.02,
+        preview_row_count=0,
+        total_row_count=0,
+        truncated=False,
+        completed_at=now,
+    )
+    window._on_query_result_ready(res_empty, request)
+    assert window.empty_result_banner.isVisible()
+    assert window.empty_result_banner.text() == "Query returned 0 rows."
 
     # 2. Failed result: grid cleared, error message shown
     res_failed = QueryResult(
@@ -1206,6 +1669,7 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
+    assert not window.empty_result_banner.isVisible()
     assert window.result_error_message.isVisible()
     assert "near SELECT" in window.result_error_message.text()
     msg, severity = window.messages_panel.message_at(0)
@@ -1230,6 +1694,7 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     )
     window._on_query_result_ready(res_cancelled, request)
     assert grid.proxy_model().rowCount() == 0
+    assert not window.empty_result_banner.isVisible()
     msg, severity = window.messages_panel.message_at(0)
     assert "cancelled" in msg.lower()
     assert severity == "warning"

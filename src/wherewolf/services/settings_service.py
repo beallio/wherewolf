@@ -25,6 +25,8 @@ class SettingsService:
     MAX_PREVIEW_LIMIT: Final = 100000
     DEFAULT_PREVIEW_LIMIT: Final = 1000
     DEFAULT_EDITOR_THEME: Final = "Dark"
+    DEFAULT_EXPORT_FORMAT: Final = "csv"
+    DEFAULT_EXPORT_SCOPE: Final = "preview"
     DEFAULT_PROFILE_ON_LOAD: Final = True
     DEFAULT_PROFILE_MAX_BYTES: Final = 268_435_456
 
@@ -66,6 +68,14 @@ class SettingsService:
     @staticmethod
     def _editor_theme_key(schema_version: str) -> str:
         return f"{schema_version}/editor/theme"
+
+    @staticmethod
+    def _export_format_key(schema_version: str) -> str:
+        return f"{schema_version}/export/format"
+
+    @staticmethod
+    def _export_scope_key(schema_version: str) -> str:
+        return f"{schema_version}/export/scope"
 
     @staticmethod
     def _profile_on_load_key(schema_version: str) -> str:
@@ -204,6 +214,28 @@ class SettingsService:
 
     def save_editor_theme(self, theme: str) -> None:
         self._settings.setValue(self.editor_theme_key, str(theme))
+
+    @property
+    def export_format_key(self) -> str:
+        return self._export_format_key(self.namespace_prefix)
+
+    @property
+    def export_scope_key(self) -> str:
+        return self._export_scope_key(self.namespace_prefix)
+
+    def restore_export_format(self) -> str:
+        value = self._settings.value(self.export_format_key, self.DEFAULT_EXPORT_FORMAT)
+        return value if isinstance(value, str) and value else self.DEFAULT_EXPORT_FORMAT
+
+    def save_export_format(self, export_format: str) -> None:
+        self._settings.setValue(self.export_format_key, str(export_format))
+
+    def restore_export_scope(self) -> str:
+        value = self._settings.value(self.export_scope_key, self.DEFAULT_EXPORT_SCOPE)
+        return value if isinstance(value, str) and value else self.DEFAULT_EXPORT_SCOPE
+
+    def save_export_scope(self, scope: str) -> None:
+        self._settings.setValue(self.export_scope_key, str(scope))
 
     def restore_profile_on_load(self) -> bool:
         value = self._settings.value(self.profile_on_load_key, self.DEFAULT_PROFILE_ON_LOAD)

@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+import time
 import webbrowser
 from importlib.metadata import version
-from typing import cast
+from typing import Final, cast
 
-from PyQt6.QtCore import QByteArray, Qt
+from PyQt6.QtCore import QByteArray, Qt, QTimer
 from PyQt6.QtGui import (
     QAction,
     QCloseEvent,
     QDragEnterEvent,
     QDropEvent,
     QFont,
+    QFontMetrics,
     QIntValidator,
     QKeySequence,
     QStandardItemModel,
@@ -68,6 +70,7 @@ from wherewolf.domain import (
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services import (
     CatalogService,
+    CatalogServiceReport,
     ExecutionRequestBuilder,
     ExportFormat,
     SettingsService,
@@ -76,6 +79,16 @@ from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.services.preview_export import write_selection
 from wherewolf.storage.history import HistoryManager
+
+SQL_DIALECT_REFERENCE_URLS: Final = {
+    "DuckDB": "https://duckdb.org/docs/stable/sql/introduction",
+    "PostgreSQL": "https://www.postgresql.org/docs/current/sql.html",
+    "Oracle": "https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/SQL-Statements.html",
+    "MySQL": "https://dev.mysql.com/doc/refman/8.4/en/sql-statements.html",
+    "Microsoft T-SQL": "https://learn.microsoft.com/en-us/sql/t-sql/language-reference",
+    "SQLite": "https://www.sqlite.org/lang.html",
+    "Spark SQL": "https://spark.apache.org/docs/latest/sql-ref.html",
+}
 
 
 class FindReplaceDialog(QDialog):
@@ -142,6 +155,51 @@ class PreferencesDialog(QDialog):
         layout.addRow(buttons)
 
 
+class ExportOptionsDialog(QDialog):
+    """Modal format and result-scope selection for the results-page Export button."""
+
+    def __init__(self, settings_service: SettingsService, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Export Options")
+        layout = QFormLayout(self)
+        self.format_selector = QComboBox(self)
+        self.format_selector.setObjectName("export_format_selector")
+        for label, export_format in (
+            ("CSV", ExportFormat.CSV),
+            ("Excel", ExportFormat.XLSX),
+            ("Parquet", ExportFormat.PARQUET),
+        ):
+            self.format_selector.addItem(label, export_format)
+        format_index = self.format_selector.findData(
+            self._parse_export_format(settings_service.restore_export_format())
+        )
+        self.format_selector.setCurrentIndex(max(format_index, 0))
+
+        self.scope_selector = QComboBox(self)
+        self.scope_selector.setObjectName("export_scope_selector")
+        self.scope_selector.addItem("Preview", "preview")
+        self.scope_selector.addItem("Full results", "full")
+        self.scope_selector.addItem("Selection", "selection")
+        scope_index = self.scope_selector.findData(settings_service.restore_export_scope())
+        self.scope_selector.setCurrentIndex(max(scope_index, 0))
+
+        layout.addRow("Export format", self.format_selector)
+        layout.addRow("Export scope", self.scope_selector)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    @staticmethod
+    def _parse_export_format(value: str) -> ExportFormat:
+        try:
+            return ExportFormat(value)
+        except ValueError:
+            return ExportFormat.CSV
+
+
 class MainWindow(QMainWindow):
     """A stable, testable application shell for desktop migration phase 3."""
 
@@ -186,6 +244,11 @@ class MainWindow(QMainWindow):
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
+        self._elapsed_timer = QTimer(self)
+        self._elapsed_timer.setInterval(1000)
+        self._elapsed_timer.timeout.connect(self._update_elapsed_status)
+        self._query_started_at: float | None = None
+        self._query_status = ExecutionStatus.IDLE
 
         self.setCentralWidget(self._central_splitter)
         self._build_menus()
@@ -285,6 +348,8 @@ class MainWindow(QMainWindow):
         self._preview_limit_value = self._settings_service.restore_preview_limit()
         self.preview_limit_selector = QLineEdit(toolbar)
         self.preview_limit_selector.setObjectName("preview_limit_selector")
+        preview_width = QFontMetrics(self.preview_limit_selector.font()).horizontalAdvance("100000")
+        self.preview_limit_selector.setMaximumWidth(preview_width + 16)
         self.preview_limit_selector.setValidator(
             QIntValidator(
                 SettingsService.MIN_PREVIEW_LIMIT,
@@ -346,6 +411,7 @@ class MainWindow(QMainWindow):
 
     def _build_catalog_dock(self) -> QDockWidget:
         catalog = CatalogDock(self._catalog_service, self)
+        catalog.datasets_added.connect(self._handle_add_result)
         catalog.error_reported.connect(self._show_status)
         catalog.refresh_schema_requested.connect(self._on_refresh_catalog_schema)
         catalog.insert_alias_requested.connect(self.editor_insert_text)
@@ -389,9 +455,15 @@ class MainWindow(QMainWindow):
         self.desktop_actions.clear_history.triggered.connect(self._clear_history)
         self.desktop_actions.run.triggered.connect(self._on_run_triggered)
         self.desktop_actions.cancel.triggered.connect(self._on_cancel_triggered)
-        self.desktop_actions.export_preview.triggered.connect(lambda: self._start_export(False))
-        self.desktop_actions.export_full.triggered.connect(lambda: self._start_export(True))
-        self.desktop_actions.export_selection.triggered.connect(self._export_selection)
+        self.desktop_actions.export_preview.triggered.connect(
+            lambda: self._start_export(False, self._current_export_format())
+        )
+        self.desktop_actions.export_full.triggered.connect(
+            lambda: self._start_export(True, self._current_export_format())
+        )
+        self.desktop_actions.export_selection.triggered.connect(
+            lambda: self._export_selection(self._current_export_format())
+        )
 
         self.query_controller.status_changed.connect(self._on_query_status_changed)
         self.query_controller.result_ready.connect(self._on_query_result_ready)
@@ -439,16 +511,31 @@ class MainWindow(QMainWindow):
             self.query_controller.cancel()
 
     def _on_query_status_changed(self, status: ExecutionStatus) -> None:
-        if status in (ExecutionStatus.RUNNING, ExecutionStatus.CANCELLATION_REQUESTED):
+        self._query_status = status
+        if status is ExecutionStatus.RUNNING:
+            self._query_started_at = time.monotonic()
+            self._elapsed_timer.start()
             self.desktop_actions.run.setEnabled(False)
             self.desktop_actions.cancel.setEnabled(True)
-            if status is ExecutionStatus.CANCELLATION_REQUESTED:
-                self._show_status("Cancellation requested")
-            else:
-                self._show_status("Executing query...")
+            self._show_status("Executing query...")
+        elif status is ExecutionStatus.CANCELLATION_REQUESTED:
+            self.desktop_actions.run.setEnabled(False)
+            self.desktop_actions.cancel.setEnabled(True)
+            self._show_status("Cancellation requested")
         else:
+            self._elapsed_timer.stop()
+            self._query_started_at = None
             self.desktop_actions.run.setEnabled(bool(self._catalog_service.entries))
             self.desktop_actions.cancel.setEnabled(False)
+
+    def _update_elapsed_status(self) -> None:
+        if self._query_started_at is None:
+            return
+        elapsed_seconds = max(0, int(time.monotonic() - self._query_started_at))
+        if self._query_status is ExecutionStatus.CANCELLATION_REQUESTED:
+            self._show_status(f"Cancelling... ({elapsed_seconds}s)")
+        else:
+            self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
         self._last_request, self._last_result = request, result
@@ -461,6 +548,16 @@ class MainWindow(QMainWindow):
             self.result_table_view.set_frame(result.frame)
         else:
             self.result_table_view.set_frame(None)
+        is_empty_result = (
+            result.status is ExecutionStatus.SUCCEEDED
+            and result.frame is not None
+            and result.frame.height == 0
+        )
+        if is_empty_result:
+            self.empty_result_banner.setText("Query returned 0 rows.")
+        else:
+            self.empty_result_banner.clear()
+        self.empty_result_banner.setVisible(is_empty_result)
         if result.status is ExecutionStatus.FAILED:
             self.result_error_message.setText(
                 f"Query failed: {result.error_message or 'Unknown error'}"
@@ -504,7 +601,7 @@ class MainWindow(QMainWindow):
                 10000,
             )
 
-    def _start_export(self, full_export: bool) -> None:
+    def _start_export(self, full_export: bool, export_format: ExportFormat | None = None) -> None:
         if (
             self._last_result is None
             or self._last_result.frame is None
@@ -515,10 +612,7 @@ class MainWindow(QMainWindow):
         if choose_export_path is None:
             self._show_status("Export dialog is unavailable", 5000)
             return
-        export_format = self.export_format_selector.currentData()
-        if not isinstance(export_format, ExportFormat):
-            self._show_status("No export format is selected", 5000)
-            return
+        export_format = export_format or self._current_export_format()
         destination = choose_export_path(None, export_format, self)
         if destination is not None:
             self.export_controller.export(
@@ -529,20 +623,35 @@ class MainWindow(QMainWindow):
                 full_export,
             )
 
-    def _export_selected_scope(self) -> None:
-        scope = self.export_scope_selector.currentData()
+    def _show_export_options(self) -> None:
+        dialog = ExportOptionsDialog(self._settings_service, self)
+        self.export_options_dialog = dialog
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        export_format = dialog.format_selector.currentData()
+        scope = dialog.scope_selector.currentData()
+        if not isinstance(export_format, ExportFormat) or not isinstance(scope, str):
+            return
+        self._settings_service.save_export_format(export_format.value)
+        self._settings_service.save_export_scope(scope)
         if scope == "preview":
-            self._start_export(False)
+            self._start_export(False, export_format)
         elif scope == "full":
-            self._start_export(True)
+            self._start_export(True, export_format)
         elif scope == "selection":
-            self._export_selection()
+            self._export_selection(export_format)
+
+    def _current_export_format(self) -> ExportFormat:
+        try:
+            return ExportFormat(self._settings_service.restore_export_format())
+        except ValueError:
+            return ExportFormat.CSV
 
     def _on_preview_filter_error(self, message: str) -> None:
         self.preview_filter_error.setText(message)
         self.preview_filter_error.setVisible(bool(message))
 
-    def _export_selection(self) -> None:
+    def _export_selection(self, export_format: ExportFormat | None = None) -> None:
         if not self.result_table_view.has_result():
             return
         frame = self.result_table_view.frame()
@@ -551,8 +660,8 @@ class MainWindow(QMainWindow):
             self._show_status("Select result cells to export", 5000)
             return
         choose_export_path = getattr(self._file_dialog_service, "choose_export_path", None)
-        export_format = self.export_format_selector.currentData()
-        if choose_export_path is None or not isinstance(export_format, ExportFormat):
+        export_format = export_format or self._current_export_format()
+        if choose_export_path is None:
             return
         destination = choose_export_path(None, export_format, self)
         if destination is None:
@@ -601,10 +710,18 @@ class MainWindow(QMainWindow):
         if not paths:
             return
 
-        was_empty_catalog = not self._catalog_service.entries
-        result = self._catalog_service.add_paths(paths)
+        self.catalog.add_paths(paths)
+
+    def _handle_add_result(self, result: CatalogServiceReport) -> None:
+        duplicate_message = ""
+        if result.duplicates:
+            duplicate_names = ", ".join(path.name for path in result.duplicates)
+            duplicate_message = (
+                f"Skipped {len(result.duplicates)} duplicate dataset(s): {duplicate_names}"
+            )
         if result.added:
             first = result.added[0]
+            was_empty_catalog = len(self._catalog_service.entries) == len(result.added)
             if was_empty_catalog and not self.editor.text().strip():
                 self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)}")
             self._settings_service.save_last_dataset_directory(first.path.parent)
@@ -621,8 +738,13 @@ class MainWindow(QMainWindow):
                         self._catalog_service.mark_profile_skipped(
                             entry.id, "Profiling skipped: source exceeds the configured size limit."
                         )
-            self._show_status(f"Added `{first.alias}` to catalog.")
+            message = f"Added `{first.alias}` to catalog."
+            if duplicate_message:
+                message = f"{message} {duplicate_message}"
+            self._show_status(message)
             self._update_catalog_affordances()
+        elif duplicate_message:
+            self._show_status(duplicate_message)
         if result.warnings:
             self._show_status("\n".join(sorted(set(result.warnings))))
 
@@ -749,38 +871,11 @@ class MainWindow(QMainWindow):
             self.preview_filter_input.toolTip(),
         )
 
-        self.export_format_selector = QComboBox(results_page)
-        self.export_format_selector.setObjectName("export_format_selector")
-        for label, export_format in (
-            ("CSV", ExportFormat.CSV),
-            ("Excel", ExportFormat.XLSX),
-            ("Parquet", ExportFormat.PARQUET),
-        ):
-            self.export_format_selector.addItem(label, export_format)
-        self._add_labelled_control(
-            export_controls,
-            "Export format",
-            self.export_format_selector,
-            "Choose the file format for exported query results.",
-        )
-
-        self.export_scope_selector = QComboBox(results_page)
-        self.export_scope_selector.setObjectName("export_scope_selector")
-        self.export_scope_selector.addItem("Preview", "preview")
-        self.export_scope_selector.addItem("Full results", "full")
-        self.export_scope_selector.addItem("Selection", "selection")
-        self._add_labelled_control(
-            export_controls,
-            "Export scope",
-            self.export_scope_selector,
-            "Choose which result scope to export.",
-        )
-
         self.export_button = QPushButton("Export", results_page)
         self.export_button.setObjectName("export_button")
         self.export_button.setToolTip("Export results using the selected format and scope.")
         self.export_button.setEnabled(False)
-        self.export_button.clicked.connect(self._export_selected_scope)
+        self.export_button.clicked.connect(self._show_export_options)
         export_controls.addWidget(self.export_button)
 
         export_controls.setStretch(1, 1)
@@ -830,6 +925,10 @@ class MainWindow(QMainWindow):
         self.empty_catalog_banner = QLabel("Please add a dataset to begin.", results)
         self.empty_catalog_banner.setObjectName("empty_catalog_banner")
         results_layout.insertWidget(0, self.empty_catalog_banner)
+        self.empty_result_banner = QLabel(results)
+        self.empty_result_banner.setObjectName("empty_result_banner")
+        self.empty_result_banner.setVisible(False)
+        results_layout.insertWidget(1, self.empty_result_banner)
 
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
@@ -887,11 +986,18 @@ class MainWindow(QMainWindow):
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
         assert menu_bar is not None
-        file_menu = cast(QMenu, menu_bar.addMenu("File"))
+        file_menu = cast(QMenu, menu_bar.addMenu("&File"))
         file_menu.setObjectName("file_menu")
-        file_menu.addAction(self.desktop_actions.clear_history)
+        file_menu.addAction(self.desktop_actions.add_datasets)
+        file_menu.addSeparator()
+        self.quit_action = QAction("Quit", self)
+        self.quit_action.setShortcuts(
+            [QKeySequence("Ctrl+Q"), QKeySequence(QKeySequence.StandardKey.Quit)]
+        )
+        self.quit_action.triggered.connect(self.close)
+        file_menu.addAction(self.quit_action)
 
-        edit_menu = cast(QMenu, menu_bar.addMenu("Edit"))
+        edit_menu = cast(QMenu, menu_bar.addMenu("&Edit"))
         edit_menu.setObjectName("edit_menu")
         undo, redo, _cut, _copy, _paste, toggle_comment = self.editor.edit_actions
         edit_menu.addAction(undo)
@@ -927,8 +1033,10 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.find_replace_action)
         edit_menu.addSeparator()
         edit_menu.addAction(toggle_comment)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.desktop_actions.clear_history)
 
-        query_menu = cast(QMenu, menu_bar.addMenu("Query"))
+        query_menu = cast(QMenu, menu_bar.addMenu("&Query"))
         query_menu.setObjectName("query_menu")
         query_menu.addAction(self.desktop_actions.run)
         query_menu.addAction(self.desktop_actions.cancel)
@@ -939,7 +1047,7 @@ class MainWindow(QMainWindow):
         query_menu.addAction(self.desktop_actions.export_full)
         query_menu.addAction(self.desktop_actions.export_selection)
 
-        view_menu = cast(QMenu, menu_bar.addMenu("View"))
+        view_menu = cast(QMenu, menu_bar.addMenu("&View"))
         view_menu.setObjectName("view_menu")
         for dock in (
             self._catalog_dock_widget,
@@ -957,7 +1065,7 @@ class MainWindow(QMainWindow):
         self.preferences_action.triggered.connect(self._show_preferences)
         view_menu.addAction(self.preferences_action)
 
-        help_menu = cast(QMenu, menu_bar.addMenu("Help"))
+        help_menu = cast(QMenu, menu_bar.addMenu("&Help"))
         help_menu.setObjectName("help_menu")
         self.about_action = help_menu.addAction("About")
         assert self.about_action is not None
@@ -967,6 +1075,12 @@ class MainWindow(QMainWindow):
         self.documentation_action.triggered.connect(
             lambda: webbrowser.open("https://github.com/beallio/wherewolf#readme")
         )
+        dialect_menu = help_menu.addMenu("SQL Dialect Reference")
+        assert dialect_menu is not None
+        for label, url in SQL_DIALECT_REFERENCE_URLS.items():
+            action = dialect_menu.addAction(label)
+            assert action is not None
+            action.triggered.connect(lambda _checked=False, url=url: webbrowser.open(url))
         self.licenses_action = help_menu.addAction("Open-Source Licenses")
         assert self.licenses_action is not None
         self.licenses_action.triggered.connect(self._show_licenses)
@@ -1054,21 +1168,24 @@ class MainWindow(QMainWindow):
         self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        self.query_controller.cancel()
+        self.export_controller.cancel()
+        self._elapsed_timer.stop()
+        self._query_started_at = None
         for worker in list(self._schema_workers):
             if worker.isRunning():
                 worker.quit()
-                worker.wait()
+                worker.wait(5000)
         self._schema_workers.clear()
 
         for worker in list(self._profile_workers):
             if worker.isRunning():
                 worker.quit()
-                worker.wait()
+                worker.wait(5000)
         self._profile_workers.clear()
 
         self.query_controller.shutdown()
         self.export_controller.shutdown()
-
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())

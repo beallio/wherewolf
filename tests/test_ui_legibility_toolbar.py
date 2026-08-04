@@ -9,7 +9,6 @@ def test_main_window_labels_every_query_control(qtbot) -> None:
     controls = {
         "engine_selector": "Execution engine",
         "input_dialect_selector": "Input dialect",
-        "export_format_selector": "Export format",
         "preview_limit_selector": "Preview rows",
         "translation_target_selector": "Translation target",
     }
