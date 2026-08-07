@@ -1,5 +1,7 @@
 """Widget for displaying schema columns, data types, inspection states, and errors."""
 
+from uuid import UUID
+
 from PyQt6.QtCore import QPoint, QSignalBlocker, Qt, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
@@ -44,6 +46,7 @@ class SchemaPanel(QWidget):
         self._entry: CatalogEntry | None = None
         self._schema_result: SchemaResult | None = None
         self._profile_result: ProfileResult | None = None
+        self._pending_profile_entry_ids: set[UUID] = set()
         self._entries_by_alias: dict[str, CatalogEntry] = {}
 
         layout = QVBoxLayout(self)
@@ -116,7 +119,16 @@ class SchemaPanel(QWidget):
         self._update_view()
 
     def set_profile_result(self, result: ProfileResult) -> None:
+        if self._entry is None or self._entry.id != result.entry_id:
+            return
         self._profile_result = result
+        self._update_view()
+
+    def set_profile_pending(self, entry_id: UUID, pending: bool) -> None:
+        if pending:
+            self._pending_profile_entry_ids.add(entry_id)
+        else:
+            self._pending_profile_entry_ids.discard(entry_id)
         self._update_view()
 
     def _request_profile(self) -> None:
@@ -128,7 +140,11 @@ class SchemaPanel(QWidget):
         if self._schema_result is not None:
             return self._schema_result.columns is None and self._schema_result.error_message is None
         if self._entry is not None:
-            return self._entry.schema is None and self._entry.schema_error is None
+            return (
+                self._entry.schema is None
+                and self._entry.schema_error is None
+                or (self._entry.id in self._pending_profile_entry_ids)
+            )
         return False
 
     def has_error(self) -> bool:
@@ -211,24 +227,24 @@ class SchemaPanel(QWidget):
     def _update_view(self) -> None:
         columns: tuple[ColumnSchema, ...] | None = None
         profiles: tuple[ColumnProfile, ...] | None = None
-        error_msg: str | None = None
+        schema_error_msg: str | None = None
+        profile_error_msg: str | None = None
         alias = self._entry.alias if self._entry is not None else None
 
         if self._schema_result is not None:
             columns = self._schema_result.columns
-            error_msg = self._schema_result.error_message
+            schema_error_msg = self._schema_result.error_message
         elif self._entry is not None:
             columns = self._entry.schema
-            error_msg = self._entry.schema_error
+            schema_error_msg = self._entry.schema_error
             profiles = self._entry.profile
         if self._profile_result is not None:
             profiles = self._profile_result.profiles
-            if self._profile_result.error_message is not None:
-                error_msg = self._profile_result.error_message
+            profile_error_msg = self._profile_result.error_message
 
-        if error_msg is not None:
+        if schema_error_msg is not None:
             prefix = f"{alias} — " if alias is not None else ""
-            self._status_label.setText(f"{prefix}Schema error: {error_msg}")
+            self._status_label.setText(f"{prefix}Schema error: {schema_error_msg}")
             self._status_label.show()
             self._table_widget.setRowCount(0)
             self._table_widget.hide()
@@ -245,7 +261,6 @@ class SchemaPanel(QWidget):
             if len(columns) == 0:
                 prefix = f"{alias} — " if alias is not None else ""
                 self._status_label.setText(f"{prefix}No columns found in table")
-                self._status_label.show()
             else:
                 if alias is None:
                     self._status_label.setText(f"Schema ({len(columns)} columns):")
@@ -262,7 +277,13 @@ class SchemaPanel(QWidget):
                         self._status_label.setText(
                             f"{self._status_label.text()} — Profile is stale; re-profile this source."
                         )
-                self._status_label.show()
+                if profile_error_msg is not None:
+                    self._status_label.setText(
+                        f"{self._status_label.text()} — Profiling failed: {profile_error_msg}"
+                    )
+                if self._is_profile_pending():
+                    self._status_label.setText(f"{self._status_label.text()} — Profiling...")
+            self._status_label.show()
 
             self._table_widget.show()
             self._table_widget.setRowCount(len(columns))
@@ -293,3 +314,8 @@ class SchemaPanel(QWidget):
                     start=4,
                 ):
                     self._table_widget.setItem(r, index, QTableWidgetItem(value))
+
+        self.profile_button.setEnabled(not self._is_profile_pending())
+
+    def _is_profile_pending(self) -> bool:
+        return self._entry is not None and self._entry.id in self._pending_profile_entry_ids

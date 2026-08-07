@@ -1,7 +1,8 @@
 import json
+import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from uuid import uuid4
 
 import polars as pl
@@ -39,16 +40,52 @@ from wherewolf.desktop.main_window import MainWindow
 from wherewolf.desktop.workers.schema_worker import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
+    ColumnProfile,
     ColumnSchema,
     EngineKind,
     ExecutionRequest,
     ExecutionStatus,
+    ProfileResult,
     QueryResult,
     SchemaResult,
     SourceFormat,
 )
 from wherewolf.services import CatalogService, ExportFormat, SettingsService
 from wherewolf.storage import HistoryManager
+
+
+class _ProfileAdapter:
+    def __init__(self, responses: list[ProfileResult], delay: float = 0.0) -> None:
+        self._responses = responses
+        self._delay = delay
+
+    def profile_dataset(self, _entry) -> ProfileResult:
+        time.sleep(self._delay)
+        if not self._responses:
+            raise RuntimeError("no profile response configured")
+        return self._responses.pop(0)
+
+    def close(self) -> None:
+        pass
+
+
+class _ProfileRegistry:
+    def __init__(self, responses: list[ProfileResult], delay: float = 0.0) -> None:
+        self.adapter = _ProfileAdapter(responses=responses, delay=delay)
+        self.calls: list[tuple[EngineKind, object]] = []
+
+    def create(self, kind: EngineKind, request_id) -> _ProfileAdapter:
+        self.calls.append((kind, request_id))
+        return self.adapter
+
+
+def _write_large_profile_dataset(path: Path, row_count: int, label_width: int = 36) -> int:
+    payload = "x" * label_width
+    with path.open("w", encoding="utf-8") as handle:
+        handle.write("id,name\n")
+        for index in range(row_count):
+            handle.write(f"{index},row-{index}-{payload}\n")
+    return path.stat().st_size
 
 
 def _configure_qsettings_path(tmp_path: Path) -> SettingsService:
@@ -1711,10 +1748,11 @@ def test_manual_profile_bypasses_over_limit_auto_profile_gate_and_updates_schema
     qtbot, tmp_path: Path, monkeypatch
 ) -> None:
     csv_file = tmp_path / "over-limit-profile.csv"
-    csv_file.write_text("id\n1\n")
+    profile_source_bytes = _write_large_profile_dataset(csv_file, row_count=250_000)
+    assert profile_source_bytes > 5_000_000
     window = MainWindow()
     qtbot.addWidget(window)
-    window._settings_service.save_profile_max_bytes(0)
+    window._settings_service.save_profile_max_bytes(profile_source_bytes // 2)
     monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
 
     window.catalog.add_paths((csv_file,))
@@ -1725,15 +1763,263 @@ def test_manual_profile_bypasses_over_limit_auto_profile_gate_and_updates_schema
     assert "size limit" in entry.profile_skipped_reason
     assert window._profile_workers == []
 
-    window._catalog_service.update_schema(SchemaResult(entry.id, (ColumnSchema("id", "BIGINT"),)))
+    window._catalog_service.update_schema(
+        SchemaResult(entry.id, (ColumnSchema("id", "BIGINT"), ColumnSchema("name", "VARCHAR")))
+    )
     window.schema_panel.set_entries(window._catalog_service.entries, entry.alias)
     window.schema_panel.profile_button.click()
     assert len(window._profile_workers) == 1
     qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
+    assert "profiling skipped" not in window.schema_panel.status_text().lower()
 
     profiled_entry = window._catalog_service.entries[0]
     assert profiled_entry.profile is not None
     assert window.schema_panel.cell_text(0, 5)
+    assert window.schema_panel.cell_text(0, 4)
+    assert window.schema_panel.cell_text(1, 6)
+    assert window.schema_panel.cell_text(1, 5)
+
+
+def test_main_window_profile_failure_keeps_skip_notice_until_success_clears(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    csv_file = tmp_path / "profile-failure-preserves-skip.csv"
+    csv_file.write_text("id,name\n1,alpha\n2,beta\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._settings_service.save_profile_max_bytes(0)
+    monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
+    window.catalog.add_paths((csv_file,))
+    entry = window._catalog_service.entries[0]
+
+    window._catalog_service.update_schema(
+        SchemaResult(
+            entry.id,
+            (
+                ColumnSchema("id", "BIGINT"),
+                ColumnSchema("name", "VARCHAR"),
+            ),
+        )
+    )
+    window.schema_panel.set_entries(window._catalog_service.entries, entry.alias)
+    window._engine_registry = cast(
+        Any,
+        _ProfileRegistry(
+            [
+                ProfileResult(
+                    entry.id,
+                    profiles=None,
+                    error_message="profiling exploded",
+                ),
+                ProfileResult(
+                    entry.id,
+                    profiles=(
+                        ColumnProfile(
+                            name="id",
+                            data_type="BIGINT",
+                            min="1",
+                            max="2",
+                            approx_unique=2,
+                            avg=1.5,
+                            std=None,
+                            q25=None,
+                            q50=None,
+                            q75=None,
+                            count=2,
+                            null_percentage=0.0,
+                        ),
+                        ColumnProfile(
+                            name="name",
+                            data_type="VARCHAR",
+                            min="alpha",
+                            max="beta",
+                            approx_unique=2,
+                            avg=None,
+                            std=None,
+                            q25=None,
+                            q50=None,
+                            q75=None,
+                            count=2,
+                            null_percentage=0.0,
+                        ),
+                    ),
+                ),
+            ]
+        ),
+    )
+    window.schema_panel.profile_button.click()
+
+    qtbot.waitUntil(
+        lambda: "Profiling failed: profiling exploded" in window.schema_panel.status_text(),
+        timeout=5000,
+    )
+    failed_entry = window._catalog_service.entries[0]
+    assert "profiling skipped" in window.schema_panel.status_text().lower()
+    assert failed_entry.profile_skipped_reason is not None
+    qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
+
+    window.schema_panel.profile_button.click()
+    qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
+    successful_entry = window._catalog_service.entries[0]
+    assert successful_entry.profile_skipped_reason is None
+    assert "profiling failed: profiling exploded" not in window.schema_panel.status_text().lower()
+    assert "profiling skipped" not in window.schema_panel.status_text().lower()
+
+
+def test_main_window_profile_failure_reaches_schema_panel_and_keeps_columns_visible(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    csv_file = tmp_path / "profile-failure.csv"
+    csv_file.write_text("id,name\n1,alpha\n2,beta\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
+    window.catalog.add_paths((csv_file,))
+    entry = window._catalog_service.entries[0]
+
+    window._catalog_service.update_schema(
+        SchemaResult(entry.id, (ColumnSchema("id", "BIGINT"), ColumnSchema("name", "VARCHAR")))
+    )
+    window.schema_panel.set_entries(window._catalog_service.entries, entry.alias)
+
+    registry = _ProfileRegistry(
+        [ProfileResult(entry.id, profiles=None, error_message="profiling exploded")],
+    )
+    window._engine_registry = cast(Any, registry)
+    window.schema_panel.profile_button.click()
+
+    qtbot.waitUntil(
+        lambda: "Profiling failed: profiling exploded" in window.schema_panel.status_text(),
+        timeout=5000,
+    )
+    assert window.schema_panel._table_widget.isVisible()
+    assert window.schema_panel.column_count_rows() == 2
+    assert "profiling failed: profiling exploded" in window.schema_panel.status_text().lower()
+    qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
+    assert "profiling..." not in window.schema_panel.status_text().lower()
+
+
+def test_main_window_profile_pending_state_is_visible_and_single_queued(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    csv_file = tmp_path / "profile-pending.csv"
+    csv_file.write_text("id,name\n1,alpha\n2,beta\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window._settings_service, "restore_profile_on_load", lambda: False)
+    monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
+    window.catalog.add_paths((csv_file,))
+    entry = window._catalog_service.entries[0]
+
+    window._catalog_service.update_schema(
+        SchemaResult(
+            entry.id,
+            (
+                ColumnSchema("id", "BIGINT"),
+                ColumnSchema("name", "VARCHAR"),
+            ),
+        )
+    )
+    window.schema_panel.set_entries(window._catalog_service.entries, entry.alias)
+    window._engine_registry = cast(
+        Any,
+        _ProfileRegistry(
+            [
+                ProfileResult(
+                    entry.id,
+                    profiles=(
+                        ColumnProfile(
+                            name="id",
+                            data_type="BIGINT",
+                            min="1",
+                            max="2",
+                            approx_unique=2,
+                            avg=1.5,
+                            std=None,
+                            q25=None,
+                            q50=None,
+                            q75=None,
+                            count=2,
+                            null_percentage=0.0,
+                        ),
+                        ColumnProfile(
+                            name="name",
+                            data_type="VARCHAR",
+                            min="alpha",
+                            max="beta",
+                            approx_unique=2,
+                            avg=None,
+                            std=None,
+                            q25=None,
+                            q50=None,
+                            q75=None,
+                            count=2,
+                            null_percentage=0.0,
+                        ),
+                    ),
+                    error_message=None,
+                    error_type=None,
+                )
+            ],
+            delay=0.25,
+        ),
+    )
+
+    window.schema_panel.profile_button.click()
+    qtbot.waitUntil(lambda: "profiling" in window.schema_panel.status_text().lower(), timeout=5000)
+    assert not window.schema_panel.profile_button.isEnabled()
+    assert len(window._profile_workers) == 1
+
+    window.schema_panel.profile_button.click()
+    assert len(window._profile_workers) == 1
+
+    qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
+    qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
+    assert "profiling" not in window.schema_panel.status_text().lower()
+    assert window.schema_panel.cell_text(0, 4)
+    assert window.schema_panel.column_count_rows() == 2
+
+
+def test_main_window_profile_result_from_inactive_entry_does_not_replace_view(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    first = tmp_path / "first.csv"
+    second = tmp_path / "second.csv"
+    first.write_text("id\n1\n")
+    second.write_text("id\n2\n")
+    window = MainWindow()
+    qtbot.addWidget(window)
+    monkeypatch.setattr(window, "_queue_schema_work", lambda _binding: None)
+    window.catalog.add_paths((first, second))
+    first_entry = window._catalog_service.entries[0]
+    second_entry = window._catalog_service.entries[1]
+
+    window._catalog_service.update_schema(
+        SchemaResult(first_entry.id, (ColumnSchema("id", "BIGINT"),))
+    )
+    window._catalog_service.update_schema(
+        SchemaResult(second_entry.id, (ColumnSchema("id", "BIGINT"),)),
+    )
+    window.schema_panel.set_entries(window._catalog_service.entries, first_entry.alias)
+    registry = _ProfileRegistry(
+        [ProfileResult(second_entry.id, profiles=None, error_message="second dataset failed")]
+    )
+    window._engine_registry = cast(Any, registry)
+    window._queue_profile_work(
+        CatalogBinding(
+            entry_id=second_entry.id,
+            alias=second_entry.alias,
+            path=second_entry.path,
+            source_format=second_entry.source_format,
+        )
+    )
+    qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
+
+    assert first_entry.alias in window.schema_panel.status_text()
+    assert window.schema_panel.column_count_rows() == 1
+    assert "second dataset failed" not in window.schema_panel.status_text().lower()
 
 
 def test_main_window_close_waits_for_running_profile_workers(qtbot, tmp_path: Path) -> None:

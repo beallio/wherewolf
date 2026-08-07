@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.7.1] - 2026-08-06
+
+### Fixed
+
+- Column profiling now reports when it fails. Previously a failed profile left the statistics
+  columns blank, cleared the "profiling skipped" notice, and showed no error at all — which
+  looked identical to nothing having happened. The failure is now named in the schema panel,
+  and the column list stays visible because the schema itself is still valid.
+- The "profiling skipped" notice stays until profiling actually succeeds, instead of being
+  cleared by a failed attempt.
+
+### Added
+
+- A "Profiling…" indicator while profiling runs, with the Profile button disabled so the same
+  dataset cannot be queued twice.
+
 ## [0.7.0] - 2026-08-04
 
 ### Added

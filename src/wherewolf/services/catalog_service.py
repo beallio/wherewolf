@@ -167,7 +167,9 @@ class CatalogService:
             profile=profile_result.profiles,
             profile_error=profile_result.error_message,
             profile_stale=False,
-            profile_skipped_reason=None,
+            profile_skipped_reason=(
+                None if profile_result.error_message is None else entry.profile_skipped_reason
+            ),
             profile_source_size=profile_source_size,
             profile_source_mtime_ns=profile_source_mtime_ns,
         )
