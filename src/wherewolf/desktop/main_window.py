@@ -788,6 +788,7 @@ class MainWindow(QMainWindow):
         worker.start()
 
     def _queue_profile_work(self, binding: CatalogBinding) -> None:
+        self.schema_panel.set_profile_pending(binding.entry_id, True)
         worker = ProfileWorker(
             engine_registry=self._engine_registry,
             binding=binding,
@@ -798,6 +799,9 @@ class MainWindow(QMainWindow):
             lambda: (
                 self._profile_workers.remove(worker) if worker in self._profile_workers else None
             )
+        )
+        worker.finished.connect(
+            lambda: self.schema_panel.set_profile_pending(binding.entry_id, False)
         )
         self._profile_workers.append(worker)
         worker.start()
@@ -828,8 +832,13 @@ class MainWindow(QMainWindow):
             ),
             None,
         )
-        if entry is not None:
+        if (
+            entry is not None
+            and self.schema_panel._entry is not None
+            and entry.id == self.schema_panel._entry.id
+        ):
             self.schema_panel.set_entries(self._catalog_service.entries, entry.alias)
+            self.schema_panel.set_profile_result(profile_result)
 
     def _on_schema_result(self, schema_result: SchemaResult) -> None:
         self._catalog_service.update_schema(schema_result)
