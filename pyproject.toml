@@ -1,6 +1,6 @@
 [project]
 name = "wherewolf"
-version = "0.7.0"
+version = "0.7.1"
 description = "A production-grade, local SQL workbench for querying files (CSV, Parquet, JSON) using DuckDB or Spark."
 license = "GPL-3.0-only"
 license-files = ["LICENSE", "LICENSES/*"]
