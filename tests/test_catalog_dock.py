@@ -54,8 +54,8 @@ def test_main_window_uses_catalog_dock_tableview(qtbot) -> None:
 
 
 def test_catalog_file_column_elides_paths_in_the_middle(qtbot) -> None:
-    first_path = Path("/very/long/shared/prefix/directory/segments/a.csv")
-    second_path = Path("/very/long/shared/prefix/directory/segments/b.csv")
+    first_path = Path("/very/long/shared/prefix/directory/segments/customers.parquet")
+    second_path = Path("/very/long/shared/prefix/directory/segments/loans.parquet")
     service = CatalogService()
     service.add_paths((first_path, second_path))
     dock = CatalogDock(service)
@@ -64,16 +64,26 @@ def test_catalog_file_column_elides_paths_in_the_middle(qtbot) -> None:
     view = dock.view
     header = view.horizontalHeader()
     assert header is not None
+    header.resizeSection(1, 258)
     font_metrics = QFontMetrics(view.font())
     available_width = header.sectionSize(1) - 8
-    first_shown = font_metrics.elidedText(str(first_path), view.textElideMode(), available_width)
-    second_shown = font_metrics.elidedText(str(second_path), view.textElideMode(), available_width)
-
-    assert first_shown != second_shown, (
-        f"identical elided strings: {first_shown!r}, {second_shown!r}"
+    first_middle = font_metrics.elidedText(str(first_path), view.textElideMode(), available_width)
+    second_middle = font_metrics.elidedText(str(second_path), view.textElideMode(), available_width)
+    first_right = font_metrics.elidedText(
+        str(first_path), Qt.TextElideMode.ElideRight, available_width
     )
-    assert first_path.name in first_shown
-    assert second_path.name in second_shown
+    second_right = font_metrics.elidedText(
+        str(second_path), Qt.TextElideMode.ElideRight, available_width
+    )
+
+    assert first_middle != second_middle, (
+        f"identical middle-elided strings: {first_middle!r}, {second_middle!r}"
+    )
+    assert first_path.name in first_middle
+    assert second_path.name in second_middle
+    assert first_right == second_right, (
+        f"different right-elided strings: {first_right!r}, {second_right!r}"
+    )
     assert view.textElideMode() == Qt.TextElideMode.ElideMiddle
 
 
