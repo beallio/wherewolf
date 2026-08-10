@@ -1,7 +1,7 @@
 {
   "date": "2026-08-10",
   "task_objective": "Implement the catalog File-column elision and temporal-profile plan one reviewed task per round.",
-  "current_round": "Task 4 verification complete; round marker pending",
+  "current_round": "Final V1-V6 verification complete; session-log commit and round marker pending",
   "files_modified": [
     "src/wherewolf/desktop/widgets/catalog_dock.py",
     "src/wherewolf/domain/models.py",
@@ -119,6 +119,14 @@
       "remediation": "Removed those exact generated cache directories after inspecting their contents.",
       "final_git_ls_files_others": "(empty)",
       "final_cache_find": "(empty)"
+    },
+    "final_round_2026_08_10_1627_pdt": {
+      "V1_elide_mode_mutation": "1 failed, 1 passed in 0.26s; AssertionError: identical middle-elided strings: '/very/long/shared/prefix/directory/segme…', '/very/long/shared/prefix/directory/segme…'.",
+      "V2_stretch_mode_mutation": "1 failed, 2 passed in 0.27s; AssertionError: File column did not grow: narrow=100, wide=100.",
+      "V3_float_coercion_mutation": "The mandated broad selector produced 1 failed, 2 passed, 491 deselected, and 1 error in 1.11s: test_main_window ran before the temporal fixture and QTableWidgetItem rejected the mutated float. The focused temporal test then produced 1 failed in 0.14s with AssertionError: could not convert string to float: '2024-01-01 00:00:49.5'; error_type was ValueError and profiles was ().",
+      "V4_fixture_type_guard": "1 failed in 0.17s; AssertionError: Temporal fixture was not inferred as TIMESTAMP; it cannot exercise temporal profiling. Expected TIMESTAMP, got VARCHAR.",
+      "V5_negative_control": "git status --porcelain: (empty); ruff: All checks passed!; ty: All checks passed!; pytest: 499 passed, 7 deselected in 13.22s; cache bytes: 3351967249.",
+      "V6_repository_cleanliness": "Initial find output: ./src/wherewolf/__pycache__. Inspection showed it was ignored by .gitignore and contained four generated .pyc files only. Removed that exact directory; the final quality gate regenerated the same four files, so they were inspected and removed once more. Final git ls-files --others --exclude-standard and cache find outputs were both empty."
     }
   },
   "environment_recovery": "The required cache-budget check initially failed because /tmp/wherewolf was a directory. Its contents were preserved at /tmp/wherewolf-cache-recovery-20260810-1543, then /tmp/wherewolf was restored as a symlink to /home/beallio/.local/state/wherewolf-cache before re-running project commands.",
@@ -129,5 +137,12 @@
     "std, q25, q50, and q75 carry correct text but are not rendered by SchemaPanel; surfacing them is out of scope.",
     "Only TIMESTAMP is covered end to end; DATE, TIME, and TIMESTAMP WITH TIME ZONE are not separately tested.",
     "Windows paths are not exercised on Windows; catalog elision fixtures use POSIX paths."
+  ],
+  "plan_deferred_verification_verbatim": [
+    "No GUI was launched. All Qt verification is headless and asserts on `QFontMetrics.elidedText` and header section sizes. Nobody has looked at the real window. Whether `ElideMiddle` plus a stretched File column *looks* right in the running app is unverified, and the user should check it against `fix/Screenshot_20260802_132729.png`.",
+    "The `str()` removal at `schema_panel.py:312` is not mutation-tested. `str()` on a `str` is the identity function, so reverting it changes no observable behaviour and no test can catch it. It is a readability change only.",
+    "`std`, `q25`, `q50`, `q75` are still not rendered anywhere. Task 3 and Task 4 make them carry correct values, but `SchemaPanel` displays only `Mean`. Surfacing the quartiles is out of scope for this plan.",
+    "Only `TIMESTAMP` is covered end to end. `DATE`, `TIME`, and `TIMESTAMP WITH TIME ZONE` were measured to fail the same way but are not separately tested. Say so rather than implying full temporal coverage.",
+    "Windows paths are not exercised on Windows. Defect A was reported with a `C:\\...` path; the tests use POSIX fixtures. The elision logic is platform-independent, but the path separators in the fixtures are not."
   ]
 }
