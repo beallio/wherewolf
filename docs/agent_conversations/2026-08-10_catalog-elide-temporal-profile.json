@@ -1,7 +1,7 @@
 {
   "date": "2026-08-10",
   "task_objective": "Implement the catalog File-column elision and temporal-profile plan one reviewed task per round.",
-  "current_round": "Task 3 implementation",
+  "current_round": "Task 4 verification complete; round marker pending",
   "files_modified": [
     "src/wherewolf/desktop/widgets/catalog_dock.py",
     "src/wherewolf/domain/models.py",
@@ -10,13 +10,15 @@
     "tests/test_catalog_dock.py",
     "tests/test_catalog_service.py",
     "tests/test_main_window.py",
-    "tests/test_schema_panel.py"
+    "tests/test_schema_panel.py",
+    "tests/test_profile_temporal.py"
   ],
   "tests_added": [
     "At a 250-pixel File-cell paint budget, Catalog File cells render distinct customers.parquet and loans.parquet basenames with ElideMiddle while ElideRight renders the two paths identically.",
     "At 400 and 900 pixel dock widths, the stretched File column grows and the Alias, File, Format, and Schema status columns use Interactive, Stretch, ResizeToContents, and ResizeToContents modes respectively.",
     "At the user's 450-pixel dock width, the real customers.parquet and loans.parquet File cells render as distinct strings.",
-    "A TIMESTAMP profile mean of 2024-01-01 00:00:49.5 renders verbatim in the SchemaPanel Mean cell."
+    "A TIMESTAMP profile mean of 2024-01-01 00:00:49.5 renders verbatim in the SchemaPanel Mean cell.",
+    "The real DuckDB adapter profiles an inferred TIMESTAMP CSV column without an error, preserves its temporal mean and quartiles as text, and keeps an integer column's mean as numeric text."
   ],
   "red_test_output": {
     "task_1": {
@@ -38,6 +40,11 @@
       "command": "./run.sh uv run ty check tests/test_schema_panel.py",
       "exit_code": 1,
       "failure": "error[invalid-argument-type] at tests/test_schema_panel.py:140: Expected int | float | None, found Literal[2024-01-01 00:00:49.5]"
+    },
+    "task_4": {
+      "command": "./run.sh uv run pytest tests/test_profile_temporal.py -q",
+      "exit_code": 1,
+      "failure": "AssertionError: could not convert string to float: '2024-01-01 00:00:49.5'; error_type was ValueError and profiles was ()."
     }
   },
   "design_decisions": [
@@ -46,14 +53,16 @@
     "Review R2 changes Task 2's Format and Schema status resize modes to ResizeToContents, keeps Alias Interactive and File Stretch, and adds a 450-pixel distinguishability check.",
     "At 450 pixels the accepted outcome is row distinguishability, not a full basename: the File column's approximately 190-pixel budget cannot hold the complete 54-character path. Full readability begins at roughly 600 pixels; the fixture remains unshortened.",
     "Review R3 replaces the 450-pixel test's synthetic paths with the user's real /run/media/beallio/external/datasets paths. With Format and Schema status temporarily changed to Interactive, the test fails on the two identical '/run/medi…s.parquet' strings at a 128-pixel File paint budget; restoring ResizeToContents makes it pass.",
-    "Task 3 exposes avg, std, q25, q50, and q75 as str | None and renders avg directly. A custom ColumnProfile initializer normalizes the frozen Task 3 registry output from legacy float values to text without touching registry.py; _as_float still executes and temporal profiling still fails until Task 4."
+    "Task 3 exposes avg, std, q25, q50, and q75 as str | None and renders avg directly.",
+    "Review R4 restores ColumnProfile's generated constructor so its str | None boundary rejects leftover numeric callers, then changes the five DuckDB SUMMARIZE statistics to _as_text. null_percentage remains numeric through _as_float."
   ],
   "cache_budget_bytes": {
     "task_1": 2789445143,
     "task_1_review_remediation": 2856819463,
     "task_2": 2952644284,
     "task_2_review_remediation": 3048457643,
-    "task_3": 3157940194
+    "task_3": 3157940194,
+    "task_4": 3240130714
   },
   "results": {
     "targeted_task_1_test": "1 passed, 13 deselected in 0.86s",
@@ -69,11 +78,56 @@
     "baseline_before_task_3": "497 passed, 7 deselected in 13.27s",
     "task_3_green": "tests/test_schema_panel.py, tests/test_catalog_service.py, and tests/test_main_window.py: 117 passed in 4.45s; ty check src: All checks passed; cache bytes: 3127125685.",
     "task_3_regression_diagnosis": "Directly rendering the widened text field exposed the still-frozen registry float output: QTableWidgetItem rejected float values. ColumnProfile now normalizes those legacy numeric constructor inputs to text, preserving the numeric UI output while Task 4 remains the only registry change.",
-    "quality_gates_task_3": "ruff check: All checks passed; ruff format: 158 files left unchanged; ty check src: All checks passed; pytest: 498 passed, 7 deselected in 13.11s; no deleted review notes; cache bytes: 3157940194."
+    "quality_gates_task_3": "ruff check: All checks passed; ruff format: 158 files left unchanged; ty check src: All checks passed; pytest: 498 passed, 7 deselected in 13.11s; no deleted review notes; cache bytes: 3157940194.",
+    "baseline_before_task_4": "498 passed, 7 deselected in 13.07s",
+    "task_4_green": "tests/test_profile_temporal.py: 1 passed in 0.54s; ty check src: All checks passed; cache bytes: 3224161857.",
+    "quality_gates_task_4": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty check src: All checks passed; pytest: 499 passed, 7 deselected in 13.12s; no deleted review notes; cache bytes: 3240130714."
+  },
+  "verification": {
+    "V1_elide_mode_mutation": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -x",
+      "exit_code": 1,
+      "failure": "AssertionError: identical middle-elided strings: '/very/long/shared/prefix/directory/segme…', '/very/long/shared/prefix/directory/segme…'"
+    },
+    "V2_stretch_mode_mutation": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -x",
+      "exit_code": 1,
+      "failure": "AssertionError: File column did not grow: narrow=100, wide=100"
+    },
+    "V3_float_coercion_mutation": {
+      "command": "./run.sh uv run pytest -k 'temporal or profile' -x",
+      "exit_code": 1,
+      "output": "1 failed, 2 passed, 491 deselected, 1 error in 1.10s; the existing numeric-profile UI test ran before the temporal fixture and reported QTableWidgetItem received float.",
+      "focused_command": "./run.sh uv run pytest tests/test_profile_temporal.py -x",
+      "focused_exit_code": 1,
+      "focused_failure": "AssertionError: could not convert string to float: '2024-01-01 00:00:49.5'; error_type was ValueError and profiles was ()."
+    },
+    "V4_fixture_type_guard": {
+      "command": "./run.sh uv run pytest tests/test_profile_temporal.py -q",
+      "exit_code": 1,
+      "failure": "AssertionError: Temporal fixture was not inferred as TIMESTAMP; it cannot exercise temporal profiling. Expected TIMESTAMP, got VARCHAR."
+    },
+    "V5_negative_control": {
+      "git_status_porcelain": "(empty)",
+      "ruff": "All checks passed!",
+      "ty": "All checks passed!",
+      "pytest": "499 passed, 7 deselected in 13.08s",
+      "cache_budget": "cache bytes: 3272102636"
+    },
+    "V6_repository_cleanliness": {
+      "initial_output": "12 ignored __pycache__ directories containing only .pyc files were found in the repository; this is a failure under the cache policy.",
+      "remediation": "Removed those exact generated cache directories after inspecting their contents.",
+      "final_git_ls_files_others": "(empty)",
+      "final_cache_find": "(empty)"
+    }
   },
   "environment_recovery": "The required cache-budget check initially failed because /tmp/wherewolf was a directory. Its contents were preserved at /tmp/wherewolf-cache-recovery-20260810-1543, then /tmp/wherewolf was restored as a symlink to /home/beallio/.local/state/wherewolf-cache before re-running project commands.",
   "deferred_verification": [
     "No GUI was launched; Tasks 1 and 2 are verified headlessly against QFontMetrics.elidedText and QHeaderView section sizes.",
-    "At the user's 450-pixel dock width, the full basenames are not expected to be visible; the tested and accepted outcome is distinguishability."
+    "At the user's 450-pixel dock width, the full basenames are not expected to be visible; the tested and accepted outcome is distinguishability.",
+    "The str() removal at schema_panel.py:312 is not mutation-tested because str() on a str is an identity operation.",
+    "std, q25, q50, and q75 carry correct text but are not rendered by SchemaPanel; surfacing them is out of scope.",
+    "Only TIMESTAMP is covered end to end; DATE, TIME, and TIMESTAMP WITH TIME ZONE are not separately tested.",
+    "Windows paths are not exercised on Windows; catalog elision fixtures use POSIX paths."
   ]
 }

@@ -123,7 +123,7 @@ class SchemaResult:
     error_message: str | None = None
 
 
-@dataclass(frozen=True, slots=True, init=False)
+@dataclass(frozen=True, slots=True)
 class ColumnProfile:
     """Summary statistics returned for one dataset column."""
 
@@ -139,35 +139,6 @@ class ColumnProfile:
     q75: str | None
     count: int | None
     null_percentage: float | None
-
-    def __init__(
-        self,
-        name: str,
-        data_type: str,
-        min: str | None,
-        max: str | None,
-        approx_unique: int | None,
-        avg: str | float | None,
-        std: str | float | None,
-        q25: str | float | None,
-        q50: str | float | None,
-        q75: str | float | None,
-        count: int | None,
-        null_percentage: float | None,
-    ) -> None:
-        """Normalize legacy numeric statistics while exposing text to callers."""
-        object.__setattr__(self, "name", name)
-        object.__setattr__(self, "data_type", data_type)
-        object.__setattr__(self, "min", min)
-        object.__setattr__(self, "max", max)
-        object.__setattr__(self, "approx_unique", approx_unique)
-        object.__setattr__(self, "avg", str(avg) if avg is not None else None)
-        object.__setattr__(self, "std", str(std) if std is not None else None)
-        object.__setattr__(self, "q25", str(q25) if q25 is not None else None)
-        object.__setattr__(self, "q50", str(q50) if q50 is not None else None)
-        object.__setattr__(self, "q75", str(q75) if q75 is not None else None)
-        object.__setattr__(self, "count", count)
-        object.__setattr__(self, "null_percentage", null_percentage)
 
 
 @dataclass(frozen=True, slots=True)
