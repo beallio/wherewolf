@@ -309,7 +309,7 @@ class SchemaPanel(QWidget):
                         else "",
                         profile.min if profile and profile.min is not None else "",
                         profile.max if profile and profile.max is not None else "",
-                        str(profile.avg) if profile and profile.avg is not None else "",
+                        profile.avg if profile and profile.avg is not None else "",
                     ),
                     start=4,
                 ):
