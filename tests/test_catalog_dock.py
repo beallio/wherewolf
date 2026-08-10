@@ -111,8 +111,8 @@ def test_catalog_file_column_stretches_to_available_dock_width(qtbot) -> None:
 
 
 def test_catalog_file_column_keeps_paths_distinct_at_user_dock_width(qtbot) -> None:
-    first_path = Path("/very/long/shared/prefix/directory/segments/customers.parquet")
-    second_path = Path("/very/long/shared/prefix/directory/segments/loans.parquet")
+    first_path = Path("/run/media/beallio/external/datasets/customers.parquet")
+    second_path = Path("/run/media/beallio/external/datasets/loans.parquet")
     service = CatalogService()
     service.add_paths((first_path, second_path))
     dock = CatalogDock(service)

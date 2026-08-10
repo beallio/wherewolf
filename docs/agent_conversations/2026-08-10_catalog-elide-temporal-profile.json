@@ -1,7 +1,7 @@
 {
   "date": "2026-08-10",
   "task_objective": "Implement the catalog File-column elision and temporal-profile plan one reviewed task per round.",
-  "current_round": "Task 2 after review round 02",
+  "current_round": "Task 2 review-round-03 remediation",
   "files_modified": [
     "src/wherewolf/desktop/widgets/catalog_dock.py",
     "docs/agent_conversations/2026-08-10_catalog-elide-temporal-profile.json",
@@ -22,18 +22,25 @@
       "command": "./run.sh uv run pytest tests/test_catalog_dock.py -k 'stretches_to_available_dock_width or keeps_paths_distinct_at_user_dock_width' -q",
       "exit_code": 1,
       "failure": "AssertionError: File column did not grow: narrow=100, wide=100; AssertionError: File cells are indistinguishable at 450 px: '/very/l…parquet', '/very/l…parquet'; available_width=92"
+    },
+    "task_2_review_remediation": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -k keeps_paths_distinct_at_user_dock_width -q",
+      "exit_code": 1,
+      "failure": "Intentional columns-2/3 Interactive mutation: AssertionError: File cells are indistinguishable at 450 px: '/run/medi…s.parquet', '/run/medi…s.parquet'; available_width=128"
     }
   },
   "design_decisions": [
     "Set QTableView.textElideMode to ElideMiddle while keeping CatalogModel display and tooltip paths unchanged.",
     "Review R1 replaces the invalid default-width a.csv/b.csv fixture with customers.parquet/loans.parquet and an explicit 258-pixel section (250-pixel paint budget). At that budget ElideMiddle preserves distinct full basenames while ElideRight renders identical strings; the test asserts both properties and the configured mode.",
     "Review R2 changes Task 2's Format and Schema status resize modes to ResizeToContents, keeps Alias Interactive and File Stretch, and adds a 450-pixel distinguishability check.",
-    "At 450 pixels the accepted outcome is row distinguishability, not a full basename: the File column's approximately 190-pixel budget cannot hold the complete 54-character path. Full readability begins at roughly 600 pixels; the fixture remains unshortened."
+    "At 450 pixels the accepted outcome is row distinguishability, not a full basename: the File column's approximately 190-pixel budget cannot hold the complete 54-character path. Full readability begins at roughly 600 pixels; the fixture remains unshortened.",
+    "Review R3 replaces the 450-pixel test's synthetic paths with the user's real /run/media/beallio/external/datasets paths. With Format and Schema status temporarily changed to Interactive, the test fails on the two identical '/run/medi…s.parquet' strings at a 128-pixel File paint budget; restoring ResizeToContents makes it pass."
   ],
   "cache_budget_bytes": {
     "task_1": 2789445143,
     "task_1_review_remediation": 2856819463,
-    "task_2": 2952644284
+    "task_2": 2952644284,
+    "task_2_review_remediation": 3048457643
   },
   "results": {
     "targeted_task_1_test": "1 passed, 13 deselected in 0.86s",
@@ -43,7 +50,9 @@
     "quality_gates": "ruff check passed; ruff format reported 158 files unchanged; ty check src passed; pytest: 495 passed, 7 deselected in 13.21s; no deleted review notes",
     "baseline_before_task_2": "495 passed, 7 deselected in 12.94s",
     "targeted_task_2_tests": "2 passed, 14 deselected in 0.57s",
-    "quality_gates_task_2": "ruff check: All checks passed after the formatter gate fixed one import-order violation; ruff format: 158 files left unchanged; ty: All checks passed; pytest: 497 passed, 7 deselected in 13.26s; no deleted review notes; cache bytes: 2952644284"
+    "quality_gates_task_2": "ruff check: All checks passed after the formatter gate fixed one import-order violation; ruff format: 158 files left unchanged; ty: All checks passed; pytest: 497 passed, 7 deselected in 13.26s; no deleted review notes; cache bytes: 2952644284",
+    "task_2_review_remediation": "Intentional columns-2/3 Interactive mutation: 1 failed, 15 deselected in 0.59s with identical '/run/medi…s.parquet' strings and available_width=128; restored ResizeToContents: 1 passed, 15 deselected in 0.59s; cache bytes: 3048457643.",
+    "quality_gates_task_2_review_remediation": "ruff check: All checks passed; ruff format: 158 files left unchanged; ty: All checks passed; pytest: 497 passed, 7 deselected in 13.19s; no deleted review notes."
   },
   "environment_recovery": "The required cache-budget check initially failed because /tmp/wherewolf was a directory. Its contents were preserved at /tmp/wherewolf-cache-recovery-20260810-1543, then /tmp/wherewolf was restored as a symlink to /home/beallio/.local/state/wherewolf-cache before re-running project commands.",
   "deferred_verification": [
