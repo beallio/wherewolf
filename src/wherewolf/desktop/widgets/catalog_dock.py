@@ -11,6 +11,7 @@ from PyQt6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QHeaderView,
     QInputDialog,
     QMenu,
     QMessageBox,
@@ -50,6 +51,10 @@ class CatalogDock(QWidget):
         header = self._view.horizontalHeader()
         if header is not None:
             header.setSectionsMovable(True)
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self._view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self._view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)

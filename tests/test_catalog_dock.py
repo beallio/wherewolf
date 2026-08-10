@@ -6,7 +6,7 @@ import pytest
 from PyQt6.QtCore import QMimeData, QPointF, Qt, QUrl
 from PyQt6.QtGui import QDropEvent, QFontMetrics
 from PyQt6.QtTest import QSignalSpy
-from PyQt6.QtWidgets import QApplication, QDockWidget, QTableView
+from PyQt6.QtWidgets import QApplication, QDockWidget, QHeaderView, QTableView
 
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.desktop.models import CatalogModel
@@ -85,6 +85,54 @@ def test_catalog_file_column_elides_paths_in_the_middle(qtbot) -> None:
         f"different right-elided strings: {first_right!r}, {second_right!r}"
     )
     assert view.textElideMode() == Qt.TextElideMode.ElideMiddle
+
+
+def test_catalog_file_column_stretches_to_available_dock_width(qtbot) -> None:
+    dock = CatalogDock(CatalogService())
+    qtbot.addWidget(dock)
+    dock.show()
+
+    view = dock.view
+    header = view.horizontalHeader()
+    assert header is not None
+
+    dock.resize(400, 200)
+    QApplication.processEvents()
+    narrow = header.sectionSize(1)
+    dock.resize(900, 200)
+    QApplication.processEvents()
+    wide = header.sectionSize(1)
+
+    assert wide > narrow, f"File column did not grow: narrow={narrow}, wide={wide}"
+    assert header.sectionResizeMode(0) == QHeaderView.ResizeMode.Interactive
+    assert header.sectionResizeMode(1) == QHeaderView.ResizeMode.Stretch
+    assert header.sectionResizeMode(2) == QHeaderView.ResizeMode.ResizeToContents
+    assert header.sectionResizeMode(3) == QHeaderView.ResizeMode.ResizeToContents
+
+
+def test_catalog_file_column_keeps_paths_distinct_at_user_dock_width(qtbot) -> None:
+    first_path = Path("/very/long/shared/prefix/directory/segments/customers.parquet")
+    second_path = Path("/very/long/shared/prefix/directory/segments/loans.parquet")
+    service = CatalogService()
+    service.add_paths((first_path, second_path))
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+    dock.resize(450, 200)
+    dock.show()
+    QApplication.processEvents()
+
+    view = dock.view
+    header = view.horizontalHeader()
+    assert header is not None
+    available_width = header.sectionSize(1) - 8
+    font_metrics = QFontMetrics(view.font())
+    first_shown = font_metrics.elidedText(str(first_path), view.textElideMode(), available_width)
+    second_shown = font_metrics.elidedText(str(second_path), view.textElideMode(), available_width)
+
+    assert first_shown != second_shown, (
+        "File cells are indistinguishable at 450 px: "
+        f"{first_shown!r}, {second_shown!r}; available_width={available_width}"
+    )
 
 
 def test_catalog_dock_drag_and_drop_adds_supported_files(qtbot, tmp_path: Path) -> None:

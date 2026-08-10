@@ -1,38 +1,53 @@
 {
   "date": "2026-08-10",
   "task_objective": "Implement the catalog File-column elision and temporal-profile plan one reviewed task per round.",
-  "current_round": "Task 1 remediation after review round 01",
+  "current_round": "Task 2 after review round 02",
   "files_modified": [
     "src/wherewolf/desktop/widgets/catalog_dock.py",
     "docs/agent_conversations/2026-08-10_catalog-elide-temporal-profile.json",
     "tests/test_catalog_dock.py"
   ],
   "tests_added": [
-    "At a 250-pixel File-cell paint budget, Catalog File cells render distinct customers.parquet and loans.parquet basenames with ElideMiddle while ElideRight renders the two paths identically."
+    "At a 250-pixel File-cell paint budget, Catalog File cells render distinct customers.parquet and loans.parquet basenames with ElideMiddle while ElideRight renders the two paths identically.",
+    "At 400 and 900 pixel dock widths, the stretched File column grows and the Alias, File, Format, and Schema status columns use Interactive, Stretch, ResizeToContents, and ResizeToContents modes respectively.",
+    "At the user's 450-pixel dock width, the real customers.parquet and loans.parquet File cells render as distinct strings."
   ],
   "red_test_output": {
-    "command": "./run.sh uv run pytest tests/test_catalog_dock.py -k elides -x",
-    "exit_code": 1,
-    "failure": "Intentional ElideRight mutation: AssertionError: identical middle-elided strings: '/very/long/shared/prefix/directory/segme…', '/very/long/shared/prefix/directory/segme…'"
+    "task_1": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -k elides -x",
+      "exit_code": 1,
+      "failure": "Intentional ElideRight mutation: AssertionError: identical middle-elided strings: '/very/long/shared/prefix/directory/segme…', '/very/long/shared/prefix/directory/segme…'"
+    },
+    "task_2": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -k 'stretches_to_available_dock_width or keeps_paths_distinct_at_user_dock_width' -q",
+      "exit_code": 1,
+      "failure": "AssertionError: File column did not grow: narrow=100, wide=100; AssertionError: File cells are indistinguishable at 450 px: '/very/l…parquet', '/very/l…parquet'; available_width=92"
+    }
   },
   "design_decisions": [
     "Set QTableView.textElideMode to ElideMiddle while keeping CatalogModel display and tooltip paths unchanged.",
     "Review R1 replaces the invalid default-width a.csv/b.csv fixture with customers.parquet/loans.parquet and an explicit 258-pixel section (250-pixel paint budget). At that budget ElideMiddle preserves distinct full basenames while ElideRight renders identical strings; the test asserts both properties and the configured mode.",
-    "Review R2 changes Task 2's forthcoming Format and Schema status resize modes to ResizeToContents and adds a 450-pixel distinguishability check. It is deliberately deferred: this remediation round changes only the Task 1 regression fence."
+    "Review R2 changes Task 2's Format and Schema status resize modes to ResizeToContents, keeps Alias Interactive and File Stretch, and adds a 450-pixel distinguishability check.",
+    "At 450 pixels the accepted outcome is row distinguishability, not a full basename: the File column's approximately 190-pixel budget cannot hold the complete 54-character path. Full readability begins at roughly 600 pixels; the fixture remains unshortened."
   ],
   "cache_budget_bytes": {
     "task_1": 2789445143,
-    "task_1_review_remediation": 2856819463
+    "task_1_review_remediation": 2856819463,
+    "task_2": 2952644284
   },
   "results": {
     "targeted_task_1_test": "1 passed, 13 deselected in 0.86s",
     "task_1_review_remediation": "Intentional ElideRight mutation: 1 failed, 13 deselected in 0.32s; restored ElideMiddle: 1 passed, 13 deselected in 0.61s.",
     "baseline_before_remediation": "495 passed, 7 deselected in 13.02s",
     "cache_budget": "cache bytes: 2856819463",
-    "quality_gates": "ruff check passed; ruff format reported 158 files unchanged; ty check src passed; pytest: 495 passed, 7 deselected in 13.21s; no deleted review notes"
+    "quality_gates": "ruff check passed; ruff format reported 158 files unchanged; ty check src passed; pytest: 495 passed, 7 deselected in 13.21s; no deleted review notes",
+    "baseline_before_task_2": "495 passed, 7 deselected in 12.94s",
+    "targeted_task_2_tests": "2 passed, 14 deselected in 0.57s",
+    "quality_gates_task_2": "ruff check: All checks passed after the formatter gate fixed one import-order violation; ruff format: 158 files left unchanged; ty: All checks passed; pytest: 497 passed, 7 deselected in 13.26s; no deleted review notes; cache bytes: 2952644284"
   },
   "environment_recovery": "The required cache-budget check initially failed because /tmp/wherewolf was a directory. Its contents were preserved at /tmp/wherewolf-cache-recovery-20260810-1543, then /tmp/wherewolf was restored as a symlink to /home/beallio/.local/state/wherewolf-cache before re-running project commands.",
   "deferred_verification": [
-    "No GUI was launched; Task 1 is verified headlessly against QFontMetrics.elidedText."
+    "No GUI was launched; Tasks 1 and 2 are verified headlessly against QFontMetrics.elidedText and QHeaderView section sizes.",
+    "At the user's 450-pixel dock width, the full basenames are not expected to be visible; the tested and accepted outcome is distinguishability."
   ]
 }
