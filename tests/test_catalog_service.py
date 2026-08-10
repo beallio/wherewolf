@@ -173,7 +173,7 @@ def test_profile_is_marked_stale_when_its_source_changes(tmp_path: Path) -> None
     service.update_profile(
         ProfileResult(
             entry.id,
-            (ColumnProfile("a", "BIGINT", "1", "1", 1, 1.0, None, 1.0, 1.0, 1.0, 1, 0.0),),
+            (ColumnProfile("a", "BIGINT", "1", "1", 1, "1.0", None, "1.0", "1.0", "1.0", 1, 0.0),),
         )
     )
 

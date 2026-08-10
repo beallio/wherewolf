@@ -114,6 +114,44 @@ def test_schema_panel_displays_profile_with_approximate_distinct_label(qtbot: Qt
     assert panel.cell_text(0, 8) == ""
 
 
+def test_schema_panel_displays_temporal_profile_mean_verbatim(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    entry_id = uuid4()
+    panel.set_entry(
+        CatalogEntry(
+            id=entry_id,
+            alias="events",
+            path=Path("events.csv"),
+            source_format=SourceFormat.CSV,
+            schema=(ColumnSchema("event_ts", "TIMESTAMP"),),
+        )
+    )
+    panel.set_profile_result(
+        ProfileResult(
+            entry_id=entry_id,
+            profiles=(
+                ColumnProfile(
+                    "event_ts",
+                    "TIMESTAMP",
+                    "2024-01-01 00:00:00",
+                    "2024-01-01 00:01:39",
+                    100,
+                    "2024-01-01 00:00:49.5",
+                    None,
+                    None,
+                    None,
+                    None,
+                    100,
+                    0.0,
+                ),
+            ),
+        )
+    )
+
+    assert panel.cell_text(0, 8) == "2024-01-01 00:00:49.5"
+
+
 def test_schema_panel_error_display(qtbot: QtBot) -> None:
     panel = SchemaPanel()
     qtbot.addWidget(panel)

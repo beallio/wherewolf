@@ -1,16 +1,22 @@
 {
   "date": "2026-08-10",
   "task_objective": "Implement the catalog File-column elision and temporal-profile plan one reviewed task per round.",
-  "current_round": "Task 2 review-round-03 remediation",
+  "current_round": "Task 3 implementation",
   "files_modified": [
     "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "src/wherewolf/domain/models.py",
+    "src/wherewolf/desktop/widgets/schema_panel.py",
     "docs/agent_conversations/2026-08-10_catalog-elide-temporal-profile.json",
-    "tests/test_catalog_dock.py"
+    "tests/test_catalog_dock.py",
+    "tests/test_catalog_service.py",
+    "tests/test_main_window.py",
+    "tests/test_schema_panel.py"
   ],
   "tests_added": [
     "At a 250-pixel File-cell paint budget, Catalog File cells render distinct customers.parquet and loans.parquet basenames with ElideMiddle while ElideRight renders the two paths identically.",
     "At 400 and 900 pixel dock widths, the stretched File column grows and the Alias, File, Format, and Schema status columns use Interactive, Stretch, ResizeToContents, and ResizeToContents modes respectively.",
-    "At the user's 450-pixel dock width, the real customers.parquet and loans.parquet File cells render as distinct strings."
+    "At the user's 450-pixel dock width, the real customers.parquet and loans.parquet File cells render as distinct strings.",
+    "A TIMESTAMP profile mean of 2024-01-01 00:00:49.5 renders verbatim in the SchemaPanel Mean cell."
   ],
   "red_test_output": {
     "task_1": {
@@ -27,6 +33,11 @@
       "command": "./run.sh uv run pytest tests/test_catalog_dock.py -k keeps_paths_distinct_at_user_dock_width -q",
       "exit_code": 1,
       "failure": "Intentional columns-2/3 Interactive mutation: AssertionError: File cells are indistinguishable at 450 px: '/run/medi…s.parquet', '/run/medi…s.parquet'; available_width=128"
+    },
+    "task_3": {
+      "command": "./run.sh uv run ty check tests/test_schema_panel.py",
+      "exit_code": 1,
+      "failure": "error[invalid-argument-type] at tests/test_schema_panel.py:140: Expected int | float | None, found Literal[2024-01-01 00:00:49.5]"
     }
   },
   "design_decisions": [
@@ -34,13 +45,15 @@
     "Review R1 replaces the invalid default-width a.csv/b.csv fixture with customers.parquet/loans.parquet and an explicit 258-pixel section (250-pixel paint budget). At that budget ElideMiddle preserves distinct full basenames while ElideRight renders identical strings; the test asserts both properties and the configured mode.",
     "Review R2 changes Task 2's Format and Schema status resize modes to ResizeToContents, keeps Alias Interactive and File Stretch, and adds a 450-pixel distinguishability check.",
     "At 450 pixels the accepted outcome is row distinguishability, not a full basename: the File column's approximately 190-pixel budget cannot hold the complete 54-character path. Full readability begins at roughly 600 pixels; the fixture remains unshortened.",
-    "Review R3 replaces the 450-pixel test's synthetic paths with the user's real /run/media/beallio/external/datasets paths. With Format and Schema status temporarily changed to Interactive, the test fails on the two identical '/run/medi…s.parquet' strings at a 128-pixel File paint budget; restoring ResizeToContents makes it pass."
+    "Review R3 replaces the 450-pixel test's synthetic paths with the user's real /run/media/beallio/external/datasets paths. With Format and Schema status temporarily changed to Interactive, the test fails on the two identical '/run/medi…s.parquet' strings at a 128-pixel File paint budget; restoring ResizeToContents makes it pass.",
+    "Task 3 exposes avg, std, q25, q50, and q75 as str | None and renders avg directly. A custom ColumnProfile initializer normalizes the frozen Task 3 registry output from legacy float values to text without touching registry.py; _as_float still executes and temporal profiling still fails until Task 4."
   ],
   "cache_budget_bytes": {
     "task_1": 2789445143,
     "task_1_review_remediation": 2856819463,
     "task_2": 2952644284,
-    "task_2_review_remediation": 3048457643
+    "task_2_review_remediation": 3048457643,
+    "task_3": 3157940194
   },
   "results": {
     "targeted_task_1_test": "1 passed, 13 deselected in 0.86s",
@@ -52,7 +65,11 @@
     "targeted_task_2_tests": "2 passed, 14 deselected in 0.57s",
     "quality_gates_task_2": "ruff check: All checks passed after the formatter gate fixed one import-order violation; ruff format: 158 files left unchanged; ty: All checks passed; pytest: 497 passed, 7 deselected in 13.26s; no deleted review notes; cache bytes: 2952644284",
     "task_2_review_remediation": "Intentional columns-2/3 Interactive mutation: 1 failed, 15 deselected in 0.59s with identical '/run/medi…s.parquet' strings and available_width=128; restored ResizeToContents: 1 passed, 15 deselected in 0.59s; cache bytes: 3048457643.",
-    "quality_gates_task_2_review_remediation": "ruff check: All checks passed; ruff format: 158 files left unchanged; ty: All checks passed; pytest: 497 passed, 7 deselected in 13.19s; no deleted review notes."
+    "quality_gates_task_2_review_remediation": "ruff check: All checks passed; ruff format: 158 files left unchanged; ty: All checks passed; pytest: 497 passed, 7 deselected in 13.19s; no deleted review notes.",
+    "baseline_before_task_3": "497 passed, 7 deselected in 13.27s",
+    "task_3_green": "tests/test_schema_panel.py, tests/test_catalog_service.py, and tests/test_main_window.py: 117 passed in 4.45s; ty check src: All checks passed; cache bytes: 3127125685.",
+    "task_3_regression_diagnosis": "Directly rendering the widened text field exposed the still-frozen registry float output: QTableWidgetItem rejected float values. ColumnProfile now normalizes those legacy numeric constructor inputs to text, preserving the numeric UI output while Task 4 remains the only registry change.",
+    "quality_gates_task_3": "ruff check: All checks passed; ruff format: 158 files left unchanged; ty check src: All checks passed; pytest: 498 passed, 7 deselected in 13.11s; no deleted review notes; cache bytes: 3157940194."
   },
   "environment_recovery": "The required cache-budget check initially failed because /tmp/wherewolf was a directory. Its contents were preserved at /tmp/wherewolf-cache-recovery-20260810-1543, then /tmp/wherewolf was restored as a symlink to /home/beallio/.local/state/wherewolf-cache before re-running project commands.",
   "deferred_verification": [
