@@ -46,6 +46,7 @@ class CatalogDock(QWidget):
         self._view = QTableView(self)
         self._view.setObjectName("catalog_view")
         self._view.setModel(self._model)
+        self._view.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         header = self._view.horizontalHeader()
         if header is not None:
             header.setSectionsMovable(True)

@@ -1,0 +1,34 @@
+{
+  "date": "2026-08-10",
+  "task_objective": "Implement the catalog File-column elision and temporal-profile plan one reviewed task per round.",
+  "current_round": "Task 1 - Elide the File column in the middle",
+  "files_modified": [
+    "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "docs/agent_conversations/2026-08-10_catalog-elide-temporal-profile.json",
+    "tests/test_catalog_dock.py"
+  ],
+  "tests_added": [
+    "Catalog File cells retain distinct basenames in their actual default-width elided text."
+  ],
+  "red_test_output": {
+    "command": "./run.sh uv run pytest tests/test_catalog_dock.py -k elides -x",
+    "exit_code": 1,
+    "failure": "AssertionError: identical elided strings: '/very/long/sha…', '/very/long/sha…'"
+  },
+  "design_decisions": [
+    "Set QTableView.textElideMode to ElideMiddle while keeping CatalogModel display and tooltip paths unchanged.",
+    "The plan's sample customers.parquet and loans.parquet are wider than the 92-pixel default paint budget in the current Qt font; even ElideMiddle renders both as '/very/l…parquet'. The regression fixture therefore uses a.csv and b.csv, whose complete basenames fit the trailing budget, while retaining the same shared long path prefix and proving the visible cells remain distinct."
+  ],
+  "cache_budget_bytes": {
+    "task_1": 2789445143
+  },
+  "results": {
+    "targeted_task_1_test": "1 passed, 13 deselected in 0.86s",
+    "cache_budget": "cache bytes: 2789445143",
+    "quality_gates": "ruff check passed; ruff format reported 158 files unchanged; ty check src passed; pytest: 495 passed, 7 deselected in 13.46s; no deleted review notes"
+  },
+  "environment_recovery": "The required cache-budget check initially failed because /tmp/wherewolf was a directory. Its contents were preserved at /tmp/wherewolf-cache-recovery-20260810-1543, then /tmp/wherewolf was restored as a symlink to /home/beallio/.local/state/wherewolf-cache before re-running project commands.",
+  "deferred_verification": [
+    "No GUI was launched; Task 1 is verified headlessly against QFontMetrics.elidedText."
+  ]
+}

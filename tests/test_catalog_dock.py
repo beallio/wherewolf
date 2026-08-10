@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 from PyQt6.QtCore import QMimeData, QPointF, Qt, QUrl
-from PyQt6.QtGui import QDropEvent
+from PyQt6.QtGui import QDropEvent, QFontMetrics
 from PyQt6.QtTest import QSignalSpy
 from PyQt6.QtWidgets import QApplication, QDockWidget, QTableView
 
@@ -51,6 +51,30 @@ def test_main_window_uses_catalog_dock_tableview(qtbot) -> None:
     assert isinstance(dock_widget.view, QTableView)
     assert isinstance(dock_widget.model, CatalogModel)
     assert dock_widget.model.rowCount() == 0
+
+
+def test_catalog_file_column_elides_paths_in_the_middle(qtbot) -> None:
+    first_path = Path("/very/long/shared/prefix/directory/segments/a.csv")
+    second_path = Path("/very/long/shared/prefix/directory/segments/b.csv")
+    service = CatalogService()
+    service.add_paths((first_path, second_path))
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+
+    view = dock.view
+    header = view.horizontalHeader()
+    assert header is not None
+    font_metrics = QFontMetrics(view.font())
+    available_width = header.sectionSize(1) - 8
+    first_shown = font_metrics.elidedText(str(first_path), view.textElideMode(), available_width)
+    second_shown = font_metrics.elidedText(str(second_path), view.textElideMode(), available_width)
+
+    assert first_shown != second_shown, (
+        f"identical elided strings: {first_shown!r}, {second_shown!r}"
+    )
+    assert first_path.name in first_shown
+    assert second_path.name in second_shown
+    assert view.textElideMode() == Qt.TextElideMode.ElideMiddle
 
 
 def test_catalog_dock_drag_and_drop_adds_supported_files(qtbot, tmp_path: Path) -> None:
