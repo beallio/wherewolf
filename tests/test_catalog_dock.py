@@ -3,9 +3,9 @@ from typing import cast
 from unittest.mock import Mock
 
 import pytest
-from PyQt6.QtCore import QMimeData, QPointF, Qt, QUrl
+from PyQt6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
 from PyQt6.QtGui import QDropEvent, QFontMetrics
-from PyQt6.QtTest import QSignalSpy
+from PyQt6.QtTest import QSignalSpy, QTest
 from PyQt6.QtWidgets import QApplication, QDockWidget, QHeaderView, QTableView
 
 from wherewolf.desktop.main_window import MainWindow
@@ -287,6 +287,82 @@ def test_catalog_context_menu_copy_and_remove_actions(qtbot, tmp_path: Path) -> 
 
     dock._remove_action.trigger()
     assert len(service.snapshot()) == 0
+
+
+def test_catalog_cell_selection_keeps_context_actions_on_the_clicked_entry(
+    qtbot, tmp_path: Path
+) -> None:
+    service = CatalogService()
+    first, second = tmp_path / "first.csv", tmp_path / "second.csv"
+    first.write_text("a\n1")
+    second.write_text("a\n1")
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+    dock.add_paths((first, second))
+    qtbot.waitUntil(lambda: dock.model.rowCount() == 2)
+    dock.resize(700, 300)
+    dock.show()
+
+    first_alias = dock.model.entry_at(0).alias
+    second_alias = dock.model.entry_at(1).alias
+    clicked_index = dock.model.index(1, 1)
+    qtbot.mouseClick(
+        dock.view.viewport(),
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        dock.view.visualRect(clicked_index).center(),
+    )
+
+    selection_model = dock.view.selectionModel()
+    assert selection_model is not None
+    selected_indexes = selection_model.selectedIndexes()
+    assert len(selected_indexes) == 1
+    assert selected_indexes[0] == clicked_index
+
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    dock._copy_alias_action.trigger()
+    assert clipboard.text() == second_alias
+
+    dock._remove_action.trigger()
+    assert tuple(entry.alias for entry in service.entries) == (first_alias,)
+
+
+def test_catalog_vertical_header_click_selects_the_whole_row(qtbot, tmp_path: Path) -> None:
+    service = CatalogService()
+    first, second = tmp_path / "first.csv", tmp_path / "second.csv"
+    first.write_text("a\n1")
+    second.write_text("a\n1")
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+    dock.add_paths((first, second))
+    qtbot.waitUntil(lambda: dock.model.rowCount() == 2)
+    dock.resize(700, 300)
+    dock.show()
+
+    header = dock.view.verticalHeader()
+    assert header is not None
+    viewport = header.viewport()
+    assert viewport is not None
+    position = QPoint(
+        viewport.width() // 2,
+        header.sectionPosition(1) + header.sectionSize(1) // 2,
+    )
+    QTest.mouseClick(  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+        viewport,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        position,
+    )
+
+    selection_model = dock.view.selectionModel()
+    assert selection_model is not None
+    assert {(index.row(), index.column()) for index in selection_model.selectedIndexes()} == {
+        (1, 0),
+        (1, 1),
+        (1, 2),
+        (1, 3),
+    }
 
 
 def test_catalog_context_menu_rename_error_message(qtbot, tmp_path: Path, monkeypatch) -> None:

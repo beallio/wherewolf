@@ -56,8 +56,8 @@ class CatalogDock(QWidget):
             header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self._view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
-        self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self._view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._view.setAlternatingRowColors(True)
         self._view.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -165,11 +165,11 @@ class CatalogDock(QWidget):
         if selection_model is None:
             return None
 
-        indexes = selection_model.selectedRows()
-        if not indexes:
+        current_index = selection_model.currentIndex()
+        if not current_index.isValid():
             return None
 
-        row = indexes[0].row()
+        row = current_index.row()
         if row < 0 or row >= self._model.rowCount():
             return None
 
