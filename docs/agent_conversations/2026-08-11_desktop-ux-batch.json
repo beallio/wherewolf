@@ -2,7 +2,7 @@
   "date": "2026-08-11",
   "task_objective": "Implement docs/plans/2026-08-11_desktop-ux-batch.md one reviewed task per round.",
   "branch": "feat/desktop-ux-batch",
-  "current_round": "Task 7 — Persist the auto-size preferences",
+  "current_round": "Task 8 — Clamped auto-size in the results view",
   "files_modified": [
     "docs/plans/2026-08-11_desktop-ux-batch.md",
     "src/wherewolf/desktop/main_window.py",
@@ -15,7 +15,9 @@
     "tests/test_main_window.py",
     "docs/agent_conversations/2026-08-11_desktop-ux-batch.json",
     "src/wherewolf/services/settings_service.py",
-    "tests/test_settings_service.py"
+    "tests/test_settings_service.py",
+    "src/wherewolf/desktop/widgets/result_table_view.py",
+    "tests/test_result_table_view.py"
   ],
   "tests_added": [
     "Ctrl+/ reaches SqlEditor Toggle Comment and does not insert a stray slash.",
@@ -27,7 +29,8 @@
     "Messages render errors and info messages with different foreground colours, including the expected light-theme error red.",
     "Severity colours remain distinct and meet a 4.5:1 contrast ratio against the configured Base colour in both light and dark palettes.",
     "Failed query results select the Messages tab, while successful results and editor diagnostics leave the selected Results tab unchanged.",
-    "Result-column auto-size enablement and width round-trip through QSettings; save-time widths clamp to 50–2000, while stored out-of-range values and booleans restore the 300 px default."
+    "Result-column auto-size enablement and width round-trip through QSettings; save-time widths clamp to 50–2000, while stored out-of-range values and booleans restore the 300 px default.",
+    "Result columns auto-size on frame delivery to a configured visible-column cap, while a disabled policy leaves the wide column unclamped."
   ],
   "red_test_output": {
     "task_1": {
@@ -69,6 +72,11 @@
       "command": "./run.sh uv run pytest tests/test_settings_service.py -q",
       "exit_code": 1,
       "failure": "AttributeError: 'SettingsService' object has no attribute 'restore_auto_size_columns'"
+    },
+    "task_8": {
+      "command": "./run.sh uv run pytest tests/test_result_table_view.py -k auto_sizes_columns_with_a_configured_width_cap -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 100 == 300; set_frame left the wide result column at the default section size instead of auto-sizing it."
     }
   },
   "design_decisions": [
@@ -82,7 +90,8 @@
     "Replace All now delegates its unchanged replacement-count calculation to the existing set_text_undoable helper, preserving the no-match early return while grouping the replacement as one native QScintilla undo action.",
     "MessagesPanel resolves severity colours from its own palette's Base role, keeping theme detection local to the widget and avoiding a settings dependency. Light uses error #b3261e, warning #7a4e00, info #005ac1; dark uses #ffb4ab, #ffb95d, and #a8c7fa.",
     "MainWindow owns the results QTabWidget so only failed query results can select its existing MessagesPanel; successful query results and editor diagnostics retain the caller's current tab.",
-    "Auto-size preferences use versioned results keys and the preview-limit quartet shape: the enablement value requires a real bool, while width is save-clamped to 50–2000 and restores the 300 px default for invalid persisted values, including bool."
+    "Auto-size preferences use versioned results keys and the preview-limit quartet shape: the enablement value requires a real bool, while width is save-clamped to 50–2000 and restores the 300 px default for invalid persisted values, including bool.",
+    "ResultTableView owns an enabled/max-width auto-size policy with defaults True/300, samples at most 200 rows for content sizing, auto-sizes after every populated frame only when enabled, and caps only visible columns so manual Auto-size Columns uses the same cap."
   ],
   "results": {
     "baseline": "499 passed, 7 deselected in 13.74s",
@@ -111,6 +120,9 @@
     "baseline_task_7": "509 passed, 7 deselected per committed review-07 gate rerun",
     "task_7_green": "tests/test_settings_service.py: 21 passed in 0.62s",
     "quality_gates_task_7": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 510 passed, 7 deselected in 13.42s; no deleted review notes",
+    "baseline_task_8": "510 passed, 7 deselected in 12.95s",
+    "task_8_green": "1 passed, 10 deselected in 0.67s",
+    "quality_gates_task_8": "ruff check: All checks passed; ruff format: 1 file reformatted, 158 files left unchanged; ty: All checks passed; pytest: 511 passed, 7 deselected in 13.86s; no deleted review notes",
     "cache_budget_bytes_task_1": 3538310802,
     "cache_budget_bytes_task_2": 3589635730,
     "cache_budget_bytes_task_3": 3714018371,
@@ -118,6 +130,7 @@
     "cache_budget_bytes_task_4": 3813253657,
     "cache_budget_bytes_task_5": 3937712371,
     "cache_budget_bytes_task_6": 4078101082,
-    "cache_budget_bytes_task_7": 4084896161
+    "cache_budget_bytes_task_7": 4084896161,
+    "cache_budget_bytes_task_8": 4164814351
   }
 }
