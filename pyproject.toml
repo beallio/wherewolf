@@ -53,7 +53,11 @@ cache-dir = "/tmp/wherewolf/.uv_cache"
 # machine-specific exclude-newer-span into uv.lock that CI cannot reproduce.
 exclude-newer = "2026-07-26T00:00:00Z"
 # polars 1.43.0/1.43.1 are yanked; 1.43.2 (the fix) postdates the pin.
-exclude-newer-package = { polars = false, "polars-runtime-32" = false, "polars-runtime-64" = false, pyludusavi = false }
+# cryptography 50.0.0 patches a PKCS#7 Bleichenbacher oracle (GHSA, high) and was
+# published 2026-07-31, after the pin. It is a dev-only transitive dependency
+# (hatch -> keyring -> secretstorage), but leaving it pinned also made every
+# Dependabot run fail to resolve, which hid any future alert.
+exclude-newer-package = { polars = false, "polars-runtime-32" = false, "polars-runtime-64" = false, pyludusavi = false, cryptography = false }
 
 [tool.ruff]
 line-length = 100
