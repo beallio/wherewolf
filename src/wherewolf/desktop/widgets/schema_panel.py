@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from PyQt6.QtCore import QPoint, QSignalBlocker, Qt, pyqtSignal
+from PyQt6.QtCore import QItemSelectionModel, QPoint, QSignalBlocker, Qt, pyqtSignal
 from PyQt6.QtGui import QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -85,7 +85,7 @@ class SchemaPanel(QWidget):
             header.setSectionsMovable(True)
             header.setStretchLastSection(True)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        self._table_widget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._table_widget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self._table_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._table_widget.setAlternatingRowColors(True)
         self._table_widget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -199,7 +199,11 @@ class SchemaPanel(QWidget):
         viewport = self._table_widget.viewport()
         if not index.isValid() or viewport is None:
             return
-        self._table_widget.selectRow(index.row())
+        selection_model = self._table_widget.selectionModel()
+        if selection_model is None or not selection_model.isSelected(index):
+            self._table_widget.setCurrentCell(
+                index.row(), index.column(), QItemSelectionModel.SelectionFlag.ClearAndSelect
+            )
         menu = self.create_context_menu(index.row(), index.column())
         QMenu.exec(menu, viewport.mapToGlobal(pos))
 
