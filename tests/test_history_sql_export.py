@@ -69,3 +69,37 @@ def test_serialise_history_records_to_sql_skips_records_without_string_queries()
     assert serialise_history_records_to_sql(records) == (
         "-- 2026-08-11T10:00:00+00:00\nSELECT retained\n"
     )
+
+
+def test_serialise_history_records_to_sql_orders_mixed_offsets_by_instant() -> None:
+    records = [
+        _record("2026-08-11T10:00:00+00:00", "SELECT older_instant"),
+        _record("2026-08-11T09:30:00-07:00", "SELECT newer_instant"),
+    ]
+
+    assert serialise_history_records_to_sql(records).startswith(
+        "-- 2026-08-11T09:30:00-07:00\nSELECT newer_instant\n"
+    )
+
+
+def test_serialise_history_records_to_sql_orders_mixed_naive_and_aware_timestamps() -> None:
+    records = [
+        _record("2026-08-11T09:30:00", "SELECT naive_older"),
+        _record("2026-08-11T09:00:00-07:00", "SELECT aware_newer"),
+    ]
+
+    assert serialise_history_records_to_sql(records).startswith(
+        "-- 2026-08-11T09:00:00-07:00\nSELECT aware_newer\n"
+    )
+
+
+def test_serialise_history_records_to_sql_keeps_unparseable_timestamp_after_valid_records() -> None:
+    records = [
+        _record("not-a-timestamp", "SELECT unparseable"),
+        _record("2026-08-11T10:00:00+00:00", "SELECT valid"),
+    ]
+
+    exported = serialise_history_records_to_sql(records)
+
+    assert exported.startswith("-- 2026-08-11T10:00:00+00:00\nSELECT valid\n")
+    assert "-- not-a-timestamp\nSELECT unparseable\n" in exported

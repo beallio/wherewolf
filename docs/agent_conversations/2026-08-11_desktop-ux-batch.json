@@ -39,7 +39,8 @@
     "Preferences persist result-column auto-size enablement and maximum width, apply them to the active view, and restore the 150 px policy in a fresh MainWindow.",
     "History deletion removes matching stable ids while preserving record order, supports multiple ids, ignores unknown ids without a write, skips empty deletion requests without a write, and preserves the migrated id of a legacy survivor.",
     "Review 11 adds independent guards that an unknown id does not call _write_history and that deleting a known v2 id migrates a raw v1 survivor on disk.",
-    "History SQL export serialises valid records newest-first into exact comment-prefixed SQL blocks, preserves embedded comments and trailing spaces, normalises terminal line endings to one blank separator and one final newline, and skips missing or non-string queries."
+    "History SQL export serialises valid records newest-first into exact comment-prefixed SQL blocks, preserves embedded comments and trailing spaces, normalises terminal line endings to one blank separator and one final newline, and skips missing or non-string queries.",
+    "History SQL export compares actual instants across mixed UTC offsets, treats naive timestamps as UTC without comparing naive and aware datetime instances directly, and retains unparseable timestamp records after all parseable records."
   ],
   "red_test_output": {
     "task_1": {
@@ -106,6 +107,11 @@
       "command": "./run.sh uv run pytest tests/test_history_sql_export.py",
       "exit_code": 1,
       "failure": "ModuleNotFoundError: No module named 'wherewolf.services.history_sql_export' during test collection."
+    },
+    "task_11_review_13": {
+      "command": "./run.sh uv run pytest tests/test_history_sql_export.py -x",
+      "exit_code": 1,
+      "failure": "AssertionError: the mixed-offset export began with -- 2026-08-11T10:00:00+00:00 SELECT older_instant instead of the newer -- 2026-08-11T09:30:00-07:00 SELECT newer_instant."
     }
   },
   "design_decisions": [
@@ -124,7 +130,7 @@
     "PreferencesDialog exposes the existing auto-size settings as a checked-by-default checkbox and a 50–2000 px spin box. Accepting it persists the policy and applies it through ResultTableView.set_auto_size_policy; MainWindow restores the same policy after creating the result view.",
     "HistoryManager.delete_records materialises requested ids before loading history so an empty request returns without writing; non-empty requests filter the migration-aware get_all result, retain source order, and atomically rewrite only when an existing record was removed.",
     "Review 11's mixed raw v1/v2 fixture deletes the known v2 id without an earlier get_all call, so it proves delete_records itself migrates an on-disk legacy survivor. A mocked unknown-id deletion independently proves the conditional write guard.",
-    "The pure history exporter sorts the persisted ISO timestamp strings descending, preserves each timestamp verbatim in its comment line, and uses rstrip on only CR/LF terminal characters so SQL trailing spaces remain intact."
+    "The pure history exporter sorts parseable persisted timestamps by actual instant descending, normalises naive timestamps to UTC for a safe mixed comparison, places unparseable timestamps afterward while preserving their caller order, preserves every timestamp verbatim in its comment line, and uses rstrip on only CR/LF terminal characters so SQL trailing spaces remain intact."
   ],
   "out_of_scope_findings": [
     "Review 09 measured a pre-existing 4.86 s set_frame cost for a 100,000-row result even with auto-size disabled. This is model-reset/proxy work, unrelated to Task 8 or Task 9, and is deferred to a separate plan."
@@ -171,6 +177,9 @@
     "quality_gates_task_10_review_11": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 519 passed, 7 deselected in 13.80s; no deleted review notes",
     "quality_gate_recovery_task_10": "The first cache-budget check reported 4324796543 bytes, exceeding the 4294967296-byte cap. Removed the test-temporary tree and cleared only /tmp/wherewolf/.uv_cache via uv cache clean; the check before the final gate reported 2270300666 bytes and the final post-gate check reported 3048237259 bytes.",
     "task_11_green": "tests/test_history_sql_export.py: 7 passed in 0.53s",
+    "baseline_review_13": "526 passed, 7 deselected in 13.29s",
+    "task_11_review_13_green": "tests/test_history_sql_export.py: 10 passed in 0.51s",
+    "quality_gates_task_11_review_13": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 529 passed, 7 deselected in 13.46s; no deleted review notes",
     "quality_gates_task_11": "ruff check: All checks passed; ruff format: 1 file reformatted, 160 files left unchanged; ty: All checks passed; pytest: 526 passed, 7 deselected in 13.67s; no deleted review notes",
     "cache_budget_bytes_task_1": 3538310802,
     "cache_budget_bytes_task_2": 3589635730,
@@ -184,6 +193,7 @@
     "cache_budget_bytes_task_9": 4244742351,
     "cache_budget_bytes_task_10": 3048237259,
     "cache_budget_bytes_task_10_review_11": 3112258005,
-    "cache_budget_bytes_task_11": 3192155580
+    "cache_budget_bytes_task_11": 3192155580,
+    "cache_budget_bytes_task_11_review_13": 3256143035
   }
 }
