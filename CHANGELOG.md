@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.8.0] - 2026-08-11
+
+### Added
+
+- **Query history now has a right-click menu.** Select one row or many with `Shift` and
+  `Ctrl`, then delete the selection or save it straight to a `.sql` file. Deleting asks first
+  and names how many records will go, because history deletion is permanent. Saving writes a
+  single file, newest query first, each one preceded by a `-- <timestamp>` comment so the
+  file reads as a work log rather than a pile of statements.
+- **Result columns size themselves to their contents**, capped so that one long text column
+  cannot push everything else off-screen. Both the behaviour and the cap live in Preferences —
+  the cap defaults to 300px and accepts any width between 50 and 2000. The sizing samples a
+  bounded number of rows, so it costs the same few milliseconds whether the preview holds a
+  thousand rows or a hundred thousand.
+- **Individual cells can be selected** in the dataset catalog and the schema panel, instead of
+  always taking the whole row. Click the row number on the left to select the entire row as
+  before. In the schema panel, selecting any cell in a row still identifies that row's column,
+  so inserting column names into the editor works from whichever cell you happened to click.
+
+### Changed
+
+- **Execution errors now come to you.** A failed query raises the Messages tab and prints the
+  error in red — a red that was chosen separately for the light and dark themes so it stays
+  readable in both. Successful queries leave your current tab alone, and diagnostics that
+  appear while you type never steal focus.
+
+### Fixed
+
+- **`Ctrl+/` toggles comments.** The shortcut had never worked: the editor is a QScintilla
+  widget, which claims `Ctrl`-modified keys before Qt's shortcut system ever sees them, so the
+  binding was dead on arrival while the Edit-menu entry kept working. Commenting a block also
+  keeps your selection now, so pressing it twice returns the text exactly as it was rather than
+  commenting a line you never selected.
+- **Undo survives loading a query from history.** Double-clicking a history entry replaced the
+  editor's contents and discarded the undo history with it, so whatever you had been writing
+  was unrecoverable. One `Ctrl+Z` now brings it back. The same fix applies to "Apply Order to
+  Query" from a results header, to comment toggling, and to Replace All — each had silently
+  emptied the undo buffer, taking every earlier edit along with the change it made.
+
 ## [0.7.1] - 2026-08-06
 
 ### Fixed
