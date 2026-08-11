@@ -586,6 +586,7 @@ class MainWindow(QMainWindow):
                 f"Query failed: {result.error_message or 'Unknown error'}"
             )
             self.result_error_message.setVisible(True)
+            self.results_tabs.setCurrentWidget(self.messages_panel)
         else:
             self.result_error_message.clear()
             self.result_error_message.setVisible(False)
@@ -867,8 +868,8 @@ class MainWindow(QMainWindow):
         editor.set_catalog(self._catalog_service.entries)
         editor.diagnostics_reported.connect(self._on_editor_diagnostics)
 
-        results = QTabWidget(self)
-        results.setObjectName("results_tabs")
+        self.results_tabs = QTabWidget(self)
+        self.results_tabs.setObjectName("results_tabs")
         self.result_table_view = ResultTableView(self)
         self.result_table_view.setObjectName("result_table_view")
         self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
@@ -877,7 +878,7 @@ class MainWindow(QMainWindow):
         self.result_table_view.frame_changed.connect(
             self.desktop_actions.export_selection.setEnabled
         )
-        results_page = QWidget(results)
+        results_page = QWidget(self.results_tabs)
         results_layout = QVBoxLayout(results_page)
         results_layout.setContentsMargins(0, 0, 0, 0)
         self.result_sort_notice = QLabel("Sorted preview only.", results_page)
@@ -933,12 +934,12 @@ class MainWindow(QMainWindow):
         self.preview_filter_error.setVisible(False)
         results_layout.addWidget(self.preview_filter_error)
         results_layout.addWidget(self.result_table_view)
-        results.addTab(results_page, "Results")
+        self.results_tabs.addTab(results_page, "Results")
         self.messages_panel = MessagesPanel(self)
         self.messages_panel.setObjectName("messages_panel")
-        results.addTab(self.messages_panel, "Messages")
+        self.results_tabs.addTab(self.messages_panel, "Messages")
 
-        translation_page = QWidget(results)
+        translation_page = QWidget(self.results_tabs)
         translation_layout = QVBoxLayout(translation_page)
         translation_controls = QHBoxLayout()
         self.translation_target_selector = QComboBox(translation_page)
@@ -967,12 +968,12 @@ class MainWindow(QMainWindow):
         self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._update_catalog_affordances)
-        results.addTab(translation_page, "Translation")
+        self.results_tabs.addTab(translation_page, "Translation")
 
-        self.empty_catalog_banner = QLabel("Please add a dataset to begin.", results)
+        self.empty_catalog_banner = QLabel("Please add a dataset to begin.", self.results_tabs)
         self.empty_catalog_banner.setObjectName("empty_catalog_banner")
         results_layout.insertWidget(0, self.empty_catalog_banner)
-        self.empty_result_banner = QLabel(results)
+        self.empty_result_banner = QLabel(self.results_tabs)
         self.empty_result_banner.setObjectName("empty_result_banner")
         self.empty_result_banner.setVisible(False)
         results_layout.insertWidget(1, self.empty_result_banner)
@@ -980,7 +981,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
         splitter.addWidget(editor)
-        splitter.addWidget(results)
+        splitter.addWidget(self.results_tabs)
         return splitter
 
     def _set_local_sort_notice_visible(self, is_sorted: bool) -> None:

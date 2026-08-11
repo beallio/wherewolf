@@ -757,6 +757,59 @@ def test_main_window_routes_editor_diagnostic_to_messages_tab(qtbot) -> None:
     assert severity == "info"
 
 
+def test_main_window_raises_messages_tab_only_for_failed_query_results(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    results_tabs = window.findChild(QTabWidget, "results_tabs")
+    assert results_tabs is not None
+    results_page = results_tabs.widget(0)
+    assert results_page is not None
+
+    request = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=100,
+        submitted_at=datetime.now(UTC),
+    )
+    failed = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="SyntaxError",
+        error_message="bad SQL",
+    )
+    succeeded = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"value": [1]}),
+        execution_seconds=0.01,
+        preview_row_count=1,
+        total_row_count=1,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+
+    results_tabs.setCurrentWidget(results_page)
+    window._on_query_result_ready(failed, request)
+    assert results_tabs.currentWidget() is window.messages_panel
+
+    results_tabs.setCurrentWidget(results_page)
+    window._on_query_result_ready(succeeded, request)
+    assert results_tabs.currentWidget() is results_page
+
+    window.editor._update_status("editor diagnostic")
+    assert results_tabs.currentWidget() is results_page
+
+
 def test_main_window_editor_shows_call_tip_for_known_function(qtbot, monkeypatch) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
@@ -2143,7 +2196,7 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
     assert not window.empty_result_banner.isVisible()
-    assert window.result_error_message.isVisible()
+    assert not window.result_error_message.isHidden()
     assert "near SELECT" in window.result_error_message.text()
     msg, severity = window.messages_panel.message_at(0)
     assert "Error (SyntaxError): near SELECT" in msg

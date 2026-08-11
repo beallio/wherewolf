@@ -2,7 +2,7 @@
   "date": "2026-08-11",
   "task_objective": "Implement docs/plans/2026-08-11_desktop-ux-batch.md one reviewed task per round.",
   "branch": "feat/desktop-ux-batch",
-  "current_round": "Task 5 — Colour message severities",
+  "current_round": "Task 6 — Raise the Messages tab on execution failure",
   "files_modified": [
     "docs/plans/2026-08-11_desktop-ux-batch.md",
     "src/wherewolf/desktop/main_window.py",
@@ -12,6 +12,7 @@
     "tests/test_messages_panel.py",
     "tests/test_sql_editor.py",
     "tests/test_theming.py",
+    "tests/test_main_window.py",
     "docs/agent_conversations/2026-08-11_desktop-ux-batch.json"
   ],
   "tests_added": [
@@ -22,7 +23,8 @@
     "One undo after Toggle Comment restores the original document.",
     "One undo after Replace All restores the exact pre-replacement document, including a normal prior edit.",
     "Messages render errors and info messages with different foreground colours, including the expected light-theme error red.",
-    "Severity colours remain distinct and meet a 4.5:1 contrast ratio against the configured Base colour in both light and dark palettes."
+    "Severity colours remain distinct and meet a 4.5:1 contrast ratio against the configured Base colour in both light and dark palettes.",
+    "Failed query results select the Messages tab, while successful results and editor diagnostics leave the selected Results tab unchanged."
   ],
   "red_test_output": {
     "task_1": {
@@ -54,6 +56,11 @@
       "command": "./run.sh uv run pytest tests/test_messages_panel.py",
       "exit_code": 1,
       "failure": "AssertionError: assert <PyQt6.QtGui.QColor object at 0x7f1ed40e7c50> == <PyQt6.QtGui.QColor object at 0x7f1ed40e7b50>; expected QColor('#b3261e') before the panel assigned a foreground."
+    },
+    "task_6": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -k 'raises_messages_tab_only_for_failed_query_results'",
+      "exit_code": 1,
+      "failure": "AssertionError: assert <PyQt6.QtWidgets.QWidget> is <MessagesPanel>; a failed query left the Results page selected."
     }
   },
   "design_decisions": [
@@ -65,7 +72,8 @@
     "Toggle Comment preserves its existing per-line prefix and indentation logic, replaces the transformed document through QScintilla's selection API in one undo action, restores the edited line range when text was selected, and restores the prior cursor position when it was not.",
     "Selection restoration uses the visible text length after stripping CR/LF from QScintilla's line text, because lineLength includes EOL characters and would otherwise normalise a non-final-line selection onto the following line.",
     "Replace All now delegates its unchanged replacement-count calculation to the existing set_text_undoable helper, preserving the no-match early return while grouping the replacement as one native QScintilla undo action.",
-    "MessagesPanel resolves severity colours from its own palette's Base role, keeping theme detection local to the widget and avoiding a settings dependency. Light uses error #b3261e, warning #7a4e00, info #005ac1; dark uses #ffb4ab, #ffb95d, and #a8c7fa."
+    "MessagesPanel resolves severity colours from its own palette's Base role, keeping theme detection local to the widget and avoiding a settings dependency. Light uses error #b3261e, warning #7a4e00, info #005ac1; dark uses #ffb4ab, #ffb95d, and #a8c7fa.",
+    "MainWindow owns the results QTabWidget so only failed query results can select its existing MessagesPanel; successful query results and editor diagnostics retain the caller's current tab."
   ],
   "results": {
     "baseline": "499 passed, 7 deselected in 13.74s",
@@ -87,11 +95,16 @@
     "task_5_green": "tests/test_messages_panel.py and tests/test_theming.py: 9 passed in 0.69s",
     "quality_gates_task_5": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 508 passed, 7 deselected in 13.41s; no deleted review notes",
     "quality_gate_recovery_task_5": "The commit hook's stricter ty check . reported QListWidget.item() as optional in the new test. The test now proves both expected items exist before reading their foregrounds; focused tests and ty check . passed afterward.",
+    "baseline_task_6": "508 passed, 7 deselected in 13.10s",
+    "task_6_green": "1 passed, 94 deselected in 0.72s",
+    "quality_gate_recovery_task_6": "The first full quality-gate run exposed an existing result-grid assertion that used isVisible() for the Results-page error label. Selecting Messages correctly makes that page non-visible through its ancestor tab, so the assertion now verifies the label is not explicitly hidden while the new test verifies the user-visible tab selection.",
+    "quality_gates_task_6": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 509 passed, 7 deselected in 13.23s; no deleted review notes",
     "cache_budget_bytes_task_1": 3538310802,
     "cache_budget_bytes_task_2": 3589635730,
     "cache_budget_bytes_task_3": 3714018371,
     "cache_budget_bytes_task_3_review_03": 3733388522,
     "cache_budget_bytes_task_4": 3813253657,
-    "cache_budget_bytes_task_5": 3937712371
+    "cache_budget_bytes_task_5": 3937712371,
+    "cache_budget_bytes_task_6": 4078101082
   }
 }
