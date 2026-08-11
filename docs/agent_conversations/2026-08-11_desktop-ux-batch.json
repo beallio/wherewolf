@@ -34,7 +34,8 @@
     "Result-column auto-size enablement and width round-trip through QSettings; save-time widths clamp to 50–2000, while stored out-of-range values and booleans restore the 300 px default.",
     "Result columns auto-size on frame delivery to a configured visible-column cap, while a disabled policy leaves the wide column unclamped.",
     "Preferences persist result-column auto-size enablement and maximum width, apply them to the active view, and restore the 150 px policy in a fresh MainWindow.",
-    "History deletion removes matching stable ids while preserving record order, supports multiple ids, ignores unknown ids without a write, skips empty deletion requests without a write, and preserves the migrated id of a legacy survivor."
+    "History deletion removes matching stable ids while preserving record order, supports multiple ids, ignores unknown ids without a write, skips empty deletion requests without a write, and preserves the migrated id of a legacy survivor.",
+    "Review 11 adds independent guards that an unknown id does not call _write_history and that deleting a known v2 id migrates a raw v1 survivor on disk."
   ],
   "red_test_output": {
     "task_1": {
@@ -91,6 +92,11 @@
       "command": "./run.sh uv run pytest tests/test_history.py",
       "exit_code": 1,
       "failure": "AttributeError: 'HistoryManager' object has no attribute 'delete_records' in all five new deletion tests."
+    },
+    "task_10_review_11": {
+      "command": "./run.sh uv run pytest tests/test_history.py::test_delete_records_migrates_v1_entries_left_on_disk and tests/test_history.py::test_delete_records_does_not_write_when_no_matching_ids after their respective deliberate source mutations",
+      "exit_code": 1,
+      "failure": "Raw JSON reads fail with KeyError: 'id' for the unmigrated legacy entry; unconditional writes fail with AssertionError: Expected '_write_history' to not have been called. Called 1 times."
     }
   },
   "design_decisions": [
@@ -107,7 +113,8 @@
     "Auto-size preferences use versioned results keys and the preview-limit quartet shape: the enablement value requires a real bool, while width is save-clamped to 50–2000 and restores the 300 px default for invalid persisted values, including bool.",
     "ResultTableView owns an enabled/max-width auto-size policy with defaults True/300, samples at most 200 rows for content sizing, auto-sizes after every populated frame only when enabled, and caps only visible columns so manual Auto-size Columns uses the same cap.",
     "PreferencesDialog exposes the existing auto-size settings as a checked-by-default checkbox and a 50–2000 px spin box. Accepting it persists the policy and applies it through ResultTableView.set_auto_size_policy; MainWindow restores the same policy after creating the result view.",
-    "HistoryManager.delete_records materialises requested ids before loading history so an empty request returns without writing; non-empty requests filter the migration-aware get_all result, retain source order, and atomically rewrite only when an existing record was removed."
+    "HistoryManager.delete_records materialises requested ids before loading history so an empty request returns without writing; non-empty requests filter the migration-aware get_all result, retain source order, and atomically rewrite only when an existing record was removed.",
+    "Review 11's mixed raw v1/v2 fixture deletes the known v2 id without an earlier get_all call, so it proves delete_records itself migrates an on-disk legacy survivor. A mocked unknown-id deletion independently proves the conditional write guard."
   ],
   "out_of_scope_findings": [
     "Review 09 measured a pre-existing 4.86 s set_frame cost for a 100,000-row result even with auto-size disabled. This is model-reset/proxy work, unrelated to Task 8 or Task 9, and is deferred to a separate plan."
@@ -146,8 +153,11 @@
     "task_9_green": "1 passed, 95 deselected in 0.71s",
     "quality_gates_task_9": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 512 passed, 7 deselected in 13.39s; no deleted review notes",
     "baseline_task_10": "512 passed, 7 deselected in 12.98s",
+    "baseline_review_11": "517 passed, 7 deselected in 13.28s",
     "task_10_green": "tests/test_history.py: 19 passed in 0.57s",
+    "task_10_review_11_green": "tests/test_history.py: 21 passed in 0.59s",
     "quality_gates_task_10": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 517 passed, 7 deselected in 58.42s; no deleted review notes",
+    "quality_gates_task_10_review_11": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 519 passed, 7 deselected in 13.80s; no deleted review notes",
     "quality_gate_recovery_task_10": "The first cache-budget check reported 4324796543 bytes, exceeding the 4294967296-byte cap. Removed the test-temporary tree and cleared only /tmp/wherewolf/.uv_cache via uv cache clean; the check before the final gate reported 2270300666 bytes and the final post-gate check reported 3048237259 bytes.",
     "cache_budget_bytes_task_1": 3538310802,
     "cache_budget_bytes_task_2": 3589635730,
@@ -159,6 +169,7 @@
     "cache_budget_bytes_task_7": 4084896161,
     "cache_budget_bytes_task_8": 4164814351,
     "cache_budget_bytes_task_9": 4244742351,
-    "cache_budget_bytes_task_10": 3048237259
+    "cache_budget_bytes_task_10": 3048237259,
+    "cache_budget_bytes_task_10_review_11": 3112258005
   }
 }
