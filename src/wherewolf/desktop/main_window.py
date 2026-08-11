@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 import webbrowser
 from importlib.metadata import version
+from pathlib import Path
 from typing import Final, cast
 
 from PyQt6.QtCore import QByteArray, Qt, QTimer
@@ -78,6 +79,8 @@ from wherewolf.services import (
     ExecutionRequestBuilder,
     ExportFormat,
     SettingsService,
+    serialise_history_records_to_sql,
+    write_atomically,
 )
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
@@ -141,6 +144,11 @@ class PreferencesDialog(QDialog):
         self.profile_max_bytes = QSpinBox(self)
         self.profile_max_bytes.setRange(0, 2_147_483_647)
         self.profile_max_bytes.setValue(settings_service.restore_profile_max_bytes())
+        self.auto_size_columns = QCheckBox("Auto-size result columns", self)
+        self.auto_size_columns.setChecked(settings_service.restore_auto_size_columns())
+        self.auto_size_max_width = QSpinBox(self)
+        self.auto_size_max_width.setRange(50, 2000)
+        self.auto_size_max_width.setValue(settings_service.restore_auto_size_max_width())
         self.editor_theme_selector = QComboBox(self)
         self.editor_theme_selector.setObjectName("editor_theme_selector")
         self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
@@ -154,6 +162,8 @@ class PreferencesDialog(QDialog):
         layout.addRow("Completion threshold", self.completion_threshold)
         layout.addRow(self.profile_on_load)
         layout.addRow("Profile size limit (bytes)", self.profile_max_bytes)
+        layout.addRow(self.auto_size_columns)
+        layout.addRow("Maximum result column width (px)", self.auto_size_max_width)
         layout.addRow("Editor theme", self.editor_theme_selector)
         layout.addRow("Program theme", self.program_theme_selector)
         buttons = QDialogButtonBox(
@@ -447,6 +457,7 @@ class MainWindow(QMainWindow):
     def _build_history_dock(self) -> QDockWidget:
         history_dock = HistoryDock(self.history_manager, self)
         history_dock.record_selected.connect(self._restore_history_query)
+        history_dock.history_records_selected.connect(self._save_history_records_as_sql)
 
         dock = QDockWidget("History", self)
         dock.setObjectName("history_dock")
@@ -586,6 +597,7 @@ class MainWindow(QMainWindow):
                 f"Query failed: {result.error_message or 'Unknown error'}"
             )
             self.result_error_message.setVisible(True)
+            self.results_tabs.setCurrentWidget(self.messages_panel)
         else:
             self.result_error_message.clear()
             self.result_error_message.setVisible(False)
@@ -867,8 +879,8 @@ class MainWindow(QMainWindow):
         editor.set_catalog(self._catalog_service.entries)
         editor.diagnostics_reported.connect(self._on_editor_diagnostics)
 
-        results = QTabWidget(self)
-        results.setObjectName("results_tabs")
+        self.results_tabs = QTabWidget(self)
+        self.results_tabs.setObjectName("results_tabs")
         self.result_table_view = ResultTableView(self)
         self.result_table_view.setObjectName("result_table_view")
         self.result_table_view.insert_header_requested.connect(self.editor_insert_text)
@@ -877,7 +889,7 @@ class MainWindow(QMainWindow):
         self.result_table_view.frame_changed.connect(
             self.desktop_actions.export_selection.setEnabled
         )
-        results_page = QWidget(results)
+        results_page = QWidget(self.results_tabs)
         results_layout = QVBoxLayout(results_page)
         results_layout.setContentsMargins(0, 0, 0, 0)
         self.result_sort_notice = QLabel("Sorted preview only.", results_page)
@@ -933,12 +945,12 @@ class MainWindow(QMainWindow):
         self.preview_filter_error.setVisible(False)
         results_layout.addWidget(self.preview_filter_error)
         results_layout.addWidget(self.result_table_view)
-        results.addTab(results_page, "Results")
+        self.results_tabs.addTab(results_page, "Results")
         self.messages_panel = MessagesPanel(self)
         self.messages_panel.setObjectName("messages_panel")
-        results.addTab(self.messages_panel, "Messages")
+        self.results_tabs.addTab(self.messages_panel, "Messages")
 
-        translation_page = QWidget(results)
+        translation_page = QWidget(self.results_tabs)
         translation_layout = QVBoxLayout(translation_page)
         translation_controls = QHBoxLayout()
         self.translation_target_selector = QComboBox(translation_page)
@@ -967,12 +979,12 @@ class MainWindow(QMainWindow):
         self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._update_catalog_affordances)
-        results.addTab(translation_page, "Translation")
+        self.results_tabs.addTab(translation_page, "Translation")
 
-        self.empty_catalog_banner = QLabel("Please add a dataset to begin.", results)
+        self.empty_catalog_banner = QLabel("Please add a dataset to begin.", self.results_tabs)
         self.empty_catalog_banner.setObjectName("empty_catalog_banner")
         results_layout.insertWidget(0, self.empty_catalog_banner)
-        self.empty_result_banner = QLabel(results)
+        self.empty_result_banner = QLabel(self.results_tabs)
         self.empty_result_banner.setObjectName("empty_result_banner")
         self.empty_result_banner.setVisible(False)
         results_layout.insertWidget(1, self.empty_result_banner)
@@ -980,7 +992,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Orientation.Vertical, self)
         splitter.setObjectName("central_splitter")
         splitter.addWidget(editor)
-        splitter.addWidget(results)
+        splitter.addWidget(self.results_tabs)
         return splitter
 
     def _set_local_sort_notice_visible(self, is_sorted: bool) -> None:
@@ -1004,7 +1016,30 @@ class MainWindow(QMainWindow):
         """Place a historical SQL statement in the editor without running it."""
         query = record.get("query")
         if isinstance(query, str):
-            self.editor.setText(query)
+            self.editor.set_text_undoable(query)
+
+    def _save_history_records_as_sql(self, records: list[dict[str, object]]) -> None:
+        choose_history_sql_path = getattr(
+            self._file_dialog_service, "choose_history_sql_path", None
+        )
+        if choose_history_sql_path is None:
+            self._show_status("History SQL save dialog is unavailable", 5000)
+            return
+        destination = choose_history_sql_path(None, self)
+        if destination is None:
+            return
+
+        document = serialise_history_records_to_sql(records)
+
+        def write_sql(path: Path) -> None:
+            path.write_text(document, encoding="utf-8")
+
+        try:
+            write_atomically(destination, write_sql)
+        except OSError as exc:
+            self._show_status(f"Failed to save history as SQL: {exc}", 5000)
+            return
+        self._show_status(f"Saved history as SQL to {destination}")
 
     def _on_apply_query_order(self, column_name: str, direction: str) -> None:
         if not self.result_table_view.has_result():
@@ -1013,7 +1048,7 @@ class MainWindow(QMainWindow):
         if not current_sql.strip():
             return
         ordered_sql = build_order_by_sql(current_sql, column_name, direction)
-        self.editor.setText(ordered_sql)
+        self.editor.set_text_undoable(ordered_sql)
         self._on_run_triggered()
 
     def _dispatch_focused_edit_action(self, operation: str) -> None:
@@ -1179,6 +1214,11 @@ class MainWindow(QMainWindow):
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
         self._settings_service.save_profile_on_load(dialog.profile_on_load.isChecked())
         self._settings_service.save_profile_max_bytes(dialog.profile_max_bytes.value())
+        self._settings_service.save_auto_size_columns(dialog.auto_size_columns.isChecked())
+        self._settings_service.save_auto_size_max_width(dialog.auto_size_max_width.value())
+        self.result_table_view.set_auto_size_policy(
+            dialog.auto_size_columns.isChecked(), dialog.auto_size_max_width.value()
+        )
         self._settings_service.save_program_theme(dialog.program_theme_selector.currentText())
         self._apply_program_theme(dialog.program_theme_selector.currentText())
         self.editor.set_font_size(dialog.font_size.value())
@@ -1217,6 +1257,10 @@ class MainWindow(QMainWindow):
 
         font_size = self._settings_service.restore_editor_font_size()
         self.editor.set_font_size(font_size)
+        self.result_table_view.set_auto_size_policy(
+            self._settings_service.restore_auto_size_columns(),
+            self._settings_service.restore_auto_size_max_width(),
+        )
 
     def _reset_layout(self) -> None:
         """Return persistent docks and the central splitter to their default arrangement."""

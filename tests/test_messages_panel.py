@@ -1,8 +1,10 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from PyQt6.QtGui import QColor
 from pytestqt.qtbot import QtBot
 
+from wherewolf.desktop.theming import ThemeMode, build_palette
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.domain.enums import ExecutionStatus
 from wherewolf.domain.models import QueryResult, SqlDiagnostic
@@ -21,6 +23,24 @@ def test_messages_panel_add_diagnostic(qtbot: QtBot) -> None:
     msg, severity = panel.message_at(0)
     assert "Syntax error at line 1" in msg
     assert severity == "error"
+
+
+def test_messages_panel_colours_error_and_info_by_severity(qtbot: QtBot) -> None:
+    panel = MessagesPanel()
+    panel.setPalette(build_palette(ThemeMode.LIGHT))
+    qtbot.addWidget(panel)
+
+    panel.add_message("query failed", severity="error")
+    panel.add_message("query succeeded", severity="info")
+
+    error_item = panel._list_widget.item(0)
+    info_item = panel._list_widget.item(1)
+    assert error_item is not None
+    assert info_item is not None
+    error_colour = error_item.foreground().color()
+    info_colour = info_item.foreground().color()
+    assert error_colour == QColor("#b3261e")
+    assert error_colour != info_colour
 
 
 def test_messages_panel_show_execution_error(qtbot: QtBot) -> None:

@@ -220,6 +220,25 @@ def test_result_table_view_column_operations(qtbot):
     assert all(header.sectionSize(column) > 0 for column in range(3))
 
 
+def test_result_table_view_auto_sizes_columns_with_a_configured_width_cap(qtbot) -> None:
+    frame = pl.DataFrame({"wide": ["x" * 400], "narrow": ["ok"]})
+
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_auto_size_policy(enabled=True, maximum_width=120)
+    table_view.set_frame(frame)
+
+    assert table_view.columnWidth(0) == 120
+    assert table_view.columnWidth(1) < 120
+
+    disabled_table_view = ResultTableView()
+    qtbot.addWidget(disabled_table_view)
+    disabled_table_view.set_auto_size_policy(enabled=False, maximum_width=120)
+    disabled_table_view.set_frame(frame)
+
+    assert disabled_table_view.columnWidth(0) != 120
+
+
 def test_result_table_view_headers_show_distinct_dtype_badges_and_tooltips(qtbot) -> None:
     table_view = ResultTableView()
     qtbot.addWidget(table_view)

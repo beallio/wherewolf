@@ -16,6 +16,11 @@ from wherewolf.services.export_destination import (
 )
 
 
+def normalise_sql_destination(destination: Path) -> Path:
+    """Return the chosen history-SQL path with a .sql suffix when none was typed."""
+    return destination if destination.suffix else destination.with_suffix(".sql")
+
+
 @runtime_checkable
 class FileDialogService(Protocol):
     def choose_dataset_files(
@@ -30,6 +35,7 @@ class FileDialogService(Protocol):
 class FakeFileDialogService:
     paths: tuple[Path, ...]
     export_path: Path | None = None
+    history_sql_path: Path | None = None
 
     def choose_dataset_files(
         self,
@@ -43,6 +49,14 @@ class FakeFileDialogService:
     def choose_export_path(self, default_directory, export_format, parent=None) -> Path | None:
         del default_directory, parent
         return normalise_destination(self.export_path, export_format) if self.export_path else None
+
+    def choose_history_sql_path(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None:
+        del default_directory, parent
+        if self.history_sql_path is None:
+            return None
+        return normalise_sql_destination(self.history_sql_path)
 
 
 class QtFileDialogService:
@@ -87,6 +101,24 @@ class QtFileDialogService:
             # existing file. Suppressing it made exports destroy files silently.
         )
         return normalise_destination(Path(name), export_format) if name else None
+
+    def choose_history_sql_path(
+        self,
+        default_directory: Path | None,
+        parent: QWidget | None = None,
+    ) -> Path | None:
+        name, _ = QFileDialog.getSaveFileName(
+            parent,
+            "Save History as SQL",
+            str(default_directory or ""),
+            "SQL files (*.sql)",
+            "*.sql",
+            # No DontConfirmOverwrite: let the native dialog prompt before replacing an
+            # existing file. Suppressing it would destroy saved history silently.
+        )
+        if not name:
+            return None
+        return normalise_sql_destination(Path(name))
 
     @staticmethod
     def _build_filter() -> str:

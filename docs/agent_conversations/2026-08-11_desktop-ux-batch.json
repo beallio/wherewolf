@@ -1,0 +1,321 @@
+{
+  "date": "2026-08-11",
+  "task_objective": "Implement docs/plans/2026-08-11_desktop-ux-batch.md one reviewed task per round.",
+  "branch": "feat/desktop-ux-batch",
+  "current_round": "Task 15 — Cell selection in the schema panel",
+  "files_modified": [
+    "docs/plans/2026-08-11_desktop-ux-batch.md",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/theming.py",
+    "src/wherewolf/desktop/widgets/messages_panel.py",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "tests/test_messages_panel.py",
+    "tests/test_sql_editor.py",
+    "tests/test_theming.py",
+    "tests/test_main_window.py",
+    "docs/agent_conversations/2026-08-11_desktop-ux-batch.json",
+    "src/wherewolf/services/settings_service.py",
+    "tests/test_settings_service.py",
+    "src/wherewolf/desktop/widgets/result_table_view.py",
+    "tests/test_result_table_view.py",
+    "src/wherewolf/storage/history.py",
+    "tests/test_history.py",
+    "src/wherewolf/services/history_sql_export.py",
+    "src/wherewolf/services/__init__.py",
+    "tests/test_history_sql_export.py",
+    "src/wherewolf/desktop/widgets/history_dock.py",
+    "tests/test_history_dock.py",
+    "src/wherewolf/desktop/dialogs/file_dialog_service.py",
+    "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "tests/test_catalog_dock.py",
+    "src/wherewolf/desktop/widgets/schema_panel.py",
+    "tests/test_schema_panel.py"
+  ],
+  "tests_added": [
+    "Ctrl+/ reaches SqlEditor Toggle Comment and does not insert a stray slash.",
+    "History restore and Apply Order to Query each replace the editor through one undoable action.",
+    "Toggle Comment keeps the edited two-line selection active so a second toggle round-trips the document.",
+    "Toggle Comment keeps a mid-document selected line range active without extending onto the next line, so a second toggle leaves unselected following lines unchanged.",
+    "One undo after Toggle Comment restores the original document.",
+    "One undo after Replace All restores the exact pre-replacement document, including a normal prior edit.",
+    "Messages render errors and info messages with different foreground colours, including the expected light-theme error red.",
+    "Severity colours remain distinct and meet a 4.5:1 contrast ratio against the configured Base colour in both light and dark palettes.",
+    "Failed query results select the Messages tab, while successful results and editor diagnostics leave the selected Results tab unchanged.",
+    "Result-column auto-size enablement and width round-trip through QSettings; save-time widths clamp to 50–2000, while stored out-of-range values and booleans restore the 300 px default.",
+    "Result columns auto-size on frame delivery to a configured visible-column cap, while a disabled policy leaves the wide column unclamped.",
+    "Preferences persist result-column auto-size enablement and maximum width, apply them to the active view, and restore the 150 px policy in a fresh MainWindow.",
+    "History deletion removes matching stable ids while preserving record order, supports multiple ids, ignores unknown ids without a write, skips empty deletion requests without a write, and preserves the migrated id of a legacy survivor.",
+    "Review 11 adds independent guards that an unknown id does not call _write_history and that deleting a known v2 id migrates a raw v1 survivor on disk.",
+    "History SQL export serialises valid records newest-first into exact comment-prefixed SQL blocks, preserves embedded comments and trailing spaces, normalises terminal line endings to one blank separator and one final newline, and skips missing or non-string queries.",
+    "History SQL export compares actual instants across mixed UTC offsets, treats naive timestamps as UTC without comparing naive and aware datetime instances directly, and retains unparseable timestamp records after all parseable records.",
+    "History delete confirms the selected record count, removes multiple selected records only after confirmation, and refreshes the visible rows.",
+    "Cancelling a history deletion preserves every selected record and every visible row.",
+    "History supports Ctrl multi-selection; a context click within it preserves the selection, while a context click on another row selects only that row.",
+    "Selected history records save as one atomically written SQL file through MainWindow, appending .sql to an extensionless destination.",
+    "Cancelling the history SQL save dialog creates no file.",
+    "The shared history-SQL destination normaliser appends .sql only when no suffix was supplied, while direct Qt dialog-wrapper tests cover suffix-less, .sql, explicit alternate suffix, and cancellation paths.",
+    "Catalog cell selection keeps a single clicked File cell selected, while Copy Alias and Remove operate on that cell's current row; an actual QTest vertical-header click selects every cell in the corresponding row.",
+    "Schema Type-cell selection keeps exactly that cell selected while retaining its row's column name, preserves a two-row cell selection when its context menu opens, and lets a QTest vertical-header click select the whole row."
+  ],
+  "red_test_output": {
+    "task_1": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -k ctrl_slash -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 'select 1' == '-- select 1'"
+    },
+    "task_2": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -k 'one_undo_action' -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert False, where False = <built-in method isUndoAvailable of SqlEditor>() after history restore."
+    },
+    "task_3": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -k \"toggle_comment and (preserves or one_undo)\" -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert (-1, -1, -1, -1) == (0, 0, 1, 12) after Toggle Comment."
+    },
+    "task_3_review_03": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -k mid_document_selected_lines -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert (0, 0, 2, 0) == (0, 0, 1, 12); the selection normalised onto the unselected third line."
+    },
+    "task_4": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -k replace_all_is_undoable -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 'gamma beta gamma!' == 'alpha beta alpha!' after undo."
+    },
+    "task_5": {
+      "command": "./run.sh uv run pytest tests/test_messages_panel.py",
+      "exit_code": 1,
+      "failure": "AssertionError: assert <PyQt6.QtGui.QColor object at 0x7f1ed40e7c50> == <PyQt6.QtGui.QColor object at 0x7f1ed40e7b50>; expected QColor('#b3261e') before the panel assigned a foreground."
+    },
+    "task_6": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -k 'raises_messages_tab_only_for_failed_query_results'",
+      "exit_code": 1,
+      "failure": "AssertionError: assert <PyQt6.QtWidgets.QWidget> is <MessagesPanel>; a failed query left the Results page selected."
+    },
+    "task_7": {
+      "command": "./run.sh uv run pytest tests/test_settings_service.py -q",
+      "exit_code": 1,
+      "failure": "AttributeError: 'SettingsService' object has no attribute 'restore_auto_size_columns'"
+    },
+    "task_8": {
+      "command": "./run.sh uv run pytest tests/test_result_table_view.py -k auto_sizes_columns_with_a_configured_width_cap -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 100 == 300; set_frame left the wide result column at the default section size instead of auto-sizing it."
+    },
+    "task_9": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -k preferences_persist_result_auto_size_policy -x",
+      "exit_code": 1,
+      "failure": "AttributeError: 'PreferencesDialog' object has no attribute 'auto_size_columns'"
+    },
+    "task_10": {
+      "command": "./run.sh uv run pytest tests/test_history.py",
+      "exit_code": 1,
+      "failure": "AttributeError: 'HistoryManager' object has no attribute 'delete_records' in all five new deletion tests."
+    },
+    "task_10_review_11": {
+      "command": "./run.sh uv run pytest tests/test_history.py::test_delete_records_migrates_v1_entries_left_on_disk and tests/test_history.py::test_delete_records_does_not_write_when_no_matching_ids after their respective deliberate source mutations",
+      "exit_code": 1,
+      "failure": "Raw JSON reads fail with KeyError: 'id' for the unmigrated legacy entry; unconditional writes fail with AssertionError: Expected '_write_history' to not have been called. Called 1 times."
+    },
+    "task_11": {
+      "command": "./run.sh uv run pytest tests/test_history_sql_export.py",
+      "exit_code": 1,
+      "failure": "ModuleNotFoundError: No module named 'wherewolf.services.history_sql_export' during test collection."
+    },
+    "task_11_review_13": {
+      "command": "./run.sh uv run pytest tests/test_history_sql_export.py -x",
+      "exit_code": 1,
+      "failure": "AssertionError: the mixed-offset export began with -- 2026-08-11T10:00:00+00:00 SELECT older_instant instead of the newer -- 2026-08-11T09:30:00-07:00 SELECT newer_instant."
+    },
+    "task_12": {
+      "command": "./run.sh uv run pytest tests/test_history_dock.py -x",
+      "exit_code": 1,
+      "failure": "AttributeError: 'HistoryDock' object has no attribute '_delete_action'"
+    },
+    "task_13": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -k 'history and sql' -x",
+      "exit_code": 1,
+      "failure": "AttributeError: 'HistoryDock' object has no attribute '_save_as_sql_action'"
+    },
+    "task_13_review_16": {
+      "command": "./run.sh uv run pytest tests/test_file_dialog_service.py -x",
+      "exit_code": 2,
+      "failure": "ImportError: cannot import name 'normalise_sql_destination' from wherewolf.desktop.dialogs.file_dialog_service during test collection."
+    },
+    "task_14": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -k 'catalog_cell_selection_keeps_context_actions_on_the_clicked_entry or catalog_vertical_header_click_selects_the_whole_row' -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 4 == 1; clicking the File cell selected the entire four-column row under SelectRows."
+    },
+    "task_15": {
+      "command": "./run.sh uv run pytest tests/test_schema_panel.py -k cell_selection_keeps_column_names_and_context_selection -x",
+      "exit_code": 1,
+      "failure": "AssertionError: a Type-cell click selected every cell in row 1 under SelectRows instead of exactly {(1, 1)}."
+    }
+  },
+  "design_decisions": [
+    "A QScintilla keyPressEvent override compares the incoming QKeySequence to one module-level Ctrl+/ sequence, triggers the existing Toggle Comment QAction, accepts the event, and delegates every other event to the base class.",
+    "The QScintilla stub requires a non-optional QKeyEvent and parameter name e; the implementation matches that contract while retaining a defensive None return.",
+    "PyQt's QTest stubs model the static helpers as instance methods, so the focused test keeps the required runtime calls and uses narrow no-matching-overload suppressions.",
+    "The existing QAction retains WidgetShortcut context for its menu presentation; the key event route is what makes the shortcut work in QScintilla.",
+    "Undoable editor replacements use QScintilla's selection API inside one beginUndoAction/endUndoAction pair, then reset scroll-width tracking exactly as the destructive setText override does.",
+    "Toggle Comment preserves its existing per-line prefix and indentation logic, replaces the transformed document through QScintilla's selection API in one undo action, restores the edited line range when text was selected, and restores the prior cursor position when it was not.",
+    "Selection restoration uses the visible text length after stripping CR/LF from QScintilla's line text, because lineLength includes EOL characters and would otherwise normalise a non-final-line selection onto the following line.",
+    "Replace All now delegates its unchanged replacement-count calculation to the existing set_text_undoable helper, preserving the no-match early return while grouping the replacement as one native QScintilla undo action.",
+    "MessagesPanel resolves severity colours from its own palette's Base role, keeping theme detection local to the widget and avoiding a settings dependency. Light uses error #b3261e, warning #7a4e00, info #005ac1; dark uses #ffb4ab, #ffb95d, and #a8c7fa.",
+    "MainWindow owns the results QTabWidget so only failed query results can select its existing MessagesPanel; successful query results and editor diagnostics retain the caller's current tab.",
+    "Auto-size preferences use versioned results keys and the preview-limit quartet shape: the enablement value requires a real bool, while width is save-clamped to 50–2000 and restores the 300 px default for invalid persisted values, including bool.",
+    "ResultTableView owns an enabled/max-width auto-size policy with defaults True/300, samples at most 200 rows for content sizing, auto-sizes after every populated frame only when enabled, and caps only visible columns so manual Auto-size Columns uses the same cap.",
+    "PreferencesDialog exposes the existing auto-size settings as a checked-by-default checkbox and a 50–2000 px spin box. Accepting it persists the policy and applies it through ResultTableView.set_auto_size_policy; MainWindow restores the same policy after creating the result view.",
+    "HistoryManager.delete_records materialises requested ids before loading history so an empty request returns without writing; non-empty requests filter the migration-aware get_all result, retain source order, and atomically rewrite only when an existing record was removed.",
+    "Review 11's mixed raw v1/v2 fixture deletes the known v2 id without an earlier get_all call, so it proves delete_records itself migrates an on-disk legacy survivor. A mocked unknown-id deletion independently proves the conditional write guard.",
+    "The pure history exporter sorts parseable persisted timestamps by actual instant descending, normalises naive timestamps to UTC for a safe mixed comparison, places unparseable timestamps afterward while preserving their caller order, preserves every timestamp verbatim in its comment line, and uses rstrip on only CR/LF terminal characters so SQL trailing spaces remain intact.",
+    "HistoryDock keeps one reusable Delete QAction, enables it from the current stable-id selection when the context menu opens, and builds a transient menu around that action. A context click outside the existing selection resets to that item; one inside it preserves the multi-selection. Confirmed deletion delegates to HistoryManager.delete_records before refresh. Round-15 review established that Qt's mouse press already produces both selection outcomes, so the explicit block remains as intent and keyboard-menu coverage rather than a test-proven branch.",
+    "HistoryDock owns a reusable Save as SQL action but only emits selected full records; MainWindow owns the save dialog and uses write_atomically with the pure serializer. The dialog adapter normalises only extensionless destinations to .sql, preserving a user-supplied suffix.",
+    "Review 16 extracts history-SQL suffix handling into normalise_sql_destination so both production and fake adapters share one caller-visible rule; direct Qt wrapper tests prove its suffix-less, explicit-suffix, and cancellation behaviour.",
+    "CatalogDock uses SelectItems plus ExtendedSelection, but every context action resolves its target from selectionModel().currentIndex() rather than selectedRows(), so a single selected cell continues to identify its owning entry.",
+    "SchemaPanel uses SelectItems with its existing ExtendedSelection. Its context menu preserves a clicked selected cell's multi-cell selection, while an unselected context-menu target becomes the sole current selected cell."
+  ],
+  "out_of_scope_findings": [
+    "Review 09 measured a pre-existing 4.86 s set_frame cost for a 100,000-row result even with auto-size disabled. This is model-reset/proxy work, unrelated to Task 8 or Task 9, and is deferred to a separate plan.",
+    "Review 16: history SQL saves pass None as the default directory, so the native dialog starts in its process-selected location rather than the remembered dataset directory. This is outside Task 13's scope.",
+    "Task 14 deliberately does not add Ctrl+C support to the model-backed catalog; the existing TSV serializer only supports QTableWidget and non-contiguous catalog-cell copying needs a separate plan.",
+    "Task 15 probe: a scattered SchemaPanel selection of (0, 0) and (1, 1) copies two aligned, complete nine-column rows rather than only the two selected cells. It is not row-misaligned, but preserving exact scattered cells requires a separate serializer plan."
+  ],
+  "final_mutation_verification": {
+    "V1": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -x after deleting SqlEditor.keyPressEvent",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 'select 1' == '-- select 1'"
+    },
+    "V2": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -x after restoring editor.setText in _restore_history_query",
+      "exit_code": 1,
+      "failure": "AssertionError: assert False, where False = SqlEditor.isUndoAvailable() after history restore."
+    },
+    "V3": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -x after restoring destructive setText in toggle_comment",
+      "exit_code": 1,
+      "failure": "AssertionError: assert (-1, -1, -1, -1) == (0, 0, 1, 12) for the selected lines."
+    },
+    "V4": {
+      "command": "./run.sh uv run pytest tests/test_result_table_view.py -x after deleting the auto-size clamp",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 2546 == 120 for the configured maximum column width."
+    },
+    "V5": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -x after deleting the Messages-tab switch",
+      "exit_code": 1,
+      "failure": "AssertionError: the current Results page widget is not window.messages_panel."
+    },
+    "V6": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -x after restoring selectedRows in _selected_entry",
+      "exit_code": 1,
+      "failure": "AssertionError: Copy Alias did not receive the second entry alias after a single File-cell click."
+    },
+    "V7": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -x after replacing the Task 14 header QTest.mouseClick with sectionClicked.emit(1)",
+      "exit_code": 1,
+      "failure": "AssertionError: assert set() == {(1, 0), (1, 1), (1, 2), (1, 3)}."
+    },
+    "V8": {
+      "command": "git status --porcelain; ./run.sh uv run ruff check .; ./run.sh uv run ty check src/; ./run.sh uv run pytest; scripts/check_cache_budget.sh",
+      "git_status_porcelain": "",
+      "ruff": "All checks passed!",
+      "ty": "All checks passed!",
+      "pytest": "544 passed, 7 deselected in 13.41s",
+      "cache_bytes": 3844955750
+    },
+    "V9": {
+      "command": "git ls-files --others --exclude-standard; find . -path ./.git -prune -o -name '__pycache__' -print -o -name '.pytest_cache' -print",
+      "first_run": "./src/wherewolf/__pycache__",
+      "recovery": "Removed the verified ignored generated cache directory src/wherewolf/__pycache__; the rerun had no untracked files and no in-repository __pycache__ or .pytest_cache directories."
+    }
+  },
+  "results": {
+    "baseline_task_9": "511 passed, 7 deselected in 13.01s",
+    "baseline": "499 passed, 7 deselected in 13.74s",
+    "task_1_green": "1 passed, 24 deselected in 0.70s",
+    "quality_gate_recovery": "Initial ty gate rejected QKeyEvent | None and a0 because QsciScintillaBase expects keyPressEvent(e: QKeyEvent); the corrected override passed the full gate. The commit hook then exposed PyQt QTest static-helper stub overloads, resolved with two narrow no-matching-overload suppressions.",
+    "quality_gates_task_1": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 500 passed, 7 deselected in 13.02s; no deleted review notes",
+    "baseline_task_2": "500 passed, 7 deselected in 17.22s",
+    "task_2_green": "2 passed, 92 deselected in 0.87s",
+    "quality_gates_task_2": "ruff check: All checks passed; ruff format: 1 file reformatted, 158 files left unchanged; ty: All checks passed; pytest: 502 passed, 7 deselected in 13.29s; no deleted review notes",
+    "baseline_task_3": "502 passed, 7 deselected in 12.89s",
+    "task_3_green": "2 passed, 25 deselected in 0.61s; full tests/test_sql_editor.py: 27 passed in 1.10s",
+    "task_3_review_03_green": "4 passed, 24 deselected in 0.63s",
+    "quality_gates_task_3": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 504 passed, 7 deselected in 13.15s; no deleted review notes",
+    "quality_gates_task_3_review_03": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 505 passed, 7 deselected in 13.20s; no deleted review notes",
+    "baseline_task_4": "505 passed, 7 deselected in 12.89s",
+    "task_4_green": "1 passed, 28 deselected in 0.68s; full tests/test_sql_editor.py: 29 passed in 1.10s",
+    "quality_gates_task_4": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 506 passed, 7 deselected in 13.14s; no deleted review notes",
+    "baseline_task_5": "506 passed, 7 deselected in 12.79s",
+    "task_5_green": "tests/test_messages_panel.py and tests/test_theming.py: 9 passed in 0.69s",
+    "quality_gates_task_5": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 508 passed, 7 deselected in 13.41s; no deleted review notes",
+    "quality_gate_recovery_task_5": "The commit hook's stricter ty check . reported QListWidget.item() as optional in the new test. The test now proves both expected items exist before reading their foregrounds; focused tests and ty check . passed afterward.",
+    "baseline_task_6": "508 passed, 7 deselected in 13.10s",
+    "task_6_green": "1 passed, 94 deselected in 0.72s",
+    "quality_gate_recovery_task_6": "The first full quality-gate run exposed an existing result-grid assertion that used isVisible() for the Results-page error label. Selecting Messages correctly makes that page non-visible through its ancestor tab, so the assertion now verifies the label is not explicitly hidden while the new test verifies the user-visible tab selection.",
+    "quality_gates_task_6": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 509 passed, 7 deselected in 13.23s; no deleted review notes",
+    "baseline_task_7": "509 passed, 7 deselected per committed review-07 gate rerun",
+    "task_7_green": "tests/test_settings_service.py: 21 passed in 0.62s",
+    "quality_gates_task_7": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 510 passed, 7 deselected in 13.42s; no deleted review notes",
+    "baseline_task_8": "510 passed, 7 deselected in 12.95s",
+    "task_8_green": "1 passed, 10 deselected in 0.67s",
+    "quality_gates_task_8": "ruff check: All checks passed; ruff format: 1 file reformatted, 158 files left unchanged; ty: All checks passed; pytest: 511 passed, 7 deselected in 13.86s; no deleted review notes",
+    "task_9_green": "1 passed, 95 deselected in 0.71s",
+    "quality_gates_task_9": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 512 passed, 7 deselected in 13.39s; no deleted review notes",
+    "baseline_task_10": "512 passed, 7 deselected in 12.98s",
+    "baseline_task_11": "519 passed, 7 deselected in 13.25s",
+    "baseline_review_11": "517 passed, 7 deselected in 13.28s",
+    "task_10_green": "tests/test_history.py: 19 passed in 0.57s",
+    "task_10_review_11_green": "tests/test_history.py: 21 passed in 0.59s",
+    "quality_gates_task_10": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 517 passed, 7 deselected in 58.42s; no deleted review notes",
+    "quality_gates_task_10_review_11": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 519 passed, 7 deselected in 13.80s; no deleted review notes",
+    "quality_gate_recovery_task_10": "The first cache-budget check reported 4324796543 bytes, exceeding the 4294967296-byte cap. Removed the test-temporary tree and cleared only /tmp/wherewolf/.uv_cache via uv cache clean; the check before the final gate reported 2270300666 bytes and the final post-gate check reported 3048237259 bytes.",
+    "quality_gate_recovery_task_12": "The commit hook runs ty against the whole repository, while the orchestration gate checks src/. The new fixture helper exposed record IDs as object through dict[str, object], causing seven invalid-argument diagnostics. Replacing the fixture annotation with a HistoryTestRecord TypedDict preserved the test data shape; ty check . and tests/test_history_dock.py then passed.",
+    "quality_gate_recovery_task_13": "The commit hook's ty check . rejected two existing test-only dialog fakes after the new SQL-save method was added to FileDialogService. The existing export-path method intentionally is not protocol-required and MainWindow safely uses getattr for optional dialog capabilities, so the SQL method follows that pattern; the production and built-in fake adapters retain the method while legacy test fakes remain valid.",
+    "quality_gate_recovery_task_14": "The commit hook's ty check . marked QTableView.selectionModel(), verticalHeader(), and viewport() as optional in the new tests. Explicit assertions that each Qt object exists preserve the runtime test behaviour and make the checked type contract true; ty check . and the complete catalog suite then passed.",
+    "task_11_green": "tests/test_history_sql_export.py: 7 passed in 0.53s",
+    "baseline_review_13": "526 passed, 7 deselected in 13.29s",
+    "baseline_task_12": "529 passed, 7 deselected in 13.29s",
+    "baseline_task_13": "532 passed, 7 deselected in 13.24s",
+    "task_11_review_13_green": "tests/test_history_sql_export.py: 10 passed in 0.51s",
+    "task_12_green": "tests/test_history_dock.py: 8 passed in 0.62s",
+    "task_13_green": "tests/test_main_window.py -k 'history and sql': 2 passed, 96 deselected in 1.37s",
+    "baseline_review_16": "534 passed, 7 deselected in 13.24s",
+    "task_13_review_16_green": "tests/test_file_dialog_service.py: 14 passed in 0.60s",
+    "quality_gates_task_13_review_16": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 541 passed, 7 deselected in 13.90s; no deleted review notes",
+    "quality_gates_task_13": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 534 passed, 7 deselected in 13.47s; no deleted review notes",
+    "quality_gates_task_12": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 532 passed, 7 deselected in 13.26s; no deleted review notes",
+    "quality_gates_task_11_review_13": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 529 passed, 7 deselected in 13.46s; no deleted review notes",
+    "quality_gates_task_11": "ruff check: All checks passed; ruff format: 1 file reformatted, 160 files left unchanged; ty: All checks passed; pytest: 526 passed, 7 deselected in 13.67s; no deleted review notes",
+    "baseline_task_14": "541 passed, 7 deselected in 13.12s",
+    "baseline_task_15": "543 passed, 7 deselected in 13.31s",
+    "task_14_green": "focused regression tests: 2 passed, 16 deselected in 0.69s; tests/test_catalog_dock.py: 18 passed in 1.31s",
+    "task_15_green": "focused regression test: 1 passed, 13 deselected in 0.62s; tests/test_schema_panel.py: 14 passed in 0.66s",
+    "quality_gates_task_14": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 543 passed, 7 deselected in 13.61s; no deleted review notes",
+    "quality_gates_task_15": "ruff check: All checks passed; ruff format: 1 file reformatted and 160 left unchanged; ty: All checks passed; pytest: 544 passed, 7 deselected in 13.67s; no deleted review notes",
+    "cache_budget_bytes_task_1": 3538310802,
+    "cache_budget_bytes_task_2": 3589635730,
+    "cache_budget_bytes_task_3": 3714018371,
+    "cache_budget_bytes_task_3_review_03": 3733388522,
+    "cache_budget_bytes_task_4": 3813253657,
+    "cache_budget_bytes_task_5": 3937712371,
+    "cache_budget_bytes_task_6": 4078101082,
+    "cache_budget_bytes_task_7": 4084896161,
+    "cache_budget_bytes_task_8": 4164814351,
+    "cache_budget_bytes_task_9": 4244742351,
+    "cache_budget_bytes_task_10": 3048237259,
+    "cache_budget_bytes_task_10_review_11": 3112258005,
+    "cache_budget_bytes_task_11": 3192155580,
+    "cache_budget_bytes_task_11_review_13": 3256143035,
+    "cache_budget_bytes_task_12": 3396734814,
+    "cache_budget_bytes_task_13": 3537421920,
+    "cache_budget_bytes_task_13_review_16": 3588844168,
+    "cache_budget_bytes_task_14": 3716910776,
+    "cache_budget_bytes_task_15": 3768307352,
+    "cache_budget_bytes_final": 3844955750
+  }
+}

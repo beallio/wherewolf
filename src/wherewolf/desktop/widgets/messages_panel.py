@@ -1,6 +1,7 @@
 """Widget for displaying execution errors, diagnostics, and system messages with severity roles."""
 
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QBrush
 from PyQt6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
@@ -10,6 +11,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from wherewolf.desktop.theming import message_severity_color
 from wherewolf.domain.enums import ExecutionStatus
 from wherewolf.domain.models import QueryResult, SqlDiagnostic
 
@@ -89,3 +91,4 @@ class MessagesPanel(QWidget):
     def _append_item(self, text: str, severity: str) -> None:
         item = QListWidgetItem(text, self._list_widget)
         item.setData(Qt.ItemDataRole.UserRole, severity)
+        item.setForeground(QBrush(message_severity_color(severity, self.palette())))

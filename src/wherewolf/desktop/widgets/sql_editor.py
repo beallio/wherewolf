@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import QMenu, QWidget
 
 from wherewolf.desktop.widgets.completion_adapter import CompletionAdapter
@@ -19,6 +19,8 @@ from wherewolf.services import (
     StatementService,
 )
 from wherewolf.services.completion_context import detect_context
+
+_TOGGLE_COMMENT_SHORTCUT = QKeySequence("Ctrl+/")
 
 
 class SqlEditor(QsciScintilla):
@@ -137,6 +139,28 @@ class SqlEditor(QsciScintilla):
         super().setText(text)
         self.setScrollWidth(1)
 
+    def set_text_undoable(self, text: str) -> None:
+        """Replace the document while allowing one undo to restore its prior contents."""
+        self.beginUndoAction()
+        try:
+            self.selectAll(True)
+            self.replaceSelectedText(text)
+        finally:
+            self.endUndoAction()
+        self.setScrollWidth(1)
+
+    def keyPressEvent(self, e: QKeyEvent) -> None:
+        if e is None:
+            return
+        if (
+            QKeySequence(e.keyCombination()).matches(_TOGGLE_COMMENT_SHORTCUT)
+            is QKeySequence.SequenceMatch.ExactMatch
+        ):
+            self._toggle_comment_action.trigger()
+            e.accept()
+            return
+        super().keyPressEvent(e)
+
     def request_completion(self, forced: bool = False) -> None:
         text = self.text()
         line, col = self.getCursorPosition()
@@ -220,7 +244,7 @@ class SqlEditor(QsciScintilla):
         self._paste_action.triggered.connect(self.paste)
 
         self._toggle_comment_action = QAction("Toggle Comment", self)
-        self._toggle_comment_action.setShortcut(QKeySequence("Ctrl+/"))
+        self._toggle_comment_action.setShortcut(_TOGGLE_COMMENT_SHORTCUT)
         self._toggle_comment_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._toggle_comment_action.triggered.connect(self.toggle_comment)
 
@@ -434,6 +458,8 @@ class SqlEditor(QsciScintilla):
 
     def toggle_comment(self) -> None:
         line_start, line_end = self._selected_or_current_line_range()
+        has_selection = self.hasSelectedText()
+        cursor_line, cursor_column = self.getCursorPosition()
         text = self.text()
         if not text:
             return
@@ -455,7 +481,19 @@ class SqlEditor(QsciScintilla):
             else:
                 lines[index] = f"{indent}-- {stripped}"
 
-        self.setText("".join(lines))
+        self.beginUndoAction()
+        try:
+            self.selectAll(True)
+            self.replaceSelectedText("".join(lines))
+            if has_selection:
+                end_line = line_end - 1
+                end_column = len(self.text(end_line).rstrip("\r\n"))
+                self.setSelection(line_start - 1, 0, end_line, end_column)
+            else:
+                self.setCursorPosition(cursor_line, cursor_column)
+        finally:
+            self.endUndoAction()
+        self.setScrollWidth(1)
 
     def _selected_or_current_line_range(self) -> tuple[int, int]:
         if self.hasSelectedText():
@@ -483,7 +521,7 @@ class SqlEditor(QsciScintilla):
         if current == replaced:
             return 0
 
-        self.setText(replaced)
+        self.set_text_undoable(replaced)
         return current.count(old_text)
 
     def _show_context_menu(self, position) -> None:
