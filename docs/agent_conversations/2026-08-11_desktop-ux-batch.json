@@ -48,7 +48,8 @@
     "Cancelling a history deletion preserves every selected record and every visible row.",
     "History supports Ctrl multi-selection; a context click within it preserves the selection, while a context click on another row selects only that row.",
     "Selected history records save as one atomically written SQL file through MainWindow, appending .sql to an extensionless destination.",
-    "Cancelling the history SQL save dialog creates no file."
+    "Cancelling the history SQL save dialog creates no file.",
+    "The shared history-SQL destination normaliser appends .sql only when no suffix was supplied, while direct Qt dialog-wrapper tests cover suffix-less, .sql, explicit alternate suffix, and cancellation paths."
   ],
   "red_test_output": {
     "task_1": {
@@ -130,6 +131,11 @@
       "command": "./run.sh uv run pytest tests/test_main_window.py -k 'history and sql' -x",
       "exit_code": 1,
       "failure": "AttributeError: 'HistoryDock' object has no attribute '_save_as_sql_action'"
+    },
+    "task_13_review_16": {
+      "command": "./run.sh uv run pytest tests/test_file_dialog_service.py -x",
+      "exit_code": 2,
+      "failure": "ImportError: cannot import name 'normalise_sql_destination' from wherewolf.desktop.dialogs.file_dialog_service during test collection."
     }
   },
   "design_decisions": [
@@ -150,10 +156,12 @@
     "Review 11's mixed raw v1/v2 fixture deletes the known v2 id without an earlier get_all call, so it proves delete_records itself migrates an on-disk legacy survivor. A mocked unknown-id deletion independently proves the conditional write guard.",
     "The pure history exporter sorts parseable persisted timestamps by actual instant descending, normalises naive timestamps to UTC for a safe mixed comparison, places unparseable timestamps afterward while preserving their caller order, preserves every timestamp verbatim in its comment line, and uses rstrip on only CR/LF terminal characters so SQL trailing spaces remain intact.",
     "HistoryDock keeps one reusable Delete QAction, enables it from the current stable-id selection when the context menu opens, and builds a transient menu around that action. A context click outside the existing selection resets to that item; one inside it preserves the multi-selection. Confirmed deletion delegates to HistoryManager.delete_records before refresh. Round-15 review established that Qt's mouse press already produces both selection outcomes, so the explicit block remains as intent and keyboard-menu coverage rather than a test-proven branch.",
-    "HistoryDock owns a reusable Save as SQL action but only emits selected full records; MainWindow owns the save dialog and uses write_atomically with the pure serializer. The dialog adapter normalises only extensionless destinations to .sql, preserving a user-supplied suffix."
+    "HistoryDock owns a reusable Save as SQL action but only emits selected full records; MainWindow owns the save dialog and uses write_atomically with the pure serializer. The dialog adapter normalises only extensionless destinations to .sql, preserving a user-supplied suffix.",
+    "Review 16 extracts history-SQL suffix handling into normalise_sql_destination so both production and fake adapters share one caller-visible rule; direct Qt wrapper tests prove its suffix-less, explicit-suffix, and cancellation behaviour."
   ],
   "out_of_scope_findings": [
-    "Review 09 measured a pre-existing 4.86 s set_frame cost for a 100,000-row result even with auto-size disabled. This is model-reset/proxy work, unrelated to Task 8 or Task 9, and is deferred to a separate plan."
+    "Review 09 measured a pre-existing 4.86 s set_frame cost for a 100,000-row result even with auto-size disabled. This is model-reset/proxy work, unrelated to Task 8 or Task 9, and is deferred to a separate plan.",
+    "Review 16: history SQL saves pass None as the default directory, so the native dialog starts in its process-selected location rather than the remembered dataset directory. This is outside Task 13's scope."
   ],
   "results": {
     "baseline_task_9": "511 passed, 7 deselected in 13.01s",
@@ -205,6 +213,9 @@
     "task_11_review_13_green": "tests/test_history_sql_export.py: 10 passed in 0.51s",
     "task_12_green": "tests/test_history_dock.py: 8 passed in 0.62s",
     "task_13_green": "tests/test_main_window.py -k 'history and sql': 2 passed, 96 deselected in 1.37s",
+    "baseline_review_16": "534 passed, 7 deselected in 13.24s",
+    "task_13_review_16_green": "tests/test_file_dialog_service.py: 14 passed in 0.60s",
+    "quality_gates_task_13_review_16": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 541 passed, 7 deselected in 13.90s; no deleted review notes",
     "quality_gates_task_13": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 534 passed, 7 deselected in 13.47s; no deleted review notes",
     "quality_gates_task_12": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 532 passed, 7 deselected in 13.26s; no deleted review notes",
     "quality_gates_task_11_review_13": "ruff check: All checks passed; ruff format: 161 files left unchanged; ty: All checks passed; pytest: 529 passed, 7 deselected in 13.46s; no deleted review notes",
@@ -224,6 +235,7 @@
     "cache_budget_bytes_task_11": 3192155580,
     "cache_budget_bytes_task_11_review_13": 3256143035,
     "cache_budget_bytes_task_12": 3396734814,
-    "cache_budget_bytes_task_13": 3537421920
+    "cache_budget_bytes_task_13": 3537421920,
+    "cache_budget_bytes_task_13_review_16": 3588844168
   }
 }

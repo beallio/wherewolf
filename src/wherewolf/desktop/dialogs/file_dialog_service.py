@@ -16,6 +16,11 @@ from wherewolf.services.export_destination import (
 )
 
 
+def normalise_sql_destination(destination: Path) -> Path:
+    """Return the chosen history-SQL path with a .sql suffix when none was typed."""
+    return destination if destination.suffix else destination.with_suffix(".sql")
+
+
 @runtime_checkable
 class FileDialogService(Protocol):
     def choose_dataset_files(
@@ -51,11 +56,7 @@ class FakeFileDialogService:
         del default_directory, parent
         if self.history_sql_path is None:
             return None
-        return (
-            self.history_sql_path
-            if self.history_sql_path.suffix
-            else self.history_sql_path.with_suffix(".sql")
-        )
+        return normalise_sql_destination(self.history_sql_path)
 
 
 class QtFileDialogService:
@@ -117,8 +118,7 @@ class QtFileDialogService:
         )
         if not name:
             return None
-        destination = Path(name)
-        return destination if destination.suffix else destination.with_suffix(".sql")
+        return normalise_sql_destination(Path(name))
 
     @staticmethod
     def _build_filter() -> str:
