@@ -214,6 +214,21 @@ def test_sql_editor_find_and_replace_all(qtbot) -> None:
     assert editor.replace_all("gamma", "alpha") == 1
 
 
+def test_sql_editor_replace_all_is_undoable(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("alpha beta alpha")
+    editor.setCursorPosition(0, len(editor.text()))
+    editor.insert("!")
+
+    assert editor.replace_all("alpha", "gamma") == 2
+    assert editor.text() == "gamma beta gamma!"
+
+    editor.undo()
+
+    assert editor.text() == "alpha beta alpha!"
+
+
 def test_sql_editor_toggle_comment_round_trips_selection(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)

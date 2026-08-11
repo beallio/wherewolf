@@ -521,7 +521,7 @@ class SqlEditor(QsciScintilla):
         if current == replaced:
             return 0
 
-        self.setText(replaced)
+        self.set_text_undoable(replaced)
         return current.count(old_text)
 
     def _show_context_menu(self, position) -> None:
