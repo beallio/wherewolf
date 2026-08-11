@@ -183,6 +183,43 @@
     "Task 14 deliberately does not add Ctrl+C support to the model-backed catalog; the existing TSV serializer only supports QTableWidget and non-contiguous catalog-cell copying needs a separate plan.",
     "Task 15 probe: a scattered SchemaPanel selection of (0, 0) and (1, 1) copies two aligned, complete nine-column rows rather than only the two selected cells. It is not row-misaligned, but preserving exact scattered cells requires a separate serializer plan."
   ],
+  "final_mutation_verification": {
+    "V1": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -x after deleting SqlEditor.keyPressEvent",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 'select 1' == '-- select 1'"
+    },
+    "V2": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -x after restoring editor.setText in _restore_history_query",
+      "exit_code": 1,
+      "failure": "AssertionError: assert False, where False = SqlEditor.isUndoAvailable() after history restore."
+    },
+    "V3": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -x after restoring destructive setText in toggle_comment",
+      "exit_code": 1,
+      "failure": "AssertionError: assert (-1, -1, -1, -1) == (0, 0, 1, 12) for the selected lines."
+    },
+    "V4": {
+      "command": "./run.sh uv run pytest tests/test_result_table_view.py -x after deleting the auto-size clamp",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 2546 == 120 for the configured maximum column width."
+    },
+    "V5": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -x after deleting the Messages-tab switch",
+      "exit_code": 1,
+      "failure": "AssertionError: the current Results page widget is not window.messages_panel."
+    },
+    "V6": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -x after restoring selectedRows in _selected_entry",
+      "exit_code": 1,
+      "failure": "AssertionError: Copy Alias did not receive the second entry alias after a single File-cell click."
+    },
+    "V7": {
+      "command": "./run.sh uv run pytest tests/test_catalog_dock.py -x after replacing the Task 14 header QTest.mouseClick with sectionClicked.emit(1)",
+      "exit_code": 1,
+      "failure": "AssertionError: assert set() == {(1, 0), (1, 1), (1, 2), (1, 3)}."
+    }
+  },
   "results": {
     "baseline_task_9": "511 passed, 7 deselected in 13.01s",
     "baseline": "499 passed, 7 deselected in 13.74s",
