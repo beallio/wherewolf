@@ -139,6 +139,16 @@ class SqlEditor(QsciScintilla):
         super().setText(text)
         self.setScrollWidth(1)
 
+    def set_text_undoable(self, text: str) -> None:
+        """Replace the document while allowing one undo to restore its prior contents."""
+        self.beginUndoAction()
+        try:
+            self.selectAll(True)
+            self.replaceSelectedText(text)
+        finally:
+            self.endUndoAction()
+        self.setScrollWidth(1)
+
     def keyPressEvent(self, e: QKeyEvent) -> None:
         if e is None:
             return

@@ -1450,6 +1450,25 @@ def test_history_record_restore_updates_editor_without_execution_or_catalog(
     assert window._catalog_service.entries == initial_catalog
 
 
+def test_history_record_restore_replaces_editor_text_in_one_undo_action(
+    tmp_path: Path, qtbot
+) -> None:
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry("duckdb", "select * from history_record")
+    window = MainWindow(history_manager=history)
+    qtbot.addWidget(window)
+    window.editor.setText("select * from original")
+
+    window.history_dock.record_selected.emit(history.get_all()[0])
+
+    assert window.editor.text() == "select * from history_record"
+    assert window.editor.isUndoAvailable()
+
+    window.editor.undo()
+
+    assert window.editor.text() == "select * from original"
+
+
 def test_history_record_restore_leaves_existing_catalog_and_schema_work_untouched(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
@@ -2180,6 +2199,25 @@ def test_main_window_apply_order_to_query(qtbot, monkeypatch) -> None:
     assert window.editor.text() == "SELECT * FROM users ORDER BY id ASC"
     assert len(executed_sqls) == 1
     assert executed_sqls[0] == "SELECT * FROM users ORDER BY id ASC"
+
+
+def test_main_window_apply_order_to_query_replaces_editor_text_in_one_undo_action(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT * FROM users")
+    window.result_table_view.set_frame(pl.DataFrame({"id": [1, 2]}))
+    monkeypatch.setattr(window.query_controller, "execute", lambda _request: True)
+
+    window._on_apply_query_order("id", "ASC")
+
+    assert window.editor.text() == "SELECT * FROM users ORDER BY id ASC"
+    assert window.editor.isUndoAvailable()
+
+    window.editor.undo()
+
+    assert window.editor.text() == "SELECT * FROM users"
 
 
 def test_main_window_query_result_details_and_metrics(qtbot) -> None:

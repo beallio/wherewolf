@@ -1004,7 +1004,7 @@ class MainWindow(QMainWindow):
         """Place a historical SQL statement in the editor without running it."""
         query = record.get("query")
         if isinstance(query, str):
-            self.editor.setText(query)
+            self.editor.set_text_undoable(query)
 
     def _on_apply_query_order(self, column_name: str, direction: str) -> None:
         if not self.result_table_view.has_result():
@@ -1013,7 +1013,7 @@ class MainWindow(QMainWindow):
         if not current_sql.strip():
             return
         ordered_sql = build_order_by_sql(current_sql, column_name, direction)
-        self.editor.setText(ordered_sql)
+        self.editor.set_text_undoable(ordered_sql)
         self._on_run_triggered()
 
     def _dispatch_focused_edit_action(self, operation: str) -> None:
