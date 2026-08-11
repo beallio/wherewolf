@@ -12,6 +12,21 @@ uv run pytest
 ruff check .
 ```
 
+### 1a. Write the Change Notes First
+
+The GitHub release title and body are built from `CHANGELOG.md` by the release
+workflow — nothing is typed into the GitHub UI. Add the section before tagging, or
+the workflow fails loudly rather than publishing an empty release.
+
+```markdown
+## [0.8.0] - 2026-08-11 — History actions, self-sizing columns, and a working Ctrl+/
+```
+
+Everything after ` — ` on the heading becomes the release title, prefixed with the
+tag (`v0.8.0 — History actions, …`). Omit the suffix and the title is just the tag.
+The body is the section's contents plus a generated **Full Changelog** compare link,
+whose previous version is read from the next heading in the file.
+
 ### 2. Bump the Version
 Use `uv` to increment the static version in `pyproject.toml` (this also updates
 `uv.lock`). `hatch version` cannot be used here because the version is defined

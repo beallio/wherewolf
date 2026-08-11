@@ -100,11 +100,58 @@ jobs:
         with:
           name: dist
           path: dist/
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+
+          # Body: everything under this version's heading, up to the next release heading.
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { found = 1; next }
+            /^## \[/               { found = 0 }
+            found                  { print }
+          ' CHANGELOG.md | sed -e '/./,$!d' > release-notes.md
+
+          if [ ! -s release-notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for ${version}" >&2
+            exit 1
+          fi
+
+          # Previous version comes from the next heading in CHANGELOG.md, not from git:
+          # actions/checkout is shallow by default and carries no tags.
+          previous="$(awk -v v="$version" '
+            /^## \[/ {
+              match($0, /\[[^]]+\]/)
+              current = substr($0, RSTART + 1, RLENGTH - 2)
+              if (seen) { print current; exit }
+              if (current == v) seen = 1
+            }' CHANGELOG.md)"
+
+          if [ -n "$previous" ]; then
+            printf '\n**Full Changelog**: %s/%s/compare/v%s...%s\n' \
+              "${GITHUB_SERVER_URL}" "${GITHUB_REPOSITORY}" \
+              "$previous" "${GITHUB_REF_NAME}" >> release-notes.md
+          fi
+
+          # Title: any text after the date on the heading, else the bare tag.
+          title="$(awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" {
+              if (match($0, / — /)) print substr($0, RSTART + length(" — "))
+              exit
+            }' CHANGELOG.md)"
+          if [ -n "$title" ]; then
+            echo "title=${GITHUB_REF_NAME} — ${title}" >> "$GITHUB_OUTPUT"
+          else
+            echo "title=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           files: dist/*
-          generate_release_notes: true
+          name: ${{ steps.notes.outputs.title }}
+          body_path: release-notes.md
 
   pypi-publish:
     needs: build
