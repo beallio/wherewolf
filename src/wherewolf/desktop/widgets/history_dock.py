@@ -4,8 +4,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtWidgets import QHeaderView, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtCore import QPoint, Qt, pyqtSignal
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import (
+    QAbstractItemView,
+    QHeaderView,
+    QMenu,
+    QMessageBox,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from wherewolf.storage.history import HistoryManager
 
@@ -57,7 +67,13 @@ class HistoryDock(QWidget):
             header.setSortIndicatorShown(True)
             header.setSortIndicator(0, Qt.SortOrder.DescendingOrder)
         self.history_table.setSortingEnabled(True)
+        self.history_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.history_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.history_table.itemActivated.connect(self._on_item_activated)
+        self.history_table.customContextMenuRequested.connect(self._on_context_menu)
+
+        self._delete_action = QAction("Delete", self)
+        self._delete_action.triggered.connect(self._delete_selected_records)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -88,3 +104,46 @@ class HistoryDock(QWidget):
         record = self._history_manager.get_by_id(entry_id)
         if record is not None:
             self.record_selected.emit(record)
+
+    def _on_context_menu(self, position: QPoint) -> None:
+        item = self.history_table.itemAt(position)
+        if item is not None and not item.isSelected():
+            self.history_table.clearSelection()
+            item.setSelected(True)
+            self.history_table.setCurrentItem(item)
+
+        self._delete_action.setEnabled(bool(self._selected_record_ids()))
+        menu = QMenu(self)
+        menu.addAction(self._delete_action)
+
+        viewport = self.history_table.viewport()
+        if viewport is not None:
+            menu.popup(viewport.mapToGlobal(position))
+
+    def _selected_record_ids(self) -> list[str]:
+        record_ids: list[str] = []
+        for item in self.history_table.selectedItems():
+            record_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(record_id, str):
+                record_ids.append(record_id)
+        return record_ids
+
+    def _delete_selected_records(self) -> None:
+        record_ids = self._selected_record_ids()
+        record_count = len(record_ids)
+        if record_count == 0:
+            return
+
+        record_label = "record" if record_count == 1 else "records"
+        result = QMessageBox.question(
+            self,
+            "Delete History",
+            f"Delete {record_count} history {record_label}? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if result is not QMessageBox.StandardButton.Yes:
+            return
+
+        self._history_manager.delete_records(record_ids)
+        self.refresh()
