@@ -1,8 +1,9 @@
 from pathlib import Path
 from uuid import uuid4
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QPoint, Qt
+from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QApplication, QTableWidgetSelectionRange
 from pytestqt.qtbot import QtBot
 
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
@@ -114,6 +115,44 @@ def test_schema_panel_displays_profile_with_approximate_distinct_label(qtbot: Qt
     assert panel.cell_text(0, 8) == ""
 
 
+def test_schema_panel_displays_temporal_profile_mean_verbatim(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    entry_id = uuid4()
+    panel.set_entry(
+        CatalogEntry(
+            id=entry_id,
+            alias="events",
+            path=Path("events.csv"),
+            source_format=SourceFormat.CSV,
+            schema=(ColumnSchema("event_ts", "TIMESTAMP"),),
+        )
+    )
+    panel.set_profile_result(
+        ProfileResult(
+            entry_id=entry_id,
+            profiles=(
+                ColumnProfile(
+                    "event_ts",
+                    "TIMESTAMP",
+                    "2024-01-01 00:00:00",
+                    "2024-01-01 00:01:39",
+                    100,
+                    "2024-01-01 00:00:49.5",
+                    None,
+                    None,
+                    None,
+                    None,
+                    100,
+                    0.0,
+                ),
+            ),
+        )
+    )
+
+    assert panel.cell_text(0, 8) == "2024-01-01 00:00:49.5"
+
+
 def test_schema_panel_error_display(qtbot: QtBot) -> None:
     panel = SchemaPanel()
     qtbot.addWidget(panel)
@@ -176,9 +215,6 @@ def test_schema_panel_insert_columns_single(qtbot: QtBot) -> None:
 
     assert len(received) == 1
     assert received[0] == '"first name"'
-
-
-from PyQt6.QtWidgets import QTableWidgetSelectionRange
 
 
 def test_schema_panel_insert_columns_multi_display_order(qtbot: QtBot) -> None:
@@ -287,3 +323,88 @@ def test_schema_panel_value_counts_context_action_emits_entry_and_column(qtbot: 
         panel.create_context_menu(0, 0).actions()[-1].trigger()
 
     assert signal.args == [entry, "category"]
+
+
+def test_schema_panel_cell_selection_keeps_column_names_and_context_selection(
+    qtbot: QtBot, monkeypatch
+) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="users",
+            path=Path("users.parquet"),
+            source_format=SourceFormat.PARQUET,
+            schema=(
+                ColumnSchema("id", "BIGINT"),
+                ColumnSchema("name", "VARCHAR"),
+                ColumnSchema("active", "BOOLEAN"),
+            ),
+        )
+    )
+    panel.resize(900, 320)
+    panel.show()
+
+    table = panel._table_widget
+    viewport = table.viewport()
+    assert viewport is not None
+    selected_type = table.item(1, 1)
+    assert selected_type is not None
+    selected_type_position = table.visualItemRect(selected_type).center()
+    qtbot.mouseClick(
+        viewport,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        selected_type_position,
+    )
+
+    selection_model = table.selectionModel()
+    assert selection_model is not None
+    assert {(index.row(), index.column()) for index in selection_model.selectedIndexes()} == {
+        (1, 1)
+    }
+    assert panel.get_selected_column_names() == ["name"]
+
+    first_type = table.item(0, 1)
+    assert first_type is not None
+    first_type_position = table.visualItemRect(first_type).center()
+    qtbot.mouseClick(
+        viewport,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.ControlModifier,
+        first_type_position,
+    )
+    assert {(index.row(), index.column()) for index in selection_model.selectedIndexes()} == {
+        (0, 1),
+        (1, 1),
+    }
+
+    monkeypatch.setattr("wherewolf.desktop.widgets.schema_panel.QMenu.exec", lambda *_args: None)
+    qtbot.mouseClick(
+        viewport,
+        Qt.MouseButton.RightButton,
+        Qt.KeyboardModifier.NoModifier,
+        first_type_position,
+    )
+    panel._on_context_menu_requested(first_type_position)
+    assert {index.row() for index in selection_model.selectedIndexes()} == {0, 1}
+
+    header = table.verticalHeader()
+    assert header is not None
+    header_viewport = header.viewport()
+    assert header_viewport is not None
+    header_position = QPoint(
+        header_viewport.width() // 2,
+        header.sectionPosition(1) + header.sectionSize(1) // 2,
+    )
+    QTest.mouseClick(  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+        header_viewport,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+        header_position,
+    )
+
+    assert {(index.row(), index.column()) for index in selection_model.selectedIndexes()} == {
+        (1, column) for column in range(table.columnCount())
+    }

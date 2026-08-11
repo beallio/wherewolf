@@ -132,11 +132,11 @@ class ColumnProfile:
     min: str | None
     max: str | None
     approx_unique: int | None
-    avg: float | None
-    std: float | None
-    q25: float | None
-    q50: float | None
-    q75: float | None
+    avg: str | None
+    std: str | None
+    q25: str | None
+    q50: str | None
+    q75: str | None
     count: int | None
     null_percentage: float | None
 

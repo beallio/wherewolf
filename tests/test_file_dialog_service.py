@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QFileDialog, QWidget
 from wherewolf.desktop.dialogs.file_dialog_service import (
     FileDialogService,
     QtFileDialogService,
+    normalise_sql_destination,
 )
 from wherewolf.domain.enums import SourceFormat
 from wherewolf.services.export_destination import ExportFormat
@@ -118,3 +119,45 @@ def test_qt_export_dialog_cancellation_returns_none_without_creating_destination
 
     assert service.choose_export_path(tmp_path, ExportFormat.CSV) is None
     assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    ("chosen", "expected"),
+    [
+        ("/tmp/history", "/tmp/history.sql"),
+        ("/tmp/history.sql", "/tmp/history.sql"),
+        ("/tmp/history.txt", "/tmp/history.txt"),
+    ],
+)
+def test_normalise_sql_destination_preserves_user_supplied_suffix(
+    chosen: str, expected: str
+) -> None:
+    assert normalise_sql_destination(Path(chosen)) == Path(expected)
+
+
+@pytest.mark.parametrize(
+    ("chosen", "expected"),
+    [
+        ("/tmp/history", "/tmp/history.sql"),
+        ("/tmp/history.sql", "/tmp/history.sql"),
+        ("/tmp/history.txt", "/tmp/history.txt"),
+    ],
+)
+def test_qt_history_sql_path_appends_suffix(
+    monkeypatch: pytest.MonkeyPatch, chosen: str, expected: str
+) -> None:
+    monkeypatch.setattr(
+        "wherewolf.desktop.dialogs.file_dialog_service.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: (chosen, ""),
+    )
+
+    assert QtFileDialogService().choose_history_sql_path(None) == Path(expected)
+
+
+def test_qt_history_sql_path_cancellation_returns_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "wherewolf.desktop.dialogs.file_dialog_service.QFileDialog.getSaveFileName",
+        lambda *args, **kwargs: ("", ""),
+    )
+
+    assert QtFileDialogService().choose_history_sql_path(None) is None

@@ -50,7 +50,12 @@ from wherewolf.domain import (
     SchemaResult,
     SourceFormat,
 )
-from wherewolf.services import CatalogService, ExportFormat, SettingsService
+from wherewolf.services import (
+    CatalogService,
+    ExportFormat,
+    SettingsService,
+    serialise_history_records_to_sql,
+)
 from wherewolf.storage import HistoryManager
 
 
@@ -757,6 +762,59 @@ def test_main_window_routes_editor_diagnostic_to_messages_tab(qtbot) -> None:
     assert severity == "info"
 
 
+def test_main_window_raises_messages_tab_only_for_failed_query_results(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    results_tabs = window.findChild(QTabWidget, "results_tabs")
+    assert results_tabs is not None
+    results_page = results_tabs.widget(0)
+    assert results_page is not None
+
+    request = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=100,
+        submitted_at=datetime.now(UTC),
+    )
+    failed = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="SyntaxError",
+        error_message="bad SQL",
+    )
+    succeeded = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"value": [1]}),
+        execution_seconds=0.01,
+        preview_row_count=1,
+        total_row_count=1,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+
+    results_tabs.setCurrentWidget(results_page)
+    window._on_query_result_ready(failed, request)
+    assert results_tabs.currentWidget() is window.messages_panel
+
+    results_tabs.setCurrentWidget(results_page)
+    window._on_query_result_ready(succeeded, request)
+    assert results_tabs.currentWidget() is results_page
+
+    window.editor._update_status("editor diagnostic")
+    assert results_tabs.currentWidget() is results_page
+
+
 def test_main_window_editor_shows_call_tip_for_known_function(qtbot, monkeypatch) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
@@ -790,6 +848,29 @@ def test_main_window_preferences_persist_and_change_editor_font(tmp_path: Path, 
     assert settings.restore_completion_enabled() is False
     assert settings.restore_completion_threshold() == 4
     assert window.editor.font_size == 18
+
+
+def test_main_window_preferences_persist_result_auto_size_policy(tmp_path: Path, qtbot) -> None:
+    settings = _configure_qsettings_path(tmp_path / "result-auto-size-preferences")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.auto_size_columns.setChecked(False)
+    dialog.auto_size_max_width.setValue(150)
+    dialog.accept()
+
+    assert settings.restore_auto_size_columns() is False
+    assert settings.restore_auto_size_max_width() == 150
+
+    window.result_table_view.set_frame(pl.DataFrame({"wide": ["x" * 400]}))
+    assert window.result_table_view.columnWidth(0) < 150
+
+    restored_window = MainWindow(settings_service=settings)
+    qtbot.addWidget(restored_window)
+    assert restored_window.result_table_view._auto_size_columns_enabled is False
+    assert restored_window.result_table_view._auto_size_max_width == 150
 
 
 def test_main_window_moves_editor_theme_to_preferences_and_keeps_saved_theme(
@@ -1450,6 +1531,66 @@ def test_history_record_restore_updates_editor_without_execution_or_catalog(
     assert window._catalog_service.entries == initial_catalog
 
 
+def test_history_record_restore_replaces_editor_text_in_one_undo_action(
+    tmp_path: Path, qtbot
+) -> None:
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry("duckdb", "select * from history_record")
+    window = MainWindow(history_manager=history)
+    qtbot.addWidget(window)
+    window.editor.setText("select * from original")
+
+    window.history_dock.record_selected.emit(history.get_all()[0])
+
+    assert window.editor.text() == "select * from history_record"
+    assert window.editor.isUndoAvailable()
+
+    window.editor.undo()
+
+    assert window.editor.text() == "select * from original"
+
+
+def test_main_window_saves_selected_history_records_as_sql(tmp_path: Path, qtbot) -> None:
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry("duckdb", "SELECT first")
+    history.add_entry("duckdb", "SELECT second")
+    records = history.get_all()
+    destination = tmp_path / "selected-history"
+    window = MainWindow(
+        history_manager=history,
+        file_dialog_service=FakeFileDialogService(paths=(), history_sql_path=destination),
+    )
+    qtbot.addWidget(window)
+
+    for row in range(window.history_dock.history_table.topLevelItemCount()):
+        item = window.history_dock.history_table.topLevelItem(row)
+        assert item is not None
+        item.setSelected(True)
+
+    window.history_dock._save_as_sql_action.trigger()
+
+    saved_file = destination.with_suffix(".sql")
+    assert saved_file.read_text() == serialise_history_records_to_sql(records)
+
+
+def test_main_window_cancelled_history_sql_save_creates_no_file(tmp_path: Path, qtbot) -> None:
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry("duckdb", "SELECT cancelled")
+    destination = tmp_path / "cancelled-history.sql"
+    window = MainWindow(
+        history_manager=history,
+        file_dialog_service=FakeFileDialogService(paths=()),
+    )
+    qtbot.addWidget(window)
+    item = window.history_dock.history_table.topLevelItem(0)
+    assert item is not None
+    item.setSelected(True)
+
+    window.history_dock._save_as_sql_action.trigger()
+
+    assert not destination.exists()
+
+
 def test_history_record_restore_leaves_existing_catalog_and_schema_work_untouched(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
@@ -1820,7 +1961,7 @@ def test_main_window_profile_failure_keeps_skip_notice_until_success_clears(
                             min="1",
                             max="2",
                             approx_unique=2,
-                            avg=1.5,
+                            avg="1.5",
                             std=None,
                             q25=None,
                             q50=None,
@@ -1936,7 +2077,7 @@ def test_main_window_profile_pending_state_is_visible_and_single_queued(
                             min="1",
                             max="2",
                             approx_unique=2,
-                            avg=1.5,
+                            avg="1.5",
                             std=None,
                             q25=None,
                             q50=None,
@@ -2124,7 +2265,7 @@ def test_main_window_result_grid_integration(qtbot) -> None:
     window._on_query_result_ready(res_failed, request)
     assert grid.proxy_model().rowCount() == 0
     assert not window.empty_result_banner.isVisible()
-    assert window.result_error_message.isVisible()
+    assert not window.result_error_message.isHidden()
     assert "near SELECT" in window.result_error_message.text()
     msg, severity = window.messages_panel.message_at(0)
     assert "Error (SyntaxError): near SELECT" in msg
@@ -2180,6 +2321,25 @@ def test_main_window_apply_order_to_query(qtbot, monkeypatch) -> None:
     assert window.editor.text() == "SELECT * FROM users ORDER BY id ASC"
     assert len(executed_sqls) == 1
     assert executed_sqls[0] == "SELECT * FROM users ORDER BY id ASC"
+
+
+def test_main_window_apply_order_to_query_replaces_editor_text_in_one_undo_action(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT * FROM users")
+    window.result_table_view.set_frame(pl.DataFrame({"id": [1, 2]}))
+    monkeypatch.setattr(window.query_controller, "execute", lambda _request: True)
+
+    window._on_apply_query_order("id", "ASC")
+
+    assert window.editor.text() == "SELECT * FROM users ORDER BY id ASC"
+    assert window.editor.isUndoAvailable()
+
+    window.editor.undo()
+
+    assert window.editor.text() == "SELECT * FROM users"
 
 
 def test_main_window_query_result_details_and_metrics(qtbot) -> None:

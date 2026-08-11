@@ -11,6 +11,7 @@ from PyQt6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QHeaderView,
     QInputDialog,
     QMenu,
     QMessageBox,
@@ -46,12 +47,17 @@ class CatalogDock(QWidget):
         self._view = QTableView(self)
         self._view.setObjectName("catalog_view")
         self._view.setModel(self._model)
+        self._view.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         header = self._view.horizontalHeader()
         if header is not None:
             header.setSectionsMovable(True)
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self._view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
-        self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
+        self._view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self._view.setAlternatingRowColors(True)
         self._view.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -159,11 +165,11 @@ class CatalogDock(QWidget):
         if selection_model is None:
             return None
 
-        indexes = selection_model.selectedRows()
-        if not indexes:
+        current_index = selection_model.currentIndex()
+        if not current_index.isValid():
             return None
 
-        row = indexes[0].row()
+        row = current_index.row()
         if row < 0 or row >= self._model.rowCount():
             return None
 

@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -137,6 +138,19 @@ class HistoryManager:
     def get_by_id(self, entry_id: str) -> dict | None:
         """Return the history record identified by its stable UUID, if present."""
         return next((entry for entry in self.get_all() if entry["id"] == entry_id), None)
+
+    def delete_records(self, entry_ids: Iterable[str]) -> int:
+        """Delete all records whose stable ids occur in ``entry_ids``."""
+        ids_to_delete = set(entry_ids)
+        if not ids_to_delete:
+            return 0
+
+        history = self.get_all()
+        survivors = [entry for entry in history if entry["id"] not in ids_to_delete]
+        removed_count = len(history) - len(survivors)
+        if removed_count:
+            self._write_history(survivors)
+        return removed_count
 
     def clear(self):
         """Clears the query history."""

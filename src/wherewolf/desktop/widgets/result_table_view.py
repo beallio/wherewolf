@@ -15,6 +15,10 @@ from wherewolf.desktop.models.typed_sort_proxy_model import TypedSortProxyModel
 class ResultTableView(QTableView):
     """QTableView configured for polars query results with type-aware sorting and copy."""
 
+    DEFAULT_AUTO_SIZE_COLUMNS = True
+    DEFAULT_AUTO_SIZE_MAX_WIDTH = 300
+    AUTO_SIZE_SAMPLE_ROWS = 200
+
     insert_header_requested = pyqtSignal(str)
     apply_query_order_requested = pyqtSignal(str, str)
     local_sort_changed = pyqtSignal(bool)
@@ -25,6 +29,8 @@ class ResultTableView(QTableView):
         self._source_model = PolarsTableModel(parent=self)
         self._proxy_model = TypedSortProxyModel(parent=self)
         self._proxy_model.setSourceModel(self._source_model)
+        self._auto_size_columns_enabled = self.DEFAULT_AUTO_SIZE_COLUMNS
+        self._auto_size_max_width = self.DEFAULT_AUTO_SIZE_MAX_WIDTH
 
         self.setModel(self._proxy_model)
         self.setSortingEnabled(True)
@@ -39,6 +45,7 @@ class ResultTableView(QTableView):
             self.setPalette(palette)
         header = self.horizontalHeader()
         if header is not None:
+            header.setResizeContentsPrecision(self.AUTO_SIZE_SAMPLE_ROWS)
             header.setSectionsMovable(True)
             header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             header.customContextMenuRequested.connect(self._on_header_context_menu_requested)
@@ -57,6 +64,8 @@ class ResultTableView(QTableView):
             self._source_model.set_header_badges(
                 [self._dtype_badge(dtype) for dtype in frame.dtypes]
             )
+        if self._auto_size_columns_enabled:
+            self.auto_size_columns()
         self._proxy_model.sort(-1, Qt.SortOrder.AscendingOrder)
         self.local_sort_changed.emit(False)
         self.frame_changed.emit(self.has_result())
@@ -134,8 +143,17 @@ class ResultTableView(QTableView):
         for c in range(self._proxy_model.columnCount()):
             self.setColumnHidden(c, False)
 
+    def set_auto_size_policy(self, enabled: bool, maximum_width: int) -> None:
+        self._auto_size_columns_enabled = enabled
+        self._auto_size_max_width = maximum_width
+
     def auto_size_columns(self) -> None:
         self.resizeColumnsToContents()
+        for column in range(self._proxy_model.columnCount()):
+            if not self.isColumnHidden(column):
+                self.setColumnWidth(
+                    column, min(self.columnWidth(column), self._auto_size_max_width)
+                )
 
     def sortByColumn(self, column: int, order: Qt.SortOrder) -> None:
         """Sort the in-memory preview and disclose when query order is unchanged."""

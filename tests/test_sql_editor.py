@@ -1,6 +1,7 @@
 from PyQt6.Qsci import QsciLexerSQL
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtGui import QColor
+from PyQt6.QtTest import QTest
 
 from wherewolf.desktop.widgets import SqlEditor
 from wherewolf.services import (
@@ -213,6 +214,21 @@ def test_sql_editor_find_and_replace_all(qtbot) -> None:
     assert editor.replace_all("gamma", "alpha") == 1
 
 
+def test_sql_editor_replace_all_is_undoable(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("alpha beta alpha")
+    editor.setCursorPosition(0, len(editor.text()))
+    editor.insert("!")
+
+    assert editor.replace_all("alpha", "gamma") == 2
+    assert editor.text() == "gamma beta gamma!"
+
+    editor.undo()
+
+    assert editor.text() == "alpha beta alpha!"
+
+
 def test_sql_editor_toggle_comment_round_trips_selection(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)
@@ -226,6 +242,72 @@ def test_sql_editor_toggle_comment_round_trips_selection(qtbot) -> None:
     editor.selectAll()
     editor.toggle_comment()
     assert editor.text() == "select 1;\nselect 2;"
+
+
+def test_sql_editor_toggle_comment_preserves_selected_line_range_for_round_trip(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    original = "select 1;\nselect 2;"
+    editor.setText(original)
+    editor.setSelection(0, 0, 1, len("select 2;"))
+
+    editor.toggle_comment()
+
+    assert editor.text() == "-- select 1;\n-- select 2;"
+    assert editor.getSelection() == (0, 0, 1, len("-- select 2;"))
+
+    editor.toggle_comment()
+
+    assert editor.text() == original
+
+
+def test_sql_editor_toggle_comment_round_trips_mid_document_selected_lines(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    original = "select 1;\nselect 2;\nselect 3;"
+    editor.setText(original)
+    editor.setSelection(0, 0, 1, len("select 2;"))
+
+    editor.toggle_comment()
+
+    assert editor.text() == "-- select 1;\n-- select 2;\nselect 3;"
+    assert editor.getSelection() == (0, 0, 1, len("-- select 2;"))
+
+    editor.toggle_comment()
+
+    assert editor.text() == original
+
+
+def test_sql_editor_toggle_comment_one_undo_restores_original_text(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    original = "select 1;\nselect 2;"
+    editor.setText(original)
+    editor.selectAll()
+
+    editor.toggle_comment()
+
+    assert editor.isUndoAvailable() is True
+    editor.undo()
+    assert editor.text() == original
+
+
+def test_sql_editor_ctrl_slash_toggles_comment_without_inserting_stray_slash(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.show()
+    QTest.qWaitForWindowExposed(editor)  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+    editor.setFocus()
+    editor.setText("select 1")
+
+    QTest.keyClick(  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+        editor,
+        Qt.Key.Key_Slash,
+        Qt.KeyboardModifier.ControlModifier,
+    )
+
+    assert editor.text() == "-- select 1"
+    assert "/" not in editor.text()
 
 
 def test_sql_editor_font_settings_are_restored_and_saved(qtbot, tmp_path) -> None:

@@ -204,6 +204,108 @@ def test_get_by_id_returns_the_matching_record_or_none(storage_dir):
     assert manager.get_by_id("f46d098f-4cdc-4ad7-bd40-4c6db2ad0b64") is None
 
 
+def test_delete_records_removes_a_matching_record_and_keeps_the_remaining_order(storage_dir):
+    manager = HistoryManager(storage_path=storage_dir / "history.json")
+    manager.add_entry("duckdb", "SELECT oldest")
+    manager.add_entry("duckdb", "SELECT middle")
+    manager.add_entry("duckdb", "SELECT newest")
+    records = manager.get_all()
+    middle = records[1]
+
+    assert manager.delete_records([middle["id"]]) == 1
+    assert [record["query"] for record in manager.get_all()] == ["SELECT newest", "SELECT oldest"]
+    assert manager.get_by_id(middle["id"]) is None
+
+
+def test_delete_records_removes_multiple_matching_ids(storage_dir):
+    manager = HistoryManager(storage_path=storage_dir / "history.json")
+    manager.add_entry("duckdb", "SELECT oldest")
+    manager.add_entry("duckdb", "SELECT middle")
+    manager.add_entry("duckdb", "SELECT newest")
+    records = manager.get_all()
+
+    assert manager.delete_records([records[0]["id"], records[2]["id"]]) == 2
+    assert [record["query"] for record in manager.get_all()] == ["SELECT middle"]
+
+
+def test_delete_records_ignores_unknown_ids_without_changing_the_file(storage_dir):
+    history_file = storage_dir / "history.json"
+    manager = HistoryManager(storage_path=history_file)
+    manager.add_entry("duckdb", "SELECT retained")
+    original_content = history_file.read_text()
+
+    assert manager.delete_records(["f46d098f-4cdc-4ad7-bd40-4c6db2ad0b64"]) == 0
+    assert history_file.read_text() == original_content
+
+
+def test_delete_records_does_not_write_when_no_matching_ids(storage_dir):
+    manager = HistoryManager(storage_path=storage_dir / "history.json")
+    manager.add_entry("duckdb", "SELECT retained")
+
+    with patch.object(manager, "_write_history") as write_history:
+        assert manager.delete_records(["f46d098f-4cdc-4ad7-bd40-4c6db2ad0b64"]) == 0
+
+    write_history.assert_not_called()
+
+
+def test_delete_records_with_no_ids_does_not_write_history(storage_dir):
+    manager = HistoryManager(storage_path=storage_dir / "history.json")
+
+    with patch.object(manager, "_write_history") as write_history:
+        assert manager.delete_records([]) == 0
+
+    write_history.assert_not_called()
+
+
+def test_delete_records_preserves_a_migrated_legacy_record(storage_dir):
+    history_file = storage_dir / "history.json"
+    legacy_entry = {
+        "timestamp": "2026-08-01T12:00:00+00:00",
+        "engine": "duckdb",
+        "query": "SELECT legacy",
+        "path": "",
+    }
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps([legacy_entry]))
+    manager = HistoryManager(storage_path=history_file)
+    migrated_legacy = manager.get_all()[0]
+    manager.add_entry("duckdb", "SELECT removable")
+    removable = manager.get_all()[0]
+
+    assert manager.delete_records([removable["id"]]) == 1
+    assert manager.get_all() == [migrated_legacy]
+
+
+def test_delete_records_migrates_v1_entries_left_on_disk(storage_dir):
+    history_file = storage_dir / "history.json"
+    v2_entry = {
+        "schema_version": 2,
+        "id": "f46d098f-4cdc-4ad7-bd40-4c6db2ad0b64",
+        "timestamp": "2026-08-02T12:00:00+00:00",
+        "engine": "duckdb",
+        "query": "SELECT removable",
+        "path": "",
+        "catalog": {},
+    }
+    v1_entry = {
+        "timestamp": "2026-08-01T12:00:00+00:00",
+        "engine": "duckdb",
+        "query": "SELECT legacy",
+        "path": "",
+    }
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps([v2_entry, v1_entry]))
+    manager = HistoryManager(storage_path=history_file)
+
+    assert manager.delete_records([v2_entry["id"]]) == 1
+
+    on_disk = json.loads(history_file.read_text())
+    assert len(on_disk) == 1
+    assert on_disk[0]["query"] == "SELECT legacy"
+    assert on_disk[0]["schema_version"] == 2
+    assert "id" in on_disk[0]
+
+
 def test_record_cap_evicts_the_oldest_v1_record_after_migration(storage_dir):
     history_file = storage_dir / "history.json"
     v1_entries = [

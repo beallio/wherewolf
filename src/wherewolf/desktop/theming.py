@@ -83,6 +83,25 @@ def build_palette(mode: ThemeMode | str) -> QPalette:
     return palette
 
 
+def message_severity_color(severity: str, palette: QPalette) -> QColor:
+    """Return a legible severity colour for the supplied widget palette."""
+    is_dark = palette.color(QPalette.ColorRole.Base).lightness() < 128
+    colours = (
+        {
+            "error": "#ffb4ab",
+            "warning": "#ffb95d",
+            "info": "#a8c7fa",
+        }
+        if is_dark
+        else {
+            "error": "#b3261e",
+            "warning": "#7a4e00",
+            "info": "#005ac1",
+        }
+    )
+    return QColor(colours.get(severity, palette.color(QPalette.ColorRole.Text)))
+
+
 def apply_program_theme(app: QApplication, mode: ThemeMode | str) -> ThemeMode:
     """Apply a program theme and return the resolved Light/Dark mode."""
     resolved = resolve_theme_mode(mode)
@@ -98,5 +117,6 @@ __all__ = [
     "ThemeMode",
     "apply_program_theme",
     "build_palette",
+    "message_severity_color",
     "resolve_theme_mode",
 ]
