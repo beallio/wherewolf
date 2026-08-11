@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 import webbrowser
 from importlib.metadata import version
+from pathlib import Path
 from typing import Final, cast
 
 from PyQt6.QtCore import QByteArray, Qt, QTimer
@@ -78,6 +79,8 @@ from wherewolf.services import (
     ExecutionRequestBuilder,
     ExportFormat,
     SettingsService,
+    serialise_history_records_to_sql,
+    write_atomically,
 )
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
@@ -454,6 +457,7 @@ class MainWindow(QMainWindow):
     def _build_history_dock(self) -> QDockWidget:
         history_dock = HistoryDock(self.history_manager, self)
         history_dock.record_selected.connect(self._restore_history_query)
+        history_dock.history_records_selected.connect(self._save_history_records_as_sql)
 
         dock = QDockWidget("History", self)
         dock.setObjectName("history_dock")
@@ -1013,6 +1017,29 @@ class MainWindow(QMainWindow):
         query = record.get("query")
         if isinstance(query, str):
             self.editor.set_text_undoable(query)
+
+    def _save_history_records_as_sql(self, records: list[dict[str, object]]) -> None:
+        choose_history_sql_path = getattr(
+            self._file_dialog_service, "choose_history_sql_path", None
+        )
+        if choose_history_sql_path is None:
+            self._show_status("History SQL save dialog is unavailable", 5000)
+            return
+        destination = choose_history_sql_path(None, self)
+        if destination is None:
+            return
+
+        document = serialise_history_records_to_sql(records)
+
+        def write_sql(path: Path) -> None:
+            path.write_text(document, encoding="utf-8")
+
+        try:
+            write_atomically(destination, write_sql)
+        except OSError as exc:
+            self._show_status(f"Failed to save history as SQL: {exc}", 5000)
+            return
+        self._show_status(f"Saved history as SQL to {destination}")
 
     def _on_apply_query_order(self, column_name: str, direction: str) -> None:
         if not self.result_table_view.has_result():

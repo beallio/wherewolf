@@ -50,7 +50,12 @@ from wherewolf.domain import (
     SchemaResult,
     SourceFormat,
 )
-from wherewolf.services import CatalogService, ExportFormat, SettingsService
+from wherewolf.services import (
+    CatalogService,
+    ExportFormat,
+    SettingsService,
+    serialise_history_records_to_sql,
+)
 from wherewolf.storage import HistoryManager
 
 
@@ -1543,6 +1548,47 @@ def test_history_record_restore_replaces_editor_text_in_one_undo_action(
     window.editor.undo()
 
     assert window.editor.text() == "select * from original"
+
+
+def test_main_window_saves_selected_history_records_as_sql(tmp_path: Path, qtbot) -> None:
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry("duckdb", "SELECT first")
+    history.add_entry("duckdb", "SELECT second")
+    records = history.get_all()
+    destination = tmp_path / "selected-history"
+    window = MainWindow(
+        history_manager=history,
+        file_dialog_service=FakeFileDialogService(paths=(), history_sql_path=destination),
+    )
+    qtbot.addWidget(window)
+
+    for row in range(window.history_dock.history_table.topLevelItemCount()):
+        item = window.history_dock.history_table.topLevelItem(row)
+        assert item is not None
+        item.setSelected(True)
+
+    window.history_dock._save_as_sql_action.trigger()
+
+    saved_file = destination.with_suffix(".sql")
+    assert saved_file.read_text() == serialise_history_records_to_sql(records)
+
+
+def test_main_window_cancelled_history_sql_save_creates_no_file(tmp_path: Path, qtbot) -> None:
+    history = HistoryManager(storage_path=tmp_path / "history.json")
+    history.add_entry("duckdb", "SELECT cancelled")
+    destination = tmp_path / "cancelled-history.sql"
+    window = MainWindow(
+        history_manager=history,
+        file_dialog_service=FakeFileDialogService(paths=()),
+    )
+    qtbot.addWidget(window)
+    item = window.history_dock.history_table.topLevelItem(0)
+    assert item is not None
+    item.setSelected(True)
+
+    window.history_dock._save_as_sql_action.trigger()
+
+    assert not destination.exists()
 
 
 def test_history_record_restore_leaves_existing_catalog_and_schema_work_untouched(

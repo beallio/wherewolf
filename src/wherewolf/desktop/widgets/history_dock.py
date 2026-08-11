@@ -48,6 +48,7 @@ class HistoryDock(QWidget):
     """Display persisted query history and emit the record selected by UUID."""
 
     record_selected = pyqtSignal(dict)
+    history_records_selected = pyqtSignal(list)
 
     def __init__(self, history_manager: HistoryManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -74,6 +75,8 @@ class HistoryDock(QWidget):
 
         self._delete_action = QAction("Delete", self)
         self._delete_action.triggered.connect(self._delete_selected_records)
+        self._save_as_sql_action = QAction("Save as SQL…", self)
+        self._save_as_sql_action.triggered.connect(self._save_selected_records_as_sql)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -112,8 +115,11 @@ class HistoryDock(QWidget):
             item.setSelected(True)
             self.history_table.setCurrentItem(item)
 
-        self._delete_action.setEnabled(bool(self._selected_record_ids()))
+        has_selected_records = bool(self._selected_record_ids())
+        self._delete_action.setEnabled(has_selected_records)
+        self._save_as_sql_action.setEnabled(has_selected_records)
         menu = QMenu(self)
+        menu.addAction(self._save_as_sql_action)
         menu.addAction(self._delete_action)
 
         viewport = self.history_table.viewport()
@@ -147,3 +153,12 @@ class HistoryDock(QWidget):
 
         self._history_manager.delete_records(record_ids)
         self.refresh()
+
+    def _save_selected_records_as_sql(self) -> None:
+        selected_records = [
+            record
+            for record_id in self._selected_record_ids()
+            if (record := self._history_manager.get_by_id(record_id)) is not None
+        ]
+        if selected_records:
+            self.history_records_selected.emit(selected_records)
