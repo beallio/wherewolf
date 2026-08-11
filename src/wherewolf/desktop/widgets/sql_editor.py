@@ -486,7 +486,9 @@ class SqlEditor(QsciScintilla):
             self.selectAll(True)
             self.replaceSelectedText("".join(lines))
             if has_selection:
-                self.setSelection(line_start - 1, 0, line_end - 1, self.lineLength(line_end - 1))
+                end_line = line_end - 1
+                end_column = len(self.text(end_line).rstrip("\r\n"))
+                self.setSelection(line_start - 1, 0, end_line, end_column)
             else:
                 self.setCursorPosition(cursor_line, cursor_column)
         finally:

@@ -14,6 +14,7 @@
     "Ctrl+/ reaches SqlEditor Toggle Comment and does not insert a stray slash.",
     "History restore and Apply Order to Query each replace the editor through one undoable action.",
     "Toggle Comment keeps the edited two-line selection active so a second toggle round-trips the document.",
+    "Toggle Comment keeps a mid-document selected line range active without extending onto the next line, so a second toggle leaves unselected following lines unchanged.",
     "One undo after Toggle Comment restores the original document."
   ],
   "red_test_output": {
@@ -31,6 +32,11 @@
       "command": "./run.sh uv run pytest tests/test_sql_editor.py -k \"toggle_comment and (preserves or one_undo)\" -x",
       "exit_code": 1,
       "failure": "AssertionError: assert (-1, -1, -1, -1) == (0, 0, 1, 12) after Toggle Comment."
+    },
+    "task_3_review_03": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -k mid_document_selected_lines -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert (0, 0, 2, 0) == (0, 0, 1, 12); the selection normalised onto the unselected third line."
     }
   },
   "design_decisions": [
@@ -39,7 +45,8 @@
     "PyQt's QTest stubs model the static helpers as instance methods, so the focused test keeps the required runtime calls and uses narrow no-matching-overload suppressions.",
     "The existing QAction retains WidgetShortcut context for its menu presentation; the key event route is what makes the shortcut work in QScintilla.",
     "Undoable editor replacements use QScintilla's selection API inside one beginUndoAction/endUndoAction pair, then reset scroll-width tracking exactly as the destructive setText override does.",
-    "Toggle Comment preserves its existing per-line prefix and indentation logic, replaces the transformed document through QScintilla's selection API in one undo action, restores the edited line range when text was selected, and restores the prior cursor position when it was not."
+    "Toggle Comment preserves its existing per-line prefix and indentation logic, replaces the transformed document through QScintilla's selection API in one undo action, restores the edited line range when text was selected, and restores the prior cursor position when it was not.",
+    "Selection restoration uses the visible text length after stripping CR/LF from QScintilla's line text, because lineLength includes EOL characters and would otherwise normalise a non-final-line selection onto the following line."
   ],
   "results": {
     "baseline": "499 passed, 7 deselected in 13.74s",
@@ -51,9 +58,12 @@
     "quality_gates_task_2": "ruff check: All checks passed; ruff format: 1 file reformatted, 158 files left unchanged; ty: All checks passed; pytest: 502 passed, 7 deselected in 13.29s; no deleted review notes",
     "baseline_task_3": "502 passed, 7 deselected in 12.89s",
     "task_3_green": "2 passed, 25 deselected in 0.61s; full tests/test_sql_editor.py: 27 passed in 1.10s",
+    "task_3_review_03_green": "4 passed, 24 deselected in 0.63s",
     "quality_gates_task_3": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 504 passed, 7 deselected in 13.15s; no deleted review notes",
+    "quality_gates_task_3_review_03": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 505 passed, 7 deselected in 13.20s; no deleted review notes",
     "cache_budget_bytes_task_1": 3538310802,
     "cache_budget_bytes_task_2": 3589635730,
-    "cache_budget_bytes_task_3": 3714018371
+    "cache_budget_bytes_task_3": 3714018371,
+    "cache_budget_bytes_task_3_review_03": 3733388522
   }
 }
