@@ -1,6 +1,7 @@
 from PyQt6.Qsci import QsciLexerSQL
-from PyQt6.QtCore import QSettings
+from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtGui import QColor
+from PyQt6.QtTest import QTest
 
 from wherewolf.desktop.widgets import SqlEditor
 from wherewolf.services import (
@@ -226,6 +227,24 @@ def test_sql_editor_toggle_comment_round_trips_selection(qtbot) -> None:
     editor.selectAll()
     editor.toggle_comment()
     assert editor.text() == "select 1;\nselect 2;"
+
+
+def test_sql_editor_ctrl_slash_toggles_comment_without_inserting_stray_slash(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.show()
+    QTest.qWaitForWindowExposed(editor)  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+    editor.setFocus()
+    editor.setText("select 1")
+
+    QTest.keyClick(  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+        editor,
+        Qt.Key.Key_Slash,
+        Qt.KeyboardModifier.ControlModifier,
+    )
+
+    assert editor.text() == "-- select 1"
+    assert "/" not in editor.text()
 
 
 def test_sql_editor_font_settings_are_restored_and_saved(qtbot, tmp_path) -> None:

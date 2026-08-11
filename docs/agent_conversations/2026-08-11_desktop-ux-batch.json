@@ -1,0 +1,35 @@
+{
+  "date": "2026-08-11",
+  "task_objective": "Implement docs/plans/2026-08-11_desktop-ux-batch.md one reviewed task per round.",
+  "branch": "feat/desktop-ux-batch",
+  "current_round": "Task 1 — Make Ctrl+/ reach Toggle Comment",
+  "files_modified": [
+    "docs/plans/2026-08-11_desktop-ux-batch.md",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "tests/test_sql_editor.py",
+    "docs/agent_conversations/2026-08-11_desktop-ux-batch.json"
+  ],
+  "tests_added": [
+    "Ctrl+/ reaches SqlEditor Toggle Comment and does not insert a stray slash."
+  ],
+  "red_test_output": {
+    "task_1": {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -k ctrl_slash -x",
+      "exit_code": 1,
+      "failure": "AssertionError: assert 'select 1' == '-- select 1'"
+    }
+  },
+  "design_decisions": [
+    "A QScintilla keyPressEvent override compares the incoming QKeySequence to one module-level Ctrl+/ sequence, triggers the existing Toggle Comment QAction, accepts the event, and delegates every other event to the base class.",
+    "The QScintilla stub requires a non-optional QKeyEvent and parameter name e; the implementation matches that contract while retaining a defensive None return.",
+    "PyQt's QTest stubs model the static helpers as instance methods, so the focused test keeps the required runtime calls and uses narrow no-matching-overload suppressions.",
+    "The existing QAction retains WidgetShortcut context for its menu presentation; the key event route is what makes the shortcut work in QScintilla."
+  ],
+  "results": {
+    "baseline": "499 passed, 7 deselected in 13.74s",
+    "task_1_green": "1 passed, 24 deselected in 0.70s",
+    "quality_gate_recovery": "Initial ty gate rejected QKeyEvent | None and a0 because QsciScintillaBase expects keyPressEvent(e: QKeyEvent); the corrected override passed the full gate. The commit hook then exposed PyQt QTest static-helper stub overloads, resolved with two narrow no-matching-overload suppressions.",
+    "quality_gates_task_1": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 500 passed, 7 deselected in 13.02s; no deleted review notes",
+    "cache_budget_bytes": 3538310802
+  }
+}

@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import QMenu, QWidget
 
 from wherewolf.desktop.widgets.completion_adapter import CompletionAdapter
@@ -19,6 +19,8 @@ from wherewolf.services import (
     StatementService,
 )
 from wherewolf.services.completion_context import detect_context
+
+_TOGGLE_COMMENT_SHORTCUT = QKeySequence("Ctrl+/")
 
 
 class SqlEditor(QsciScintilla):
@@ -137,6 +139,18 @@ class SqlEditor(QsciScintilla):
         super().setText(text)
         self.setScrollWidth(1)
 
+    def keyPressEvent(self, e: QKeyEvent) -> None:
+        if e is None:
+            return
+        if (
+            QKeySequence(e.keyCombination()).matches(_TOGGLE_COMMENT_SHORTCUT)
+            is QKeySequence.SequenceMatch.ExactMatch
+        ):
+            self._toggle_comment_action.trigger()
+            e.accept()
+            return
+        super().keyPressEvent(e)
+
     def request_completion(self, forced: bool = False) -> None:
         text = self.text()
         line, col = self.getCursorPosition()
@@ -220,7 +234,7 @@ class SqlEditor(QsciScintilla):
         self._paste_action.triggered.connect(self.paste)
 
         self._toggle_comment_action = QAction("Toggle Comment", self)
-        self._toggle_comment_action.setShortcut(QKeySequence("Ctrl+/"))
+        self._toggle_comment_action.setShortcut(_TOGGLE_COMMENT_SHORTCUT)
         self._toggle_comment_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._toggle_comment_action.triggered.connect(self.toggle_comment)
 
