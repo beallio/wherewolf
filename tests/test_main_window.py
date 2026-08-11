@@ -845,6 +845,29 @@ def test_main_window_preferences_persist_and_change_editor_font(tmp_path: Path, 
     assert window.editor.font_size == 18
 
 
+def test_main_window_preferences_persist_result_auto_size_policy(tmp_path: Path, qtbot) -> None:
+    settings = _configure_qsettings_path(tmp_path / "result-auto-size-preferences")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.auto_size_columns.setChecked(False)
+    dialog.auto_size_max_width.setValue(150)
+    dialog.accept()
+
+    assert settings.restore_auto_size_columns() is False
+    assert settings.restore_auto_size_max_width() == 150
+
+    window.result_table_view.set_frame(pl.DataFrame({"wide": ["x" * 400]}))
+    assert window.result_table_view.columnWidth(0) < 150
+
+    restored_window = MainWindow(settings_service=settings)
+    qtbot.addWidget(restored_window)
+    assert restored_window.result_table_view._auto_size_columns_enabled is False
+    assert restored_window.result_table_view._auto_size_max_width == 150
+
+
 def test_main_window_moves_editor_theme_to_preferences_and_keeps_saved_theme(
     tmp_path: Path, qtbot
 ) -> None:

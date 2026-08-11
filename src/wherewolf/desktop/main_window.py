@@ -141,6 +141,11 @@ class PreferencesDialog(QDialog):
         self.profile_max_bytes = QSpinBox(self)
         self.profile_max_bytes.setRange(0, 2_147_483_647)
         self.profile_max_bytes.setValue(settings_service.restore_profile_max_bytes())
+        self.auto_size_columns = QCheckBox("Auto-size result columns", self)
+        self.auto_size_columns.setChecked(settings_service.restore_auto_size_columns())
+        self.auto_size_max_width = QSpinBox(self)
+        self.auto_size_max_width.setRange(50, 2000)
+        self.auto_size_max_width.setValue(settings_service.restore_auto_size_max_width())
         self.editor_theme_selector = QComboBox(self)
         self.editor_theme_selector.setObjectName("editor_theme_selector")
         self.editor_theme_selector.addItems(SqlEditor.THEME_NAMES)
@@ -154,6 +159,8 @@ class PreferencesDialog(QDialog):
         layout.addRow("Completion threshold", self.completion_threshold)
         layout.addRow(self.profile_on_load)
         layout.addRow("Profile size limit (bytes)", self.profile_max_bytes)
+        layout.addRow(self.auto_size_columns)
+        layout.addRow("Maximum result column width (px)", self.auto_size_max_width)
         layout.addRow("Editor theme", self.editor_theme_selector)
         layout.addRow("Program theme", self.program_theme_selector)
         buttons = QDialogButtonBox(
@@ -1180,6 +1187,11 @@ class MainWindow(QMainWindow):
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
         self._settings_service.save_profile_on_load(dialog.profile_on_load.isChecked())
         self._settings_service.save_profile_max_bytes(dialog.profile_max_bytes.value())
+        self._settings_service.save_auto_size_columns(dialog.auto_size_columns.isChecked())
+        self._settings_service.save_auto_size_max_width(dialog.auto_size_max_width.value())
+        self.result_table_view.set_auto_size_policy(
+            dialog.auto_size_columns.isChecked(), dialog.auto_size_max_width.value()
+        )
         self._settings_service.save_program_theme(dialog.program_theme_selector.currentText())
         self._apply_program_theme(dialog.program_theme_selector.currentText())
         self.editor.set_font_size(dialog.font_size.value())
@@ -1218,6 +1230,10 @@ class MainWindow(QMainWindow):
 
         font_size = self._settings_service.restore_editor_font_size()
         self.editor.set_font_size(font_size)
+        self.result_table_view.set_auto_size_policy(
+            self._settings_service.restore_auto_size_columns(),
+            self._settings_service.restore_auto_size_max_width(),
+        )
 
     def _reset_layout(self) -> None:
         """Return persistent docks and the central splitter to their default arrangement."""

@@ -2,7 +2,7 @@
   "date": "2026-08-11",
   "task_objective": "Implement docs/plans/2026-08-11_desktop-ux-batch.md one reviewed task per round.",
   "branch": "feat/desktop-ux-batch",
-  "current_round": "Task 8 — Clamped auto-size in the results view",
+  "current_round": "Task 9 — Expose auto-size in Preferences",
   "files_modified": [
     "docs/plans/2026-08-11_desktop-ux-batch.md",
     "src/wherewolf/desktop/main_window.py",
@@ -30,7 +30,8 @@
     "Severity colours remain distinct and meet a 4.5:1 contrast ratio against the configured Base colour in both light and dark palettes.",
     "Failed query results select the Messages tab, while successful results and editor diagnostics leave the selected Results tab unchanged.",
     "Result-column auto-size enablement and width round-trip through QSettings; save-time widths clamp to 50–2000, while stored out-of-range values and booleans restore the 300 px default.",
-    "Result columns auto-size on frame delivery to a configured visible-column cap, while a disabled policy leaves the wide column unclamped."
+    "Result columns auto-size on frame delivery to a configured visible-column cap, while a disabled policy leaves the wide column unclamped.",
+    "Preferences persist result-column auto-size enablement and maximum width, apply them to the active view, and restore the 150 px policy in a fresh MainWindow."
   ],
   "red_test_output": {
     "task_1": {
@@ -77,6 +78,11 @@
       "command": "./run.sh uv run pytest tests/test_result_table_view.py -k auto_sizes_columns_with_a_configured_width_cap -x",
       "exit_code": 1,
       "failure": "AssertionError: assert 100 == 300; set_frame left the wide result column at the default section size instead of auto-sizing it."
+    },
+    "task_9": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -k preferences_persist_result_auto_size_policy -x",
+      "exit_code": 1,
+      "failure": "AttributeError: 'PreferencesDialog' object has no attribute 'auto_size_columns'"
     }
   },
   "design_decisions": [
@@ -91,9 +97,14 @@
     "MessagesPanel resolves severity colours from its own palette's Base role, keeping theme detection local to the widget and avoiding a settings dependency. Light uses error #b3261e, warning #7a4e00, info #005ac1; dark uses #ffb4ab, #ffb95d, and #a8c7fa.",
     "MainWindow owns the results QTabWidget so only failed query results can select its existing MessagesPanel; successful query results and editor diagnostics retain the caller's current tab.",
     "Auto-size preferences use versioned results keys and the preview-limit quartet shape: the enablement value requires a real bool, while width is save-clamped to 50–2000 and restores the 300 px default for invalid persisted values, including bool.",
-    "ResultTableView owns an enabled/max-width auto-size policy with defaults True/300, samples at most 200 rows for content sizing, auto-sizes after every populated frame only when enabled, and caps only visible columns so manual Auto-size Columns uses the same cap."
+    "ResultTableView owns an enabled/max-width auto-size policy with defaults True/300, samples at most 200 rows for content sizing, auto-sizes after every populated frame only when enabled, and caps only visible columns so manual Auto-size Columns uses the same cap.",
+    "PreferencesDialog exposes the existing auto-size settings as a checked-by-default checkbox and a 50–2000 px spin box. Accepting it persists the policy and applies it through ResultTableView.set_auto_size_policy; MainWindow restores the same policy after creating the result view."
+  ],
+  "out_of_scope_findings": [
+    "Review 09 measured a pre-existing 4.86 s set_frame cost for a 100,000-row result even with auto-size disabled. This is model-reset/proxy work, unrelated to Task 8 or Task 9, and is deferred to a separate plan."
   ],
   "results": {
+    "baseline_task_9": "511 passed, 7 deselected in 13.01s",
     "baseline": "499 passed, 7 deselected in 13.74s",
     "task_1_green": "1 passed, 24 deselected in 0.70s",
     "quality_gate_recovery": "Initial ty gate rejected QKeyEvent | None and a0 because QsciScintillaBase expects keyPressEvent(e: QKeyEvent); the corrected override passed the full gate. The commit hook then exposed PyQt QTest static-helper stub overloads, resolved with two narrow no-matching-overload suppressions.",
@@ -123,6 +134,8 @@
     "baseline_task_8": "510 passed, 7 deselected in 12.95s",
     "task_8_green": "1 passed, 10 deselected in 0.67s",
     "quality_gates_task_8": "ruff check: All checks passed; ruff format: 1 file reformatted, 158 files left unchanged; ty: All checks passed; pytest: 511 passed, 7 deselected in 13.86s; no deleted review notes",
+    "task_9_green": "1 passed, 95 deselected in 0.71s",
+    "quality_gates_task_9": "ruff check: All checks passed; ruff format: 159 files left unchanged; ty: All checks passed; pytest: 512 passed, 7 deselected in 13.39s; no deleted review notes",
     "cache_budget_bytes_task_1": 3538310802,
     "cache_budget_bytes_task_2": 3589635730,
     "cache_budget_bytes_task_3": 3714018371,
@@ -131,6 +144,7 @@
     "cache_budget_bytes_task_5": 3937712371,
     "cache_budget_bytes_task_6": 4078101082,
     "cache_budget_bytes_task_7": 4084896161,
-    "cache_budget_bytes_task_8": 4164814351
+    "cache_budget_bytes_task_8": 4164814351,
+    "cache_budget_bytes_task_9": 4244742351
   }
 }
