@@ -218,6 +218,19 @@
       "command": "./run.sh uv run pytest tests/test_catalog_dock.py -x after replacing the Task 14 header QTest.mouseClick with sectionClicked.emit(1)",
       "exit_code": 1,
       "failure": "AssertionError: assert set() == {(1, 0), (1, 1), (1, 2), (1, 3)}."
+    },
+    "V8": {
+      "command": "git status --porcelain; ./run.sh uv run ruff check .; ./run.sh uv run ty check src/; ./run.sh uv run pytest; scripts/check_cache_budget.sh",
+      "git_status_porcelain": "",
+      "ruff": "All checks passed!",
+      "ty": "All checks passed!",
+      "pytest": "544 passed, 7 deselected in 13.41s",
+      "cache_bytes": 3844955750
+    },
+    "V9": {
+      "command": "git ls-files --others --exclude-standard; find . -path ./.git -prune -o -name '__pycache__' -print -o -name '.pytest_cache' -print",
+      "first_run": "./src/wherewolf/__pycache__",
+      "recovery": "Removed the verified ignored generated cache directory src/wherewolf/__pycache__; the rerun had no untracked files and no in-repository __pycache__ or .pytest_cache directories."
     }
   },
   "results": {
@@ -302,6 +315,7 @@
     "cache_budget_bytes_task_13": 3537421920,
     "cache_budget_bytes_task_13_review_16": 3588844168,
     "cache_budget_bytes_task_14": 3716910776,
-    "cache_budget_bytes_task_15": 3768307352
+    "cache_budget_bytes_task_15": 3768307352,
+    "cache_budget_bytes_final": 3844955750
   }
 }
