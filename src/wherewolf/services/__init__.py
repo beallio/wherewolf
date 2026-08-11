@@ -10,6 +10,7 @@ from .export_destination import (
     write_atomically,
 )
 from .formatting_service import FormattingResult, SqlFormattingService
+from .history_sql_export import serialise_history_records_to_sql
 from .preview_export import write_preview, write_selection
 from .settings_service import SettingsService
 from .statement_service import StatementSelection, StatementService, StatementSpan
@@ -28,6 +29,7 @@ __all__ = [
     "StatementSpan",
     "export_file_filter",
     "normalise_destination",
+    "serialise_history_records_to_sql",
     "write_atomically",
     "write_preview",
     "write_selection",
