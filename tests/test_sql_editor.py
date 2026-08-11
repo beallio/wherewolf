@@ -229,6 +229,37 @@ def test_sql_editor_toggle_comment_round_trips_selection(qtbot) -> None:
     assert editor.text() == "select 1;\nselect 2;"
 
 
+def test_sql_editor_toggle_comment_preserves_selected_line_range_for_round_trip(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    original = "select 1;\nselect 2;"
+    editor.setText(original)
+    editor.setSelection(0, 0, 1, len("select 2;"))
+
+    editor.toggle_comment()
+
+    assert editor.text() == "-- select 1;\n-- select 2;"
+    assert editor.getSelection() == (0, 0, 1, len("-- select 2;"))
+
+    editor.toggle_comment()
+
+    assert editor.text() == original
+
+
+def test_sql_editor_toggle_comment_one_undo_restores_original_text(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    original = "select 1;\nselect 2;"
+    editor.setText(original)
+    editor.selectAll()
+
+    editor.toggle_comment()
+
+    assert editor.isUndoAvailable() is True
+    editor.undo()
+    assert editor.text() == original
+
+
 def test_sql_editor_ctrl_slash_toggles_comment_without_inserting_stray_slash(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)

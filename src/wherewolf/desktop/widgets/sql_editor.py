@@ -458,6 +458,8 @@ class SqlEditor(QsciScintilla):
 
     def toggle_comment(self) -> None:
         line_start, line_end = self._selected_or_current_line_range()
+        has_selection = self.hasSelectedText()
+        cursor_line, cursor_column = self.getCursorPosition()
         text = self.text()
         if not text:
             return
@@ -479,7 +481,17 @@ class SqlEditor(QsciScintilla):
             else:
                 lines[index] = f"{indent}-- {stripped}"
 
-        self.setText("".join(lines))
+        self.beginUndoAction()
+        try:
+            self.selectAll(True)
+            self.replaceSelectedText("".join(lines))
+            if has_selection:
+                self.setSelection(line_start - 1, 0, line_end - 1, self.lineLength(line_end - 1))
+            else:
+                self.setCursorPosition(cursor_line, cursor_column)
+        finally:
+            self.endUndoAction()
+        self.setScrollWidth(1)
 
     def _selected_or_current_line_range(self) -> tuple[int, int]:
         if self.hasSelectedText():
