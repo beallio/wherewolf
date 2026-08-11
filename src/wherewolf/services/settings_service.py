@@ -24,6 +24,10 @@ class SettingsService:
     MIN_PREVIEW_LIMIT: Final = 10
     MAX_PREVIEW_LIMIT: Final = 100000
     DEFAULT_PREVIEW_LIMIT: Final = 1000
+    DEFAULT_AUTO_SIZE_COLUMNS: Final = True
+    MIN_AUTO_SIZE_MAX_WIDTH: Final = 50
+    MAX_AUTO_SIZE_MAX_WIDTH: Final = 2000
+    DEFAULT_AUTO_SIZE_MAX_WIDTH: Final = 300
     DEFAULT_EDITOR_THEME: Final = "Dark"
     DEFAULT_PROGRAM_THEME: Final = "Follow system"
     DEFAULT_EXPORT_FORMAT: Final = "csv"
@@ -66,6 +70,14 @@ class SettingsService:
     @staticmethod
     def _preview_limit_key(schema_version: str) -> str:
         return f"{schema_version}/preview/limit"
+
+    @staticmethod
+    def _auto_size_columns_key(schema_version: str) -> str:
+        return f"{schema_version}/results/auto_size_columns"
+
+    @staticmethod
+    def _auto_size_max_width_key(schema_version: str) -> str:
+        return f"{schema_version}/results/auto_size_max_width"
 
     @staticmethod
     def _editor_theme_key(schema_version: str) -> str:
@@ -130,6 +142,14 @@ class SettingsService:
     @property
     def preview_limit_key(self) -> str:
         return self._preview_limit_key(self.namespace_prefix)
+
+    @property
+    def auto_size_columns_key(self) -> str:
+        return self._auto_size_columns_key(self.namespace_prefix)
+
+    @property
+    def auto_size_max_width_key(self) -> str:
+        return self._auto_size_max_width_key(self.namespace_prefix)
 
     @property
     def editor_theme_key(self) -> str:
@@ -236,6 +256,32 @@ class SettingsService:
         self._settings.setValue(
             self.preview_limit_key,
             max(self.MIN_PREVIEW_LIMIT, min(int(limit), self.MAX_PREVIEW_LIMIT)),
+        )
+
+    def restore_auto_size_columns(self) -> bool:
+        value = self._settings.value(self.auto_size_columns_key, self.DEFAULT_AUTO_SIZE_COLUMNS)
+        return value if isinstance(value, bool) else self.DEFAULT_AUTO_SIZE_COLUMNS
+
+    def save_auto_size_columns(self, enabled: bool) -> None:
+        self._settings.setValue(self.auto_size_columns_key, bool(enabled))
+
+    def restore_auto_size_max_width(self) -> int:
+        value = self._settings.value(self.auto_size_max_width_key, self.DEFAULT_AUTO_SIZE_MAX_WIDTH)
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or not self.MIN_AUTO_SIZE_MAX_WIDTH <= value <= self.MAX_AUTO_SIZE_MAX_WIDTH
+        ):
+            return self.DEFAULT_AUTO_SIZE_MAX_WIDTH
+        return value
+
+    def save_auto_size_max_width(self, maximum: int) -> None:
+        self._settings.setValue(
+            self.auto_size_max_width_key,
+            max(
+                self.MIN_AUTO_SIZE_MAX_WIDTH,
+                min(int(maximum), self.MAX_AUTO_SIZE_MAX_WIDTH),
+            ),
         )
 
     def restore_editor_theme(self) -> str:

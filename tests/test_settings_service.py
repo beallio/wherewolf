@@ -132,6 +132,30 @@ def test_settings_service_preview_limit_and_editor_theme_round_trip(tmp_path: Pa
     assert service.restore_editor_theme() == "Light"
 
 
+def test_settings_service_result_column_auto_size_preferences_round_trip_and_validate_width(
+    tmp_path: Path,
+) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "result-column-auto-size"))
+
+    assert service.restore_auto_size_columns() is True
+    assert service.restore_auto_size_max_width() == 300
+
+    service.save_auto_size_columns(False)
+    service.save_auto_size_max_width(450)
+
+    assert service.restore_auto_size_columns() is False
+    assert service.restore_auto_size_max_width() == 450
+
+    service.save_auto_size_max_width(5)
+    assert service.restore_auto_size_max_width() == 50
+    service.save_auto_size_max_width(9999)
+    assert service.restore_auto_size_max_width() == 2000
+
+    for invalid_width in (5, 9999, True):
+        service._settings.setValue(service.auto_size_max_width_key, invalid_width)
+        assert service.restore_auto_size_max_width() == 300
+
+
 def test_settings_service_export_preferences_round_trip(tmp_path: Path) -> None:
     service = SettingsService(_configure_qsettings_path(tmp_path / "export-preferences"))
 
