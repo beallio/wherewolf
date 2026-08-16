@@ -10,6 +10,7 @@ from wherewolf.desktop.widgets.value_counts_window import (
     ValueCountsResult,
     ValueCountsWindow,
 )
+from wherewolf.desktop.workers.value_counts_worker import ValueCountsWorker
 from wherewolf.domain import CatalogBinding
 from wherewolf.domain.enums import EngineKind, SourceFormat
 
@@ -107,6 +108,46 @@ def test_value_counts_window_reruns_when_limit_changes(qtbot) -> None:
     qtbot.waitUntil(lambda: adapter.calls[-1:] == [1])
 
     assert window.table.rowCount() == 1
+
+
+def test_value_counts_window_debounces_rapid_limit_changes(qtbot) -> None:
+    adapter = _FakeAdapter()
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(adapter))
+    qtbot.addWidget(window)
+    qtbot.waitUntil(lambda: adapter.calls == [50])
+
+    window.limit_selector.setValue(10)
+    window.limit_selector.setValue(20)
+    window.limit_selector.setValue(30)
+
+    qtbot.waitUntil(
+        lambda: len(adapter.calls) >= 2,
+        timeout=ValueCountsWindow.DEBOUNCE_MS + 1_000,
+    )
+
+    assert adapter.calls == [50, 30]
+
+
+def test_value_counts_window_ignores_stale_worker_results(qtbot) -> None:
+    adapter = _FakeAdapter()
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(adapter))
+    qtbot.addWidget(window)
+    qtbot.waitUntil(lambda: window.table.rowCount() == 2)
+    current_worker = ValueCountsWorker(_FakeRegistry(adapter), window.entry, "category", 30, window)
+    stale_worker = ValueCountsWorker(_FakeRegistry(adapter), window.entry, "category", 10, window)
+    window._current_worker = current_worker
+
+    window._on_result_from(
+        stale_worker,
+        ValueCountsResult(
+            entry_id=window.entry.entry_id,
+            column_name="category",
+            counts=(ValueCount("stale", 1, 100.0),),
+            total_distinct=1,
+        ),
+    )
+
+    assert window.table.rowCount() == 2
 
 
 def test_value_counts_window_table_copies_tsv(qtbot) -> None:

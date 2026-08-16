@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize, Qt
+from functools import partial
+
+from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QApplication,
@@ -131,6 +133,8 @@ class _CopyTableWidget(QTableWidget):
 class ValueCountsWindow(QWidget):
     """Floating, non-modal Top N value-counts view for one schema column."""
 
+    DEBOUNCE_MS = 300
+
     def __init__(
         self,
         entry: CatalogBinding,
@@ -143,6 +147,7 @@ class ValueCountsWindow(QWidget):
         self.column_name = column_name
         self._engine_registry = engine_registry
         self._workers: list[ValueCountsWorker] = []
+        self._current_worker: ValueCountsWorker | None = None
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setWindowModality(Qt.WindowModality.NonModal)
         self.setWindowTitle(f"Value counts: {entry.alias}.{column_name}")
@@ -154,7 +159,11 @@ class ValueCountsWindow(QWidget):
         self.limit_selector.setObjectName("value_counts_limit")
         self.limit_selector.setRange(1, 10_000)
         self.limit_selector.setValue(50)
-        self.limit_selector.valueChanged.connect(self._run_worker)
+        self._limit_debounce = QTimer(self)
+        self._limit_debounce.setSingleShot(True)
+        self._limit_debounce.setInterval(self.DEBOUNCE_MS)
+        self._limit_debounce.timeout.connect(self._run_worker)
+        self.limit_selector.valueChanged.connect(self._limit_debounce.start)
         controls.addWidget(self.limit_selector)
         self.total_distinct_label = QLabel("Total distinct values: —", self)
         controls.addWidget(self.total_distinct_label)
@@ -186,12 +195,18 @@ class ValueCountsWindow(QWidget):
             self.limit_selector.value(),
             self,
         )
-        worker.result_ready.connect(self._on_result)
+        worker.result_ready.connect(partial(self._on_result_from, worker))
         worker.finished.connect(
             lambda: self._workers.remove(worker) if worker in self._workers else None
         )
         self._workers.append(worker)
         worker.start()
+        self._current_worker = worker
+
+    def _on_result_from(self, worker: ValueCountsWorker, result: ValueCountsResult) -> None:
+        if worker is not self._current_worker:
+            return
+        self._on_result(result)
 
     def _on_result(self, result: ValueCountsResult) -> None:
         if result.error_message is not None:
