@@ -103,9 +103,9 @@ def test_value_counts_chart_paints_rows_at_fixed_height(qtbot) -> None:
     qtbot.addWidget(chart)
     chart.set_counts(
         (
-            ValueCount("first", 3, 50.0),
+            ValueCount("first", 1, 17.0),
             ValueCount("second", 2, 33.0),
-            ValueCount("third", 1, 17.0),
+            ValueCount("third", 3, 50.0),
         )
     )
     chart.resize(600, 200)
@@ -113,9 +113,13 @@ def test_value_counts_chart_paints_rows_at_fixed_height(qtbot) -> None:
     image = chart.grab().toImage()
     label_width = max(80, min(220, chart.width() // 3))
     bar_left = chart.PADDING + label_width
+    bar_width = chart.width() - bar_left - chart.PADDING
     third_bar_top = chart.PADDING + 2 * chart.ROW_HEIGHT + 4
 
-    assert image.pixelColor(bar_left, third_bar_top) == chart.palette().highlight().color()
+    assert (
+        image.pixelColor(bar_left + bar_width // 2, third_bar_top)
+        == chart.palette().highlight().color()
+    )
 
 
 def test_value_counts_window_reruns_when_limit_changes(qtbot) -> None:
