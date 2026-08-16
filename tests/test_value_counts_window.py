@@ -1,7 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QRect, Qt
 from PyQt6.QtWidgets import QApplication
 
 from wherewolf.desktop.widgets.value_counts_window import (
@@ -45,6 +45,56 @@ def test_value_counts_chart_paints_zero_and_single_rows(qtbot) -> None:
         chart.set_counts(counts)
         chart.resize(320, 180)
         assert chart.grab().size().width() == 320
+
+
+def test_value_counts_chart_has_a_scrollable_height_for_full_results(qtbot) -> None:
+    adapter = _FakeAdapter()
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(adapter))
+    qtbot.addWidget(window)
+    qtbot.waitUntil(lambda: window.table.rowCount() == 2)
+    window.resize(800, 700)
+    window.show()
+    counts = tuple(ValueCount(f"v{index}", 100 - index, 1.0) for index in range(50))
+    window._on_result(
+        ValueCountsResult(
+            entry_id=window.entry.entry_id,
+            column_name="category",
+            counts=counts,
+            total_distinct=50,
+        )
+    )
+
+    qtbot.waitUntil(lambda: window.chart.minimumHeight() >= 50 * window.chart.ROW_HEIGHT)
+    viewport = window.chart_scroll_area.viewport()
+    assert viewport is not None
+    viewport_height = viewport.height()
+    scrollbar = window.chart_scroll_area.verticalScrollBar()
+    assert scrollbar is not None
+    qtbot.waitUntil(lambda: scrollbar.maximum() > 0)
+
+    assert window.chart.minimumHeight() > viewport_height
+    assert scrollbar.maximum() > 0
+
+    window._on_result(
+        ValueCountsResult(
+            entry_id=window.entry.entry_id,
+            column_name="category",
+            counts=counts[:2],
+            total_distinct=2,
+        )
+    )
+    qtbot.waitUntil(lambda: scrollbar.maximum() == 0)
+
+
+def test_value_counts_chart_culls_large_result_paints(qtbot) -> None:
+    chart = ValueCountsChart()
+    qtbot.addWidget(chart)
+    counts = tuple(ValueCount(f"v{index}", 10_000 - index, 1.0) for index in range(10_000))
+    chart.set_counts(counts)
+    chart.resize(600, 400)
+
+    assert chart.sizeHint().height() == len(counts) * chart.ROW_HEIGHT + chart.PADDING * 2
+    assert chart.grab(QRect(0, 0, 600, 400)).size().height() == 400
 
 
 def test_value_counts_window_reruns_when_limit_changes(qtbot) -> None:

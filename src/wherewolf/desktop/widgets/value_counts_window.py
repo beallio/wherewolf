@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
     QMenu,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTableWidget,
@@ -30,6 +31,9 @@ from wherewolf.domain import CatalogBinding
 class ValueCountsChart(QWidget):
     """Draw horizontal count bars using colours from the current widget palette."""
 
+    ROW_HEIGHT = 24
+    PADDING = 8
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._counts: tuple[ValueCount, ...] = ()
@@ -37,7 +41,12 @@ class ValueCountsChart(QWidget):
 
     def set_counts(self, counts: tuple[ValueCount, ...]) -> None:
         self._counts = tuple(counts)
+        self.setMinimumHeight(len(self._counts) * self.ROW_HEIGHT + self.PADDING * 2)
+        self.updateGeometry()
         self.update()
+
+    def sizeHint(self) -> QSize:
+        return QSize(self.width(), len(self._counts) * self.ROW_HEIGHT + self.PADDING * 2)
 
     def paintEvent(
         self, a0: QPaintEvent | None
@@ -48,17 +57,21 @@ class ValueCountsChart(QWidget):
             painter.end()
             return
 
-        padding = 8
+        padding = self.PADDING
         label_width = max(80, min(220, self.width() // 3))
         bar_left = padding + label_width
         bar_width = max(1, self.width() - bar_left - padding)
-        row_height = max(22, (self.height() - padding * 2) // len(self._counts))
+        row_height = self.ROW_HEIGHT
         maximum = max((item.count for item in self._counts), default=0)
         metrics = painter.fontMetrics()
         text_colour = self.palette().text().color()
         bar_colour = self.palette().highlight().color()
         painter.setPen(text_colour)
-        for index, item in enumerate(self._counts):
+        rect = a0.rect() if a0 is not None else self.rect()
+        first = max(0, (rect.top() - padding) // row_height)
+        last = min(len(self._counts) - 1, (rect.bottom() - padding) // row_height)
+        for index in range(first, last + 1):
+            item = self._counts[index]
             top = padding + index * row_height
             label = metrics.elidedText(
                 "<null>" if item.value is None else str(item.value),
@@ -156,8 +169,11 @@ class ValueCountsWindow(QWidget):
             header.setStretchLastSection(True)
         layout.addWidget(self.table)
         self.chart = ValueCountsChart(self)
-        self.chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout.addWidget(self.chart)
+        self.chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.chart_scroll_area = QScrollArea(self)
+        self.chart_scroll_area.setWidgetResizable(True)
+        self.chart_scroll_area.setWidget(self.chart)
+        layout.addWidget(self.chart_scroll_area)
         self.status_label = QLabel("Loading…", self)
         layout.addWidget(self.status_label)
         self._run_worker()
