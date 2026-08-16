@@ -163,7 +163,7 @@ class ValueCountsWindow(QWidget):
         self._limit_debounce.setSingleShot(True)
         self._limit_debounce.setInterval(self.DEBOUNCE_MS)
         self._limit_debounce.timeout.connect(self._run_worker)
-        self.limit_selector.valueChanged.connect(self._limit_debounce.start)
+        self.limit_selector.valueChanged.connect(lambda _value: self._limit_debounce.start())
         controls.addWidget(self.limit_selector)
         self.total_distinct_label = QLabel("Total distinct values: —", self)
         controls.addWidget(self.total_distinct_label)

@@ -152,6 +152,17 @@ def test_value_counts_window_debounces_rapid_limit_changes(qtbot) -> None:
     assert adapter.calls == [50, 30]
 
 
+def test_value_counts_window_keeps_a_constant_debounce_interval(qtbot) -> None:
+    adapter = _FakeAdapter()
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(adapter))
+    qtbot.addWidget(window)
+    qtbot.waitUntil(lambda: adapter.calls == [50])
+
+    for value in (10, 5_000, 1):
+        window.limit_selector.setValue(value)
+        assert window._limit_debounce.interval() == ValueCountsWindow.DEBOUNCE_MS
+
+
 def test_value_counts_window_ignores_stale_worker_results(qtbot) -> None:
     adapter = _FakeAdapter()
     window = ValueCountsWindow(_binding(), "category", _FakeRegistry(adapter))

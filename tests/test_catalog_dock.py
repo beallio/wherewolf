@@ -67,23 +67,18 @@ def test_catalog_file_column_keeps_basenames_visible_in_the_middle(qtbot) -> Non
     header.resizeSection(1, 258)
     font_metrics = QFontMetrics(view.font())
     available_width = header.sectionSize(1) - 8
-    first_middle = font_metrics.elidedText(first_path.name, view.textElideMode(), available_width)
-    second_middle = font_metrics.elidedText(second_path.name, view.textElideMode(), available_width)
-    first_right = font_metrics.elidedText(
-        str(first_path), Qt.TextElideMode.ElideRight, available_width
-    )
-    second_right = font_metrics.elidedText(
-        str(second_path), Qt.TextElideMode.ElideRight, available_width
-    )
+    first_displayed = dock.model.data(dock.model.index(0, 1), Qt.ItemDataRole.DisplayRole)
+    second_displayed = dock.model.data(dock.model.index(1, 1), Qt.ItemDataRole.DisplayRole)
+    assert isinstance(first_displayed, str)
+    assert isinstance(second_displayed, str)
+    first_middle = font_metrics.elidedText(first_displayed, view.textElideMode(), available_width)
+    second_middle = font_metrics.elidedText(second_displayed, view.textElideMode(), available_width)
 
     assert first_middle != second_middle, (
         f"identical middle-elided strings: {first_middle!r}, {second_middle!r}"
     )
     assert first_path.name in first_middle
     assert second_path.name in second_middle
-    assert first_right == second_right, (
-        f"different right-elided strings: {first_right!r}, {second_right!r}"
-    )
     assert view.textElideMode() == Qt.TextElideMode.ElideMiddle
 
 
@@ -101,6 +96,14 @@ def test_catalog_file_column_is_resizable_and_folder_column_stretches(qtbot) -> 
     assert header.sectionResizeMode(2) == QHeaderView.ResizeMode.Stretch
     assert header.sectionResizeMode(3) == QHeaderView.ResizeMode.ResizeToContents
     assert header.sectionResizeMode(4) == QHeaderView.ResizeMode.ResizeToContents
+
+    dock.resize(450, 200)
+    QApplication.processEvents()
+    narrow_folder_width = header.sectionSize(2)
+    dock.resize(650, 200)
+    QApplication.processEvents()
+    assert header.sectionSize(2) > narrow_folder_width
+
     header.resizeSection(1, 400)
     assert header.sectionSize(1) == 400
     assert isinstance(view.itemDelegateForColumn(2), FolderColumnDelegate)
@@ -126,8 +129,12 @@ def test_catalog_file_column_shows_complete_basenames_at_user_dock_width(qtbot) 
     assert header is not None
     available_width = header.sectionSize(1) - 8
     font_metrics = QFontMetrics(view.font())
-    first_shown = font_metrics.elidedText(first_path.name, view.textElideMode(), available_width)
-    second_shown = font_metrics.elidedText(second_path.name, view.textElideMode(), available_width)
+    first_displayed = dock.model.data(dock.model.index(0, 1), Qt.ItemDataRole.DisplayRole)
+    second_displayed = dock.model.data(dock.model.index(1, 1), Qt.ItemDataRole.DisplayRole)
+    assert isinstance(first_displayed, str)
+    assert isinstance(second_displayed, str)
+    first_shown = font_metrics.elidedText(first_displayed, view.textElideMode(), available_width)
+    second_shown = font_metrics.elidedText(second_displayed, view.textElideMode(), available_width)
 
     assert first_path.name in first_shown
     assert second_path.name in second_shown
