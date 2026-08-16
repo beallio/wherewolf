@@ -98,6 +98,26 @@ def test_value_counts_chart_culls_large_result_paints(qtbot) -> None:
     assert chart.grab(QRect(0, 0, 600, 400)).size().height() == 400
 
 
+def test_value_counts_chart_paints_rows_at_fixed_height(qtbot) -> None:
+    chart = ValueCountsChart()
+    qtbot.addWidget(chart)
+    chart.set_counts(
+        (
+            ValueCount("first", 3, 50.0),
+            ValueCount("second", 2, 33.0),
+            ValueCount("third", 1, 17.0),
+        )
+    )
+    chart.resize(600, 200)
+
+    image = chart.grab().toImage()
+    label_width = max(80, min(220, chart.width() // 3))
+    bar_left = chart.PADDING + label_width
+    third_bar_top = chart.PADDING + 2 * chart.ROW_HEIGHT + 4
+
+    assert image.pixelColor(bar_left, third_bar_top) == chart.palette().highlight().color()
+
+
 def test_value_counts_window_reruns_when_limit_changes(qtbot) -> None:
     adapter = _FakeAdapter()
     window = ValueCountsWindow(_binding(), "category", _FakeRegistry(adapter))
