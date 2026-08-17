@@ -108,6 +108,44 @@ def test_schema_panel_separates_dataset_identity_from_profile_warnings(qtbot: Qt
     assert "Profile is stale" not in panel.status_text()
 
 
+def test_schema_panel_filters_columns_and_reapplies_filter_after_repopulation(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    entry_id = uuid4()
+    panel.set_entry(
+        CatalogEntry(
+            id=entry_id,
+            alias="users",
+            path=Path("users.csv"),
+            source_format=SourceFormat.CSV,
+            schema=(
+                ColumnSchema("id", "BIGINT"),
+                ColumnSchema("customer_name", "VARCHAR"),
+                ColumnSchema("email", "VARCHAR"),
+            ),
+        )
+    )
+
+    panel.column_filter.setText("CUSTOMER")
+
+    assert [panel._table_widget.isRowHidden(row) for row in range(3)] == [True, False, True]
+
+    panel.set_entry(
+        CatalogEntry(
+            id=entry_id,
+            alias="users",
+            path=Path("users.csv"),
+            source_format=SourceFormat.CSV,
+            schema=(
+                ColumnSchema("customer_id", "BIGINT"),
+                ColumnSchema("status", "VARCHAR"),
+            ),
+        )
+    )
+
+    assert [panel._table_widget.isRowHidden(row) for row in range(2)] == [False, True]
+
+
 def test_schema_panel_displays_profile_with_approximate_distinct_label(qtbot: QtBot) -> None:
     panel = SchemaPanel()
     qtbot.addWidget(panel)
