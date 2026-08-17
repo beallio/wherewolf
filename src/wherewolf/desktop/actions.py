@@ -16,9 +16,12 @@ class DesktopActions:
     cancel: QAction
     format_sql: QAction
     add_datasets: QAction
+    new_tab: QAction
+    close_tab: QAction
     open_sql: QAction
     save_sql: QAction
     save_sql_as: QAction
+    save_current_query: QAction
     show_completion: QAction
     reset_layout: QAction
     clear_history: QAction
@@ -48,6 +51,13 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     add_datasets.setShortcut(QKeySequence.StandardKey.Open)
     add_datasets.setToolTip("Add datasets (Ctrl+O)")
 
+    new_tab = QAction("New Tab", parent)
+    new_tab.setShortcut(QKeySequence("Ctrl+T"))
+    new_tab.setToolTip("Open a new SQL editor tab (Ctrl+T)")
+    close_tab = QAction("Close Tab", parent)
+    close_tab.setShortcut(QKeySequence("Ctrl+W"))
+    close_tab.setToolTip("Close the current SQL editor tab (Ctrl+W)")
+
     open_sql = QAction("Open SQL…", parent)
     open_sql.setShortcut(QKeySequence("Ctrl+Shift+O"))
     open_sql.setToolTip("Open SQL file (Ctrl+Shift+O)")
@@ -57,6 +67,8 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     save_sql_as = QAction("Save SQL As…", parent)
     save_sql_as.setShortcut(QKeySequence.StandardKey.SaveAs)
     save_sql_as.setToolTip("Save SQL file as")
+    save_current_query = QAction("Save Current Query…", parent)
+    save_current_query.setToolTip("Save the current SQL buffer to the query library")
 
     show_completion = QAction("Show Completion", parent)
     show_completion.setEnabled(True)
@@ -86,9 +98,12 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
         cancel=cancel,
         format_sql=format_sql,
         add_datasets=add_datasets,
+        new_tab=new_tab,
+        close_tab=close_tab,
         open_sql=open_sql,
         save_sql=save_sql,
         save_sql_as=save_sql_as,
+        save_current_query=save_current_query,
         show_completion=show_completion,
         reset_layout=reset_layout,
         clear_history=clear_history,

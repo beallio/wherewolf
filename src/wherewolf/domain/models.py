@@ -81,6 +81,7 @@ class ExecutionRequest:
     preview_limit: int
     submitted_at: datetime
     source_snapshots: tuple[SourceSnapshot, ...] = ()
+    parameters: tuple[object, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 from wherewolf.desktop import main_window
 from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
+from wherewolf.desktop.widgets import SqlEditor
 from wherewolf.desktop.workers.schema_worker import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
@@ -57,7 +58,7 @@ from wherewolf.services import (
     SettingsService,
     serialise_history_records_to_sql,
 )
-from wherewolf.storage import HistoryManager
+from wherewolf.storage import HistoryManager, SavedQueryStore
 from wherewolf.storage.catalog import CatalogStore
 
 
@@ -265,6 +266,280 @@ def test_main_window_save_sql_without_a_current_file_uses_save_as(tmp_path: Path
     expected_path = destination.with_suffix(".sql")
     assert expected_path.read_text(encoding="utf-8") == "SELECT untitled"
     assert window._current_sql_path == expected_path
+
+
+def test_main_window_editor_tabs_create_focus_close_and_preserve_buffers(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+
+    assert window.editor_tabs.count() == 1
+    assert window.editor_tabs.tabsClosable()
+    assert window.editor_tabs.isMovable()
+    first_editor = window.current_editor
+    assert first_editor is not None
+    first_editor.setText("SELECT first_tab")
+    assert window.editor_tabs.tabText(0) == "SELECT first_tab"
+
+    assert window.desktop_actions.new_tab.shortcut() == QKeySequence("Ctrl+T")
+    window.desktop_actions.new_tab.trigger()
+
+    assert window.editor_tabs.count() == 2
+    assert window.editor_tabs.currentIndex() == 1
+    second_editor = window.current_editor
+    assert second_editor is not None
+    assert second_editor is not first_editor
+    second_editor.setText("SELECT second_tab")
+    assert window.editor_tabs.tabText(1) == "SELECT second_tab"
+
+    window.editor_tabs.setCurrentIndex(0)
+    assert window.current_editor is first_editor
+    assert window.current_editor.text() == "SELECT first_tab"
+
+    window.editor_tabs.setCurrentIndex(1)
+    assert window.current_editor is second_editor
+    assert window.current_editor.text() == "SELECT second_tab"
+
+    window.editor_tabs.tabCloseRequested.emit(1)
+    assert window.editor_tabs.count() == 1
+
+    window.editor_tabs.tabCloseRequested.emit(0)
+    assert window.editor_tabs.count() == 1
+    assert window.current_editor is not None
+    assert window.current_editor.text() == ""
+
+
+def test_main_window_editor_tabs_save_each_current_tab_to_its_own_path(
+    tmp_path: Path, qtbot
+) -> None:
+    first_path = tmp_path / "first.sql"
+    second_path = tmp_path / "second.sql"
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    first_editor = window.current_editor
+    assert first_editor is not None
+    first_editor.setText("SELECT first")
+    window._current_sql_path = first_path
+    window._last_saved_sql_text = first_editor.text()
+
+    window.desktop_actions.new_tab.trigger()
+    second_editor = window.current_editor
+    assert second_editor is not None
+    second_editor.setText("SELECT second")
+    window._current_sql_path = second_path
+    window.desktop_actions.save_sql.trigger()
+
+    assert second_path.read_text(encoding="utf-8") == "SELECT second"
+
+    window.editor_tabs.setCurrentIndex(0)
+    window.desktop_actions.save_sql.trigger()
+
+    assert first_path.read_text(encoding="utf-8") == "SELECT first"
+
+
+def test_main_window_tab_results_restore_without_cross_tab_leaks(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller,
+        "execute",
+        lambda request: submitted.append(request) or True,
+    )
+
+    first_editor = window.current_editor
+    assert first_editor is not None
+    first_editor.setText("SELECT 1")
+    window._on_run_triggered()
+    first_request = submitted.pop()
+    first_result = QueryResult(
+        request_id=first_request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"tab": ["first"]}),
+        execution_seconds=0.01,
+        preview_row_count=1,
+        total_row_count=1,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+
+    window.desktop_actions.new_tab.trigger()
+    second_editor = window.current_editor
+    assert second_editor is not None
+    assert not window.result_table_view.has_result()
+
+    window._on_query_result_ready(first_result, first_request)
+
+    assert not window.result_table_view.has_result()
+
+    second_editor.setText("SELECT 2")
+    window._on_run_triggered()
+    second_request = submitted.pop()
+    second_result = QueryResult(
+        request_id=second_request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"tab": ["second"]}),
+        execution_seconds=0.01,
+        preview_row_count=1,
+        total_row_count=1,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(second_result, second_request)
+
+    assert window.result_table_view.frame().to_dicts() == [{"tab": "second"}]
+
+    window.editor_tabs.setCurrentIndex(0)
+
+    assert window.result_table_view.frame().to_dicts() == [{"tab": "first"}]
+
+
+def test_main_window_restores_editor_tabs_with_paths_and_active_index(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "tab-workspace")
+    first_path = tmp_path / "first.sql"
+    third_path = tmp_path / "third.sql"
+    first = MainWindow(settings_service=settings)
+    qtbot.addWidget(first)
+
+    first_editor = first.current_editor
+    assert first_editor is not None
+    first_editor.setText("SELECT first")
+    first._current_sql_path = first_path
+    first._last_saved_sql_text = first_editor.text()
+
+    first.desktop_actions.new_tab.trigger()
+    second_editor = first.current_editor
+    assert second_editor is not None
+    second_editor.setText("SELECT second")
+
+    first.desktop_actions.new_tab.trigger()
+    third_editor = first.current_editor
+    assert third_editor is not None
+    third_editor.setText("SELECT third")
+    first._current_sql_path = third_path
+    first._last_saved_sql_text = third_editor.text()
+
+    first.editor_tabs.setCurrentIndex(1)
+    first.close()
+
+    restored = MainWindow(settings_service=settings)
+    qtbot.addWidget(restored)
+
+    assert restored.editor_tabs.count() == 3
+    restored_editors = [restored.editor_tabs.widget(index) for index in range(3)]
+    assert all(isinstance(editor, SqlEditor) for editor in restored_editors)
+    typed_editors = [cast(SqlEditor, editor) for editor in restored_editors]
+    assert [editor.text() for editor in typed_editors] == [
+        "SELECT first",
+        "SELECT second",
+        "SELECT third",
+    ]
+    assert restored.editor_tabs.currentIndex() == 1
+    assert restored._editor_states[typed_editors[0]].path == first_path
+    assert restored._editor_states[typed_editors[1]].path is None
+    assert restored._editor_states[typed_editors[2]].path == third_path
+
+
+def test_main_window_migrates_legacy_single_editor_draft_to_one_tab(tmp_path: Path, qtbot) -> None:
+    settings = _configure_qsettings_path(tmp_path / "legacy-draft")
+    settings.save_editor_text("SELECT legacy_draft")
+
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    assert window.editor_tabs.count() == 1
+    assert window.current_editor is not None
+    assert window.current_editor.text() == "SELECT legacy_draft"
+
+
+def test_main_window_saves_and_runs_saved_queries(tmp_path: Path, qtbot, monkeypatch) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    monkeypatch.setattr(
+        main_window.QInputDialog, "getText", lambda *_args, **_kwargs: ("Daily", True)
+    )
+    editor = window.current_editor
+    assert editor is not None
+    editor.setText("SELECT 1")
+
+    window.desktop_actions.save_current_query.trigger()
+
+    assert [query.name for query in store.get_all()] == ["Daily"]
+    assert window.saved_queries_dock.query_list.count() == 1
+
+    window._run_saved_query(store.get_all()[0])
+
+    assert submitted[0].executable_sql == "SELECT 1"
+    assert submitted[0].parameters == ()
+
+
+def test_main_window_binds_saved_query_parameters_before_execution(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    query = store.save_query(
+        name="Find user",
+        description="",
+        sql="SELECT :name, ':name', value::int",
+    )
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    monkeypatch.setattr(
+        main_window.QInputDialog,
+        "getText",
+        lambda *_args, **_kwargs: ("'; DROP TABLE t; --", True),
+    )
+
+    window._run_saved_query(query)
+
+    assert submitted[0].executable_sql == "SELECT ?, ':name', value::int"
+    assert submitted[0].parameters == ("'; DROP TABLE t; --",)
+
+
+def test_main_window_binds_saved_query_dataset_alias_as_a_quoted_identifier(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    dataset = tmp_path / "weekly.csv"
+    dataset.write_text("id\n1\n", encoding="utf-8")
+    catalog = CatalogService((CatalogEntry(uuid4(), "weekly export", dataset, SourceFormat.CSV),))
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    query = store.save_query(
+        name="Weekly rule",
+        description="",
+        sql="SELECT * FROM {dataset}",
+    )
+    window = MainWindow(catalog_service=catalog, saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    prompted_aliases: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    monkeypatch.setattr(
+        main_window.QInputDialog,
+        "getItem",
+        lambda _parent, _title, _label, aliases, *_args: (
+            prompted_aliases.append(tuple(aliases)) or "weekly export",
+            True,
+        ),
+    )
+
+    window._run_saved_query(query)
+
+    assert prompted_aliases == [("weekly export",)]
+    assert submitted[0].executable_sql == 'SELECT * FROM "weekly export"'
 
 
 def test_main_window_structure(qtbot) -> None:

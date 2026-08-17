@@ -26,6 +26,7 @@ class ExecutionRequestBuilder:
         engine: EngineKind,
         catalog_service: CatalogService,
         preview_limit: int = 1000,
+        parameters: tuple[object, ...] = (),
     ) -> ExecutionRequest:
         cleaned_sql = sql.strip()
         if not cleaned_sql:
@@ -68,6 +69,7 @@ class ExecutionRequestBuilder:
                 )
                 for binding in catalog_snapshot
             ),
+            parameters=parameters,
         )
 
 
