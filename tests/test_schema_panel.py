@@ -83,6 +83,31 @@ def test_schema_panel_displays_nullable_state_and_ordinal(qtbot: QtBot) -> None:
     assert "users.parquet" in panel.status_text()
 
 
+def test_schema_panel_separates_dataset_identity_from_profile_warnings(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    path = Path("/an/intentionally/long/parent/directory/wide-users.parquet")
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="users",
+            path=path,
+            source_format=SourceFormat.PARQUET,
+            schema=(ColumnSchema("id", "BIGINT"),),
+            profile_stale=True,
+            profile_skipped_reason="Profile skipped: source exceeds the configured limit.",
+        )
+    )
+
+    assert "wide-users.parquet" in panel.status_text()
+    assert "/an/intentionally/long/parent" not in panel.status_text()
+    assert panel._status_label.toolTip() == str(path)
+    assert "Profile skipped" in panel.warning_text()
+    assert "Profile is stale" in panel.warning_text()
+    assert "Profile skipped" not in panel.status_text()
+    assert "Profile is stale" not in panel.status_text()
+
+
 def test_schema_panel_displays_profile_with_approximate_distinct_label(qtbot: QtBot) -> None:
     panel = SchemaPanel()
     qtbot.addWidget(panel)

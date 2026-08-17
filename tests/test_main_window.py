@@ -1984,7 +1984,7 @@ def test_manual_profile_bypasses_over_limit_auto_profile_gate_and_updates_schema
     window.schema_panel.profile_button.click()
     assert len(window._profile_workers) == 1
     qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
-    assert "profiling skipped" not in window.schema_panel.status_text().lower()
+    assert "profiling skipped" not in window.schema_panel.warning_text().lower()
 
     profiled_entry = window._catalog_service.entries[0]
     assert profiled_entry.profile is not None
@@ -2064,11 +2064,11 @@ def test_main_window_profile_failure_keeps_skip_notice_until_success_clears(
     window.schema_panel.profile_button.click()
 
     qtbot.waitUntil(
-        lambda: "Profiling failed: profiling exploded" in window.schema_panel.status_text(),
+        lambda: "Profiling failed: profiling exploded" in window.schema_panel.warning_text(),
         timeout=5000,
     )
     failed_entry = window._catalog_service.entries[0]
-    assert "profiling skipped" in window.schema_panel.status_text().lower()
+    assert "profiling skipped" in window.schema_panel.warning_text().lower()
     assert failed_entry.profile_skipped_reason is not None
     qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
 
@@ -2076,8 +2076,8 @@ def test_main_window_profile_failure_keeps_skip_notice_until_success_clears(
     qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
     successful_entry = window._catalog_service.entries[0]
     assert successful_entry.profile_skipped_reason is None
-    assert "profiling failed: profiling exploded" not in window.schema_panel.status_text().lower()
-    assert "profiling skipped" not in window.schema_panel.status_text().lower()
+    assert "profiling failed: profiling exploded" not in window.schema_panel.warning_text().lower()
+    assert "profiling skipped" not in window.schema_panel.warning_text().lower()
 
 
 def test_main_window_profile_failure_reaches_schema_panel_and_keeps_columns_visible(
@@ -2105,14 +2105,14 @@ def test_main_window_profile_failure_reaches_schema_panel_and_keeps_columns_visi
     window.schema_panel.profile_button.click()
 
     qtbot.waitUntil(
-        lambda: "Profiling failed: profiling exploded" in window.schema_panel.status_text(),
+        lambda: "Profiling failed: profiling exploded" in window.schema_panel.warning_text(),
         timeout=5000,
     )
     assert window.schema_panel._table_widget.isVisible()
     assert window.schema_panel.column_count_rows() == 2
-    assert "profiling failed: profiling exploded" in window.schema_panel.status_text().lower()
+    assert "profiling failed: profiling exploded" in window.schema_panel.warning_text().lower()
     qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
-    assert "profiling..." not in window.schema_panel.status_text().lower()
+    assert "profiling..." not in window.schema_panel.warning_text().lower()
 
 
 def test_main_window_profile_pending_state_is_visible_and_single_queued(
@@ -2182,7 +2182,7 @@ def test_main_window_profile_pending_state_is_visible_and_single_queued(
     )
 
     window.schema_panel.profile_button.click()
-    qtbot.waitUntil(lambda: "profiling" in window.schema_panel.status_text().lower(), timeout=5000)
+    qtbot.waitUntil(lambda: "profiling" in window.schema_panel.warning_text().lower(), timeout=5000)
     assert not window.schema_panel.profile_button.isEnabled()
     assert len(window._profile_workers) == 1
 
@@ -2191,7 +2191,7 @@ def test_main_window_profile_pending_state_is_visible_and_single_queued(
 
     qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
     qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
-    assert "profiling" not in window.schema_panel.status_text().lower()
+    assert "profiling" not in window.schema_panel.warning_text().lower()
     assert window.schema_panel.cell_text(0, 4)
     assert window.schema_panel.column_count_rows() == 2
 
