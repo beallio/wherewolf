@@ -58,7 +58,7 @@ from wherewolf.services import (
     SettingsService,
     serialise_history_records_to_sql,
 )
-from wherewolf.storage import HistoryManager
+from wherewolf.storage import HistoryManager, SavedQueryStore
 from wherewolf.storage.catalog import CatalogStore
 
 
@@ -453,6 +453,59 @@ def test_main_window_migrates_legacy_single_editor_draft_to_one_tab(tmp_path: Pa
     assert window.editor_tabs.count() == 1
     assert window.current_editor is not None
     assert window.current_editor.text() == "SELECT legacy_draft"
+
+
+def test_main_window_saves_and_runs_saved_queries(tmp_path: Path, qtbot, monkeypatch) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    monkeypatch.setattr(
+        main_window.QInputDialog, "getText", lambda *_args, **_kwargs: ("Daily", True)
+    )
+    editor = window.current_editor
+    assert editor is not None
+    editor.setText("SELECT 1")
+
+    window.desktop_actions.save_current_query.trigger()
+
+    assert [query.name for query in store.get_all()] == ["Daily"]
+    assert window.saved_queries_dock.query_list.count() == 1
+
+    window._run_saved_query(store.get_all()[0])
+
+    assert submitted[0].executable_sql == "SELECT 1"
+    assert submitted[0].parameters == ()
+
+
+def test_main_window_binds_saved_query_parameters_before_execution(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    query = store.save_query(
+        name="Find user",
+        description="",
+        sql="SELECT :name, ':name', value::int",
+    )
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    monkeypatch.setattr(
+        main_window.QInputDialog,
+        "getText",
+        lambda *_args, **_kwargs: ("'; DROP TABLE t; --", True),
+    )
+
+    window._run_saved_query(query)
+
+    assert submitted[0].executable_sql == "SELECT ?, ':name', value::int"
+    assert submitted[0].parameters == ("'; DROP TABLE t; --",)
 
 
 def test_main_window_structure(qtbot) -> None:

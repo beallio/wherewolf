@@ -30,6 +30,7 @@ from PyQt6.QtWidgets import (
     QDockWidget,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -54,7 +55,7 @@ from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.export_controller import ExportController, ExportResult
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.theming import PROGRAM_THEME_NAMES, apply_program_theme
-from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SqlEditor
+from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SavedQueriesDock, SqlEditor
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
@@ -86,8 +87,10 @@ from wherewolf.services import (
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.services.preview_export import write_selection
+from wherewolf.services.query_parameters import bind_parameters, extract_parameters
 from wherewolf.storage.catalog import CatalogStore
 from wherewolf.storage.history import HistoryManager
+from wherewolf.storage.saved_queries import SavedQuery, SavedQueryStore
 
 SQL_DIALECT_REFERENCE_URLS: Final = {
     "DuckDB": "https://duckdb.org/docs/stable/sql/introduction",
@@ -234,7 +237,7 @@ class ExportOptionsDialog(QDialog):
 class MainWindow(QMainWindow):
     """A stable, testable application shell for desktop migration phase 3."""
 
-    LAYOUT_SCHEMA_VERSION: Final = 2
+    LAYOUT_SCHEMA_VERSION: Final = 3
 
     def __init__(
         self,
@@ -248,6 +251,7 @@ class MainWindow(QMainWindow):
         export_controller: ExportController | None = None,
         history_manager: HistoryManager | None = None,
         catalog_store: CatalogStore | None = None,
+        saved_query_store: SavedQueryStore | None = None,
     ) -> None:
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -273,6 +277,7 @@ class MainWindow(QMainWindow):
         self._last_request: ExecutionRequest | None = None
         self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
+        self.saved_query_store = saved_query_store or SavedQueryStore()
         self._editor_states: dict[SqlEditor, _EditorTabState] = {}
         self._result_origin_by_request_id: dict[object, SqlEditor] = {}
         self._schema_workers: list[SchemaWorker] = []
@@ -285,6 +290,7 @@ class MainWindow(QMainWindow):
         self.dataset_catalog_dock = self._catalog_dock_widget
         self._schema_dock_widget = self._build_schema_dock()
         self._history_dock_widget = self._build_history_dock()
+        self._saved_queries_dock_widget = self._build_saved_queries_dock()
         self._central_splitter = self._build_central_area()
         self.status_bar = QStatusBar(self)
         self.setStatusBar(self.status_bar)
@@ -330,6 +336,12 @@ class MainWindow(QMainWindow):
     def history_dock(self) -> HistoryDock:
         widget = self._history_dock_widget.widget()
         assert isinstance(widget, HistoryDock)
+        return widget
+
+    @property
+    def saved_queries_dock(self) -> SavedQueriesDock:
+        widget = self._saved_queries_dock_widget.widget()
+        assert isinstance(widget, SavedQueriesDock)
         return widget
 
     @property
@@ -525,6 +537,21 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
         return dock
 
+    def _build_saved_queries_dock(self) -> QDockWidget:
+        saved_queries_dock = SavedQueriesDock(self.saved_query_store, self)
+        saved_queries_dock.run_requested.connect(self._run_saved_query)
+        saved_queries_dock.open_in_new_tab_requested.connect(self._open_saved_query_in_new_tab)
+        saved_queries_dock.rename_requested.connect(self._rename_saved_query)
+        saved_queries_dock.delete_requested.connect(self._delete_saved_query)
+
+        dock = QDockWidget("Saved Queries", self)
+        dock.setObjectName("saved_queries_dock")
+        dock.setWidget(saved_queries_dock)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+        self.tabifyDockWidget(self._history_dock_widget, dock)
+        self._history_dock_widget.raise_()
+        return dock
+
     def _build_schema_dock(self) -> QDockWidget:
         schema_panel = SchemaPanel(self)
         schema_panel.insert_columns_requested.connect(self.editor_insert_text)
@@ -552,6 +579,7 @@ class MainWindow(QMainWindow):
         self.desktop_actions.open_sql.triggered.connect(self._open_sql)
         self.desktop_actions.save_sql.triggered.connect(self._save_sql)
         self.desktop_actions.save_sql_as.triggered.connect(self._save_sql_as)
+        self.desktop_actions.save_current_query.triggered.connect(self._save_current_query)
         self.desktop_actions.reset_layout.triggered.connect(self._reset_layout)
         self.desktop_actions.clear_history.triggered.connect(self._clear_history)
         self.desktop_actions.run.triggered.connect(self._on_run_triggered)
@@ -583,6 +611,19 @@ class MainWindow(QMainWindow):
             self._show_status("No SQL statement to run", 5000)
             return
 
+        self._execute_sql(sql, editor=editor)
+
+    def _execute_sql(
+        self,
+        sql: str,
+        *,
+        parameters: tuple[object, ...] = (),
+        editor: SqlEditor | None = None,
+    ) -> None:
+        origin = editor or self.current_editor
+        if origin is None:
+            self._show_status("No SQL editor is open", 5000)
+            return
         try:
             engine = cast(EngineKind, self.engine_selector.currentData())
             source_dialect = self.input_dialect_selector.currentData()
@@ -594,6 +635,7 @@ class MainWindow(QMainWindow):
                 engine=engine,
                 catalog_service=self._catalog_service,
                 preview_limit=self._preview_limit_value,
+                parameters=parameters,
             )
         except TranslationError as exc:
             self._on_editor_diagnostics(
@@ -612,7 +654,66 @@ class MainWindow(QMainWindow):
             return
 
         if self.query_controller.execute(request):
-            self._result_origin_by_request_id[request.request_id] = editor
+            self._result_origin_by_request_id[request.request_id] = origin
+
+    def _save_current_query(self, _checked: bool = False) -> None:
+        del _checked
+        editor = self.current_editor
+        if editor is None or not editor.text().strip():
+            self._show_status("No SQL statement to save", 5000)
+            return
+        name, accepted = QInputDialog.getText(self, "Save Current Query", "Name")
+        if not accepted:
+            return
+        try:
+            self.saved_query_store.save_query(name=name, description="", sql=editor.text())
+        except ValueError as error:
+            self._show_status(f"Could not save query: {error}", 5000)
+            return
+        self.saved_queries_dock.refresh()
+
+    def _run_saved_query(self, query: SavedQuery) -> None:
+        parameter_names = extract_parameters(query.sql)
+        values: dict[str, str] = {}
+        for name in parameter_names:
+            value, accepted = QInputDialog.getText(
+                self,
+                "Run Saved Query",
+                f"Value for :{name}",
+            )
+            if not accepted:
+                return
+            values[name] = value
+        try:
+            sql, parameters = bind_parameters(query.sql, values)
+        except ValueError as error:
+            self._show_status(f"Could not bind query parameters: {error}", 5000)
+            return
+        self._execute_sql(sql, parameters=tuple(parameters))
+
+    def _open_saved_query_in_new_tab(self, query: SavedQuery) -> None:
+        editor = self._new_editor_tab()
+        editor.setText(query.sql)
+
+    def _rename_saved_query(self, query: SavedQuery) -> None:
+        name, accepted = QInputDialog.getText(
+            self,
+            "Rename Saved Query",
+            "Name",
+            text=query.name,
+        )
+        if not accepted:
+            return
+        try:
+            self.saved_query_store.update_query(query.id, name=name)
+        except ValueError as error:
+            self._show_status(f"Could not rename query: {error}", 5000)
+            return
+        self.saved_queries_dock.refresh()
+
+    def _delete_saved_query(self, query: SavedQuery) -> None:
+        self.saved_query_store.delete_query(query.id)
+        self.saved_queries_dock.refresh()
 
     def _format_current_editor(self) -> None:
         editor = self.current_editor
@@ -1390,6 +1491,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.desktop_actions.open_sql)
         file_menu.addAction(self.desktop_actions.save_sql)
         file_menu.addAction(self.desktop_actions.save_sql_as)
+        file_menu.addAction(self.desktop_actions.save_current_query)
         file_menu.addSeparator()
         self.quit_action = QAction("Quit", self)
         self.quit_action.setShortcuts(
@@ -1456,6 +1558,7 @@ class MainWindow(QMainWindow):
             self._catalog_dock_widget,
             self._schema_dock_widget,
             self._history_dock_widget,
+            self._saved_queries_dock_widget,
         ):
             view_menu.addAction(dock.toggleViewAction())
         view_menu.addSeparator()
@@ -1629,6 +1732,7 @@ class MainWindow(QMainWindow):
             (self._catalog_dock_widget, Qt.DockWidgetArea.LeftDockWidgetArea),
             (self._schema_dock_widget, Qt.DockWidgetArea.LeftDockWidgetArea),
             (self._history_dock_widget, Qt.DockWidgetArea.RightDockWidgetArea),
+            (self._saved_queries_dock_widget, Qt.DockWidgetArea.RightDockWidgetArea),
         ):
             dock.setFloating(False)
             self.addDockWidget(area, dock)

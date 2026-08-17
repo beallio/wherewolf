@@ -34,6 +34,7 @@ def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
 
     assert actions.new_tab.shortcut().toString() == QKeySequence("Ctrl+T").toString()
     assert actions.close_tab.shortcut().toString() == QKeySequence("Ctrl+W").toString()
+    assert actions.save_current_query.text() == "Save Current Query…"
 
     assert actions.reset_layout.text() == "Reset Layout"
     assert actions.clear_history.text() == "Clear History"

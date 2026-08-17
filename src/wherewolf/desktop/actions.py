@@ -21,6 +21,7 @@ class DesktopActions:
     open_sql: QAction
     save_sql: QAction
     save_sql_as: QAction
+    save_current_query: QAction
     show_completion: QAction
     reset_layout: QAction
     clear_history: QAction
@@ -66,6 +67,8 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     save_sql_as = QAction("Save SQL As…", parent)
     save_sql_as.setShortcut(QKeySequence.StandardKey.SaveAs)
     save_sql_as.setToolTip("Save SQL file as")
+    save_current_query = QAction("Save Current Query…", parent)
+    save_current_query.setToolTip("Save the current SQL buffer to the query library")
 
     show_completion = QAction("Show Completion", parent)
     show_completion.setEnabled(True)
@@ -100,6 +103,7 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
         open_sql=open_sql,
         save_sql=save_sql,
         save_sql_as=save_sql_as,
+        save_current_query=save_current_query,
         show_completion=show_completion,
         reset_layout=reset_layout,
         clear_history=clear_history,
