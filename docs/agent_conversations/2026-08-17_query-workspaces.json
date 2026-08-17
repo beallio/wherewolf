@@ -1,0 +1,71 @@
+{
+  "date": "2026-08-17",
+  "task_objective": "Implement the query-workspaces plan: independent restored SQL editor tabs, a durable saved-query library, safe parameter binding, and catalog-dataset binding.",
+  "files_modified": [
+    "src/wherewolf/desktop/actions.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/__init__.py",
+    "src/wherewolf/desktop/widgets/saved_queries_dock.py",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "src/wherewolf/domain/models.py",
+    "src/wherewolf/execution/duckdb_engine.py",
+    "src/wherewolf/execution/registry.py",
+    "src/wherewolf/execution/spark_engine.py",
+    "src/wherewolf/services/execution_request_builder.py",
+    "src/wherewolf/services/query_parameters.py",
+    "src/wherewolf/services/settings_service.py",
+    "src/wherewolf/storage/__init__.py",
+    "src/wherewolf/storage/saved_queries.py",
+    "tests/conftest.py",
+    "tests/test_actions.py",
+    "tests/test_duckdb_engine.py",
+    "tests/test_main_window.py",
+    "tests/test_query_parameters.py",
+    "tests/test_saved_queries.py",
+    "tests/test_saved_queries_dock.py",
+    "tests/test_saved_query_store.py",
+    "tests/test_settings_service.py"
+  ],
+  "tests_added": [
+    "Editor tab creation, focus, independent buffers, close handling, per-tab SQL file paths, result isolation, restoration, and legacy single-draft migration.",
+    "Saved-query storage round trips, duplicate-name handling, corrupt or malformed input, and atomic interrupted-write safety.",
+    "Parameter extraction against casts, quoted literals, comments, repeated names, and safe DuckDB transport of an injection-shaped value.",
+    "Saved-query dock filtering and action emission; save-current-query, parameter prompt and binding, and quoted {dataset} replacement through catalog aliases."
+  ],
+  "design_decisions": [
+    "A1 was a behavior-preserving accessor refactor, so it used the plan's stated TDD exemption; the pre- and post-refactor suites both reported 584 passed and 7 deselected.",
+    "Closing the final editor tab immediately creates one empty Untitled tab, avoiding a no-editor state for ordinary interaction.",
+    "Saved-query names are case-insensitively unique and duplicate names are rejected rather than silently disambiguated.",
+    "The scanner provides the only placeholder spans used for binding. Values are passed as DuckDB positional parameters, never interpolated into SQL.",
+    "Spark explicitly rejects requests carrying bound parameters; it never falls back to string substitution.",
+    "The catalog {dataset} token is an identifier and is therefore resolved with quote_identifier, separately from value binding.",
+    "The test fixture redirects SavedQueryStore.DEFAULT_PATH to tmp_path while preserving a collection-time assertion of the real runtime default path."
+  ],
+  "verification_outputs": {
+    "baseline_and_a1": "584 passed, 7 deselected before and after A1; A1 changed no test files.",
+    "per_unit": "Main-window suite: 115 passed. Saved-query-store plus query-parameter suites: 8 passed.",
+    "adversarial_parameters": "3 passed, including casts, quoted literals, and line/block comments.",
+    "binding_injection": "7 passed, 603 deselected; the injection-shaped value was asserted to remain data.",
+    "tab_isolation": "12 passed, 103 deselected; includes an in-flight tab-1 result while tab 2 is active.",
+    "negative_controls": [
+      "1 current_editor forced to tab 0: main-window suite failed (4 failures), then recovered green.",
+      "2 originating-result guard removed: main-window suite failed (1 failure), then recovered green.",
+      "3 legacy single-draft migration removed: main-window suite failed (1 failure), then recovered green.",
+      "4 lexical scanner replaced by a bare regex: parameter suite failed (3 failures), then recovered green.",
+      "5 binding replaced by naive string replacement: injection suite failed (2 failures), then recovered green.",
+      "6 malformed saved-query JSON allowed to raise: store suite failed (1 failure), then recovered green.",
+      "7 dataset alias substituted without quoting: saved-query UI suite failed (1 failure), then recovered green.",
+      "8 tab close signal disconnected: main-window suite failed (1 failure), then recovered green.",
+      "9 SQL path made window-global: main-window suite failed (2 failures), then recovered green.",
+      "10 binding re-scanned with a looser regex: parameter suite failed (1 failure), then recovered green."
+    ],
+    "full_gate_before_session_record": "Ruff, formatting, ty, review-note integrity, and the full suite passed: 603 passed, 7 deselected, 90% coverage."
+  },
+  "deferred_and_unverified": [
+    "No performance measurement was made for many open tabs retaining result frames.",
+    "Prompted parameter values remain string-only; there is no typed or list-parameter support.",
+    "The lexer does not support every SQL dialect construct such as dollar-quoted strings or nested block comments.",
+    "Dialog interactions are monkeypatched in tests, and no Windows-specific verification was performed."
+  ],
+  "results": "The branch contains independent atomic commits for the accessor seam, tabs, per-tab results, tab restoration, saved-query storage, parameter extraction, safe binding, the saved-query dock, and dataset binding. The session record is committed separately; the final clean-tree quality gate must run before writing the round-complete marker."
+}
