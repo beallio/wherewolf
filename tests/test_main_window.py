@@ -823,6 +823,71 @@ def test_main_window_raises_messages_tab_only_for_failed_query_results(qtbot) ->
     assert results_tabs.currentWidget() is results_page
 
 
+def test_main_window_keeps_a_result_summary_until_the_next_run_starts(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    request = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=3,
+        submitted_at=datetime.now(UTC),
+    )
+    succeeded = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"value": [1, 2, 3]}),
+        execution_seconds=1.25,
+        preview_row_count=3,
+        total_row_count=5,
+        truncated=True,
+        completed_at=datetime.now(UTC),
+    )
+    failed = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.5,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="SyntaxError",
+        error_message="bad SQL",
+    )
+    cancelled = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.CANCELLED,
+        frame=None,
+        execution_seconds=0.75,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+
+    window._on_query_result_ready(succeeded, request)
+
+    assert not window.result_summary_label.isHidden()
+    assert window.result_summary_label.text() == (
+        "DuckDB · showing 3 of 5 rows · 1.25s · truncated at 3 preview rows"
+    )
+
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+
+    assert window.result_summary_label.text() == ""
+    assert window.result_summary_label.isHidden()
+
+    window._on_query_result_ready(failed, request)
+    assert window.result_summary_label.text() == "DuckDB · failed after 0.50s"
+
+    window._on_query_result_ready(cancelled, request)
+    assert window.result_summary_label.text() == "DuckDB · cancelled after 0.75s"
+
+
 def test_main_window_editor_shows_call_tip_for_known_function(qtbot, monkeypatch) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
