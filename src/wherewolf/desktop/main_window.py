@@ -838,7 +838,12 @@ class MainWindow(QMainWindow):
     def _show_value_counts(self, entry, column_name: str) -> None:
         binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
         window = ValueCountsWindow(
-            binding, column_name, cast(ValueCountsRegistry, self._engine_registry), self
+            binding,
+            column_name,
+            cast(ValueCountsRegistry, self._engine_registry),
+            self,
+            file_dialog_service=self._file_dialog_service,
+            settings_service=self._settings_service,
         )
         self._value_counts_windows.append(window)
         window.destroyed.connect(

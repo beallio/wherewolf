@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from functools import partial
 
+import polars as pl
 from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtGui import QCloseEvent, QKeyEvent, QKeySequence, QPainter, QPaintEvent
 from PyQt6.QtWidgets import (
     QApplication,
+    QComboBox,
     QHBoxLayout,
     QLabel,
     QMenu,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QSpinBox,
@@ -23,6 +26,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wherewolf.desktop.clipboard_serializers import serialize_table_widget_to_tsv
+from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.workers.value_counts_worker import (
     ValueCount,
     ValueCountsRegistry,
@@ -30,6 +34,7 @@ from wherewolf.desktop.workers.value_counts_worker import (
     ValueCountsWorker,
 )
 from wherewolf.domain import CatalogBinding
+from wherewolf.services import ExportFormat, SettingsService, write_preview
 
 
 class ValueCountsChart(QWidget):
@@ -160,11 +165,15 @@ class ValueCountsWindow(QWidget):
         column_name: str,
         engine_registry: ValueCountsRegistry,
         parent: QWidget | None = None,
+        file_dialog_service: FileDialogService | None = None,
+        settings_service: SettingsService | None = None,
     ) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.entry = entry
         self.column_name = column_name
         self._engine_registry = engine_registry
+        self._file_dialog_service = file_dialog_service or QtFileDialogService()
+        self._settings_service = settings_service or SettingsService()
         self._workers: list[ValueCountsWorker] = []
         self._current_worker: ValueCountsWorker | None = None
         self._last_result: ValueCountsResult | None = None
@@ -187,6 +196,24 @@ class ValueCountsWindow(QWidget):
         controls.addWidget(self.limit_selector)
         self.total_distinct_label = QLabel("Total distinct values: —", self)
         controls.addWidget(self.total_distinct_label)
+        self.export_format_selector = QComboBox(self)
+        self.export_format_selector.setObjectName("value_counts_export_format")
+        for label, export_format in (
+            ("CSV", ExportFormat.CSV),
+            ("Excel", ExportFormat.XLSX),
+            ("Parquet", ExportFormat.PARQUET),
+        ):
+            self.export_format_selector.addItem(label, export_format)
+        format_index = self.export_format_selector.findData(
+            self._parse_export_format(self._settings_service.restore_export_format())
+        )
+        self.export_format_selector.setCurrentIndex(max(format_index, 0))
+        controls.addWidget(self.export_format_selector)
+        self.export_button = QPushButton("Export…", self)
+        self.export_button.setObjectName("value_counts_export_button")
+        self.export_button.setEnabled(False)
+        self.export_button.clicked.connect(self._export_value_counts)
+        controls.addWidget(self.export_button)
         controls.addStretch(1)
         layout.addLayout(controls)
 
@@ -235,11 +262,13 @@ class ValueCountsWindow(QWidget):
     def _on_result(self, result: ValueCountsResult) -> None:
         if result.error_message is not None:
             self._last_result = None
+            self.export_button.setEnabled(False)
             self.status_label.setText(f"Value counts error: {result.error_message}")
             self.table.setRowCount(0)
             self.chart.set_counts(())
             return
         self._last_result = result
+        self.export_button.setEnabled(True)
         self.status_label.setText("")
         self.total_distinct_label.setText(f"Total distinct values: {result.total_distinct}")
         self.table.setSortingEnabled(False)
@@ -256,6 +285,39 @@ class ValueCountsWindow(QWidget):
             )
         self.table.setSortingEnabled(True)
         self.chart.set_counts(result.counts)
+
+    @staticmethod
+    def _parse_export_format(value: str) -> ExportFormat:
+        try:
+            return ExportFormat(value)
+        except ValueError:
+            return ExportFormat.CSV
+
+    def _export_value_counts(self) -> None:
+        if self._last_result is None:
+            return
+        export_format = self.export_format_selector.currentData()
+        if not isinstance(export_format, ExportFormat):
+            return
+        destination = self._file_dialog_service.choose_value_counts_path(
+            self._settings_service.restore_last_dataset_directory(),
+            export_format,
+            self,
+        )
+        if destination is None:
+            return
+        frame = pl.DataFrame(
+            {
+                "value": [
+                    "<null>" if count.value is None else str(count.value)
+                    for count in self._last_result.counts
+                ],
+                "count": [count.count for count in self._last_result.counts],
+                "percentage": [count.percentage for count in self._last_result.counts],
+            }
+        )
+        write_preview(frame, destination, export_format)
+        self._settings_service.save_export_format(export_format.value)
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
         for worker in list(self._workers):

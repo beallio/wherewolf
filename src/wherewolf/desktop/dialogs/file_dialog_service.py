@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import QFileDialog, QWidget
 
 from wherewolf.domain.enums import SourceFormat
 from wherewolf.services.export_destination import (
+    ExportFormat,
     export_file_filter,
     normalise_destination,
 )
@@ -30,12 +31,21 @@ class FileDialogService(Protocol):
     ) -> tuple[Path, ...]:
         """Ask the user for one or more dataset files."""
 
+    def choose_value_counts_path(
+        self,
+        default_directory: Path | None,
+        export_format: ExportFormat,
+        parent: QWidget | None = None,
+    ) -> Path | None:
+        """Ask the user where to save value counts in the selected format."""
+
 
 @dataclass(frozen=True)
 class FakeFileDialogService:
     paths: tuple[Path, ...]
     export_path: Path | None = None
     history_sql_path: Path | None = None
+    value_counts_path: Path | None = None
 
     def choose_dataset_files(
         self,
@@ -49,6 +59,17 @@ class FakeFileDialogService:
     def choose_export_path(self, default_directory, export_format, parent=None) -> Path | None:
         del default_directory, parent
         return normalise_destination(self.export_path, export_format) if self.export_path else None
+
+    def choose_value_counts_path(
+        self,
+        default_directory: Path | None,
+        export_format: ExportFormat,
+        parent: QWidget | None = None,
+    ) -> Path | None:
+        del default_directory, parent
+        if self.value_counts_path is None:
+            return None
+        return normalise_destination(self.value_counts_path, export_format)
 
     def choose_history_sql_path(
         self, default_directory: Path | None, parent: QWidget | None = None
@@ -99,6 +120,21 @@ class QtFileDialogService:
             f"*.{export_format.value}",
             # No DontConfirmOverwrite: let the native dialog prompt before replacing an
             # existing file. Suppressing it made exports destroy files silently.
+        )
+        return normalise_destination(Path(name), export_format) if name else None
+
+    def choose_value_counts_path(
+        self,
+        default_directory: Path | None,
+        export_format: ExportFormat,
+        parent: QWidget | None = None,
+    ) -> Path | None:
+        name, _ = QFileDialog.getSaveFileName(
+            parent,
+            "Export value counts",
+            str(default_directory or ""),
+            export_file_filter(export_format),
+            f"*.{export_format.value}",
         )
         return normalise_destination(Path(name), export_format) if name else None
 
