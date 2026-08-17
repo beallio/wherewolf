@@ -128,6 +128,14 @@ def test_main_window_structure(qtbot) -> None:
     assert menu_titles == ["&File", "&Edit", "&Query", "&View", "&Help"]
 
 
+def test_main_window_result_summary_is_hidden_until_a_query_finishes(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.result_summary_label.objectName() == "result_summary_label"
+    assert window.result_summary_label.isHidden()
+
+
 def test_main_window_top_level_menus_have_distinct_mnemonics(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

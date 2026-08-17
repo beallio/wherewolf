@@ -896,6 +896,10 @@ class MainWindow(QMainWindow):
         self.result_sort_notice.setObjectName("result_sort_notice")
         self.result_sort_notice.setVisible(False)
         results_layout.addWidget(self.result_sort_notice)
+        self.result_summary_label = QLabel(results_page)
+        self.result_summary_label.setObjectName("result_summary_label")
+        self.result_summary_label.setVisible(False)
+        results_layout.addWidget(self.result_summary_label)
         self.result_truncation_notice = QLabel(
             "Preview is truncated at the selected row limit. Export Full Results for all rows.",
             results_page,
