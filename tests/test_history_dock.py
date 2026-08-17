@@ -14,6 +14,7 @@ class HistoryTestRecord(TypedDict):
     engine: str
     query: str
     catalog: dict[str, object]
+    pinned: bool
 
 
 def _history_records() -> list[HistoryTestRecord]:
@@ -25,6 +26,7 @@ def _history_records() -> list[HistoryTestRecord]:
             "engine": "duckdb",
             "query": "SELECT first",
             "catalog": {},
+            "pinned": False,
         },
         {
             "schema_version": 2,
@@ -33,6 +35,7 @@ def _history_records() -> list[HistoryTestRecord]:
             "engine": "duckdb",
             "query": "SELECT second",
             "catalog": {},
+            "pinned": False,
         },
         {
             "schema_version": 2,
@@ -41,6 +44,7 @@ def _history_records() -> list[HistoryTestRecord]:
             "engine": "duckdb",
             "query": "SELECT third",
             "catalog": {},
+            "pinned": False,
         },
     ]
 
@@ -82,6 +86,25 @@ def test_history_filter_hides_nonmatching_records_and_survives_refresh(tmp_path,
     dock.refresh()
 
     assert _visible_history_ids(dock) == [records[1]["id"]]
+
+
+def test_history_dock_pinned_records_sort_above_unpinned_for_every_sort_order(tmp_path, qtbot):
+    from wherewolf.desktop.widgets.history_dock import HistoryDock
+
+    records = _history_records()
+    records[0]["pinned"] = True
+    history_file = tmp_path / "history.json"
+    history_file.write_text(json.dumps(records))
+    dock = HistoryDock(HistoryManager(storage_path=history_file))
+    qtbot.addWidget(dock)
+
+    for order in (Qt.SortOrder.AscendingOrder, Qt.SortOrder.DescendingOrder):
+        dock.history_table.sortItems(1, order)
+        first = dock.history_table.topLevelItem(0)
+
+        assert first is not None
+        assert first.data(0, Qt.ItemDataRole.UserRole) == records[0]["id"]
+        assert first.text(1).startswith("📌 ")
 
 
 def test_history_dock_deletes_multiple_selected_records_after_confirmation(
@@ -199,6 +222,7 @@ def test_history_dock_selects_duplicate_labels_by_stable_id(tmp_path, qtbot):
             "engine": "duckdb",
             "query": f"{query_prefix} first",
             "catalog": {},
+            "pinned": False,
         },
         {
             "schema_version": 2,
@@ -207,6 +231,7 @@ def test_history_dock_selects_duplicate_labels_by_stable_id(tmp_path, qtbot):
             "engine": "duckdb",
             "query": f"{query_prefix} second",
             "catalog": {},
+            "pinned": False,
         },
     ]
     history_file = tmp_path / "history.json"

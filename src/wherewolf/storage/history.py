@@ -42,6 +42,7 @@ class HistoryManager:
         migrated["schema_version"] = 2
         migrated["id"] = str(uuid4())
         migrated.setdefault("catalog", {"dataset": migrated.get("path", "")})
+        migrated["pinned"] = False
         return migrated
 
     @staticmethod
@@ -56,7 +57,12 @@ class HistoryManager:
         if not isinstance(entry, dict) or entry.get("schema_version") != 2:
             return False
         entry_id = entry.get("id")
-        if not cls._has_required_keys(entry) or not isinstance(entry_id, str):
+        pinned = entry.get("pinned", False)
+        if (
+            not cls._has_required_keys(entry)
+            or not isinstance(entry_id, str)
+            or not isinstance(pinned, bool)
+        ):
             return False
         try:
             UUID(entry_id)
@@ -97,11 +103,15 @@ class HistoryManager:
             "query": query,
             "path": path,
             "catalog": catalog if catalog is not None else {"dataset": path} if path else {},
+            "pinned": False,
         }
         history.insert(0, entry)  # Add to the beginning
 
-        # Limit history to 100 entries
-        history = history[:100]
+        # Pinned queries are user-curated and intentionally exempt from the ordinary
+        # history cap. Keep every pinned record and the 100 newest unpinned records.
+        pinned_entries = [entry for entry in history if entry["pinned"]]
+        unpinned_entries = [entry for entry in history if not entry["pinned"]]
+        history = [*pinned_entries, *unpinned_entries[:100]]
 
         self._write_history(history)
 
@@ -126,7 +136,11 @@ class HistoryManager:
         migrated = False
         for entry in history:
             if self._is_v2_entry(entry):
-                readable_entries.append(entry)
+                normalised_entry = dict(entry)
+                if "pinned" not in normalised_entry:
+                    normalised_entry["pinned"] = False
+                    migrated = True
+                readable_entries.append(normalised_entry)
             elif self._is_v1_entry(entry):
                 readable_entries.append(self._migrate_v1_entry(entry))
                 migrated = True
@@ -151,6 +165,16 @@ class HistoryManager:
         if removed_count:
             self._write_history(survivors)
         return removed_count
+
+    def set_pinned(self, entry_id: str, pinned: bool) -> None:
+        """Persist the requested pin state for one history record."""
+        history = self.get_all()
+        for entry in history:
+            if entry["id"] == entry_id:
+                if entry["pinned"] != pinned:
+                    entry["pinned"] = pinned
+                    self._write_history(history)
+                return
 
     def clear(self):
         """Clears the query history."""

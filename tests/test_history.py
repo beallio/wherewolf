@@ -103,6 +103,7 @@ def test_existing_v2_history_is_not_rewritten(storage_dir):
             "query": "SELECT 1",
             "path": "",
             "catalog": {},
+            "pinned": False,
         }
     ]
     storage_dir.mkdir()
@@ -112,6 +113,59 @@ def test_existing_v2_history_is_not_rewritten(storage_dir):
 
     assert manager.get_all() == v2_entries
     assert json.loads(history_file.read_text()) == v2_entries
+
+
+def test_v2_history_without_pinned_migrates_to_unpinned(storage_dir):
+    history_file = storage_dir / "history.json"
+    v2_entry = {
+        "schema_version": 2,
+        "id": "5bb31a12-165e-4a7d-b4f6-439d78c0d50d",
+        "timestamp": "2026-08-01T12:00:00+00:00",
+        "engine": "duckdb",
+        "query": "SELECT legacy v2",
+        "path": "",
+        "catalog": {},
+    }
+    storage_dir.mkdir()
+    history_file.write_text(json.dumps([v2_entry]))
+
+    entries = HistoryManager(storage_path=history_file).get_all()
+
+    assert entries[0]["pinned"] is False
+    assert json.loads(history_file.read_text())[0]["pinned"] is False
+
+
+def test_set_pinned_round_trips_through_history_storage(storage_dir):
+    history_file = storage_dir / "history.json"
+    manager = HistoryManager(storage_path=history_file)
+    manager.add_entry("duckdb", "SELECT retain me")
+    entry_id = manager.get_all()[0]["id"]
+
+    manager.set_pinned(entry_id, True)
+
+    entry = manager.get_by_id(entry_id)
+    reloaded_entry = HistoryManager(storage_path=history_file).get_by_id(entry_id)
+    assert entry is not None
+    assert reloaded_entry is not None
+    assert entry["pinned"] is True
+    assert reloaded_entry["pinned"] is True
+
+
+def test_history_cap_retains_all_pinned_records_and_limits_only_unpinned_records(storage_dir):
+    manager = HistoryManager(storage_path=storage_dir / "history.json")
+    manager.add_entry("duckdb", "SELECT pinned")
+    pinned_id = manager.get_all()[0]["id"]
+    manager.set_pinned(pinned_id, True)
+
+    for index in range(150):
+        manager.add_entry("duckdb", f"SELECT {index}")
+
+    entries = manager.get_all()
+
+    assert entries[0]["id"] == pinned_id
+    assert len(entries) == 101
+    assert sum(entry["pinned"] for entry in entries) == 1
+    assert len([entry for entry in entries if not entry["pinned"]]) == 100
 
 
 def test_failed_migration_leaves_the_original_v1_file_intact(storage_dir):
@@ -184,6 +238,7 @@ def test_record_missing_required_key_is_skipped(storage_dir):
         "engine": "duckdb",
         "query": "SELECT retained",
         "catalog": {},
+        "pinned": False,
     }
     missing_query = {key: value for key, value in valid_entry.items() if key != "query"}
     storage_dir.mkdir()
