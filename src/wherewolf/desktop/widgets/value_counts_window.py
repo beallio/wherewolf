@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSpinBox,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -176,13 +177,15 @@ class ValueCountsWindow(QWidget):
         header = self.table.horizontalHeader()
         if header is not None:
             header.setStretchLastSection(True)
-        layout.addWidget(self.table)
         self.chart = ValueCountsChart(self)
         self.chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.chart_scroll_area = QScrollArea(self)
         self.chart_scroll_area.setWidgetResizable(True)
         self.chart_scroll_area.setWidget(self.chart)
-        layout.addWidget(self.chart_scroll_area)
+        self.content_splitter = QSplitter(Qt.Orientation.Vertical, self)
+        self.content_splitter.addWidget(self.table)
+        self.content_splitter.addWidget(self.chart_scroll_area)
+        layout.addWidget(self.content_splitter)
         self.status_label = QLabel("Loading…", self)
         layout.addWidget(self.status_label)
         self._run_worker()

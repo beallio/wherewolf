@@ -87,6 +87,24 @@ def test_value_counts_chart_has_a_scrollable_height_for_full_results(qtbot) -> N
     qtbot.waitUntil(lambda: scrollbar.maximum() == 0)
 
 
+def test_value_counts_window_uses_a_splitter_for_table_and_chart(qtbot) -> None:
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(_FakeAdapter()))
+    qtbot.addWidget(window)
+    window.resize(800, 600)
+    window.show()
+
+    assert window.content_splitter.count() == 2
+    assert window.content_splitter.widget(0) is window.table
+    assert window.content_splitter.widget(1) is window.chart_scroll_area
+
+    window.content_splitter.setSizes([100, 400])
+    table_small_sizes = window.content_splitter.sizes()
+    window.content_splitter.setSizes([400, 100])
+    table_large_sizes = window.content_splitter.sizes()
+
+    assert table_small_sizes != table_large_sizes
+
+
 def test_value_counts_chart_culls_large_result_paints(qtbot) -> None:
     chart = ValueCountsChart()
     qtbot.addWidget(chart)
