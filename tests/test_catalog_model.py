@@ -1,9 +1,10 @@
 from pathlib import Path
+from uuid import uuid4
 
 from PyQt6.QtCore import Qt
 
 from wherewolf.desktop.models import CatalogModel
-from wherewolf.domain import ColumnSchema, SchemaResult
+from wherewolf.domain import CatalogEntry, ColumnSchema, SchemaResult, SourceFormat
 from wherewolf.services import CatalogService
 
 
@@ -73,3 +74,20 @@ def test_catalog_model_emits_model_reset_on_service_change() -> None:
 
     assert len(signal_spy) == 1
     assert model.rowCount() == 1
+
+
+def test_catalog_model_marks_unavailable_entries_with_status_and_foreground() -> None:
+    service = CatalogService(
+        (
+            CatalogEntry(uuid4(), "available", Path("/tmp/available.csv"), SourceFormat.CSV),
+            CatalogEntry(
+                uuid4(), "missing", Path("/tmp/missing.csv"), SourceFormat.CSV, unavailable=True
+            ),
+        )
+    )
+    model = CatalogModel(service)
+
+    assert model.data(model.index(0, 4)) == "Loading"
+    assert model.data(model.index(1, 4)) == "Unavailable — file not found"
+    assert model.data(model.index(0, 0), Qt.ItemDataRole.ForegroundRole) is None
+    assert model.data(model.index(1, 0), Qt.ItemDataRole.ForegroundRole) is not None
