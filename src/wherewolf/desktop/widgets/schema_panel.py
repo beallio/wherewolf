@@ -263,6 +263,7 @@ class SchemaPanel(QWidget):
 
         self._warning_label.clear()
         self._warning_label.hide()
+        self._status_label.setToolTip("")
 
         if schema_error_msg is not None:
             prefix = f"{alias} — " if alias is not None else ""
