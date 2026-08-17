@@ -128,6 +128,14 @@ def test_main_window_structure(qtbot) -> None:
     assert menu_titles == ["&File", "&Edit", "&Query", "&View", "&Help"]
 
 
+def test_main_window_result_summary_is_hidden_until_a_query_finishes(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.result_summary_label.objectName() == "result_summary_label"
+    assert window.result_summary_label.isHidden()
+
+
 def test_main_window_top_level_menus_have_distinct_mnemonics(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
@@ -813,6 +821,71 @@ def test_main_window_raises_messages_tab_only_for_failed_query_results(qtbot) ->
 
     window.editor._update_status("editor diagnostic")
     assert results_tabs.currentWidget() is results_page
+
+
+def test_main_window_keeps_a_result_summary_until_the_next_run_starts(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    request = ExecutionRequest(
+        request_id=uuid4(),
+        engine=EngineKind.DUCKDB,
+        source_dialect="duckdb",
+        original_sql="SELECT 1",
+        executable_sql="SELECT 1",
+        catalog=(),
+        preview_limit=3,
+        submitted_at=datetime.now(UTC),
+    )
+    succeeded = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"value": [1, 2, 3]}),
+        execution_seconds=1.25,
+        preview_row_count=3,
+        total_row_count=5,
+        truncated=True,
+        completed_at=datetime.now(UTC),
+    )
+    failed = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.5,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="SyntaxError",
+        error_message="bad SQL",
+    )
+    cancelled = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.CANCELLED,
+        frame=None,
+        execution_seconds=0.75,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+
+    window._on_query_result_ready(succeeded, request)
+
+    assert not window.result_summary_label.isHidden()
+    assert window.result_summary_label.text() == (
+        "DuckDB · showing 3 of 5 rows · 1.25s · truncated at 3 preview rows"
+    )
+
+    window._on_query_status_changed(ExecutionStatus.RUNNING)
+
+    assert window.result_summary_label.text() == ""
+    assert window.result_summary_label.isHidden()
+
+    window._on_query_result_ready(failed, request)
+    assert window.result_summary_label.text() == "DuckDB · failed after 0.50s"
+
+    window._on_query_result_ready(cancelled, request)
+    assert window.result_summary_label.text() == "DuckDB · cancelled after 0.75s"
 
 
 def test_main_window_editor_shows_call_tip_for_known_function(qtbot, monkeypatch) -> None:
@@ -1911,7 +1984,7 @@ def test_manual_profile_bypasses_over_limit_auto_profile_gate_and_updates_schema
     window.schema_panel.profile_button.click()
     assert len(window._profile_workers) == 1
     qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
-    assert "profiling skipped" not in window.schema_panel.status_text().lower()
+    assert "profiling skipped" not in window.schema_panel.warning_text().lower()
 
     profiled_entry = window._catalog_service.entries[0]
     assert profiled_entry.profile is not None
@@ -1991,11 +2064,11 @@ def test_main_window_profile_failure_keeps_skip_notice_until_success_clears(
     window.schema_panel.profile_button.click()
 
     qtbot.waitUntil(
-        lambda: "Profiling failed: profiling exploded" in window.schema_panel.status_text(),
+        lambda: "Profiling failed: profiling exploded" in window.schema_panel.warning_text(),
         timeout=5000,
     )
     failed_entry = window._catalog_service.entries[0]
-    assert "profiling skipped" in window.schema_panel.status_text().lower()
+    assert "profiling skipped" in window.schema_panel.warning_text().lower()
     assert failed_entry.profile_skipped_reason is not None
     qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
 
@@ -2003,8 +2076,8 @@ def test_main_window_profile_failure_keeps_skip_notice_until_success_clears(
     qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
     successful_entry = window._catalog_service.entries[0]
     assert successful_entry.profile_skipped_reason is None
-    assert "profiling failed: profiling exploded" not in window.schema_panel.status_text().lower()
-    assert "profiling skipped" not in window.schema_panel.status_text().lower()
+    assert "profiling failed: profiling exploded" not in window.schema_panel.warning_text().lower()
+    assert "profiling skipped" not in window.schema_panel.warning_text().lower()
 
 
 def test_main_window_profile_failure_reaches_schema_panel_and_keeps_columns_visible(
@@ -2032,14 +2105,14 @@ def test_main_window_profile_failure_reaches_schema_panel_and_keeps_columns_visi
     window.schema_panel.profile_button.click()
 
     qtbot.waitUntil(
-        lambda: "Profiling failed: profiling exploded" in window.schema_panel.status_text(),
+        lambda: "Profiling failed: profiling exploded" in window.schema_panel.warning_text(),
         timeout=5000,
     )
     assert window.schema_panel._table_widget.isVisible()
     assert window.schema_panel.column_count_rows() == 2
-    assert "profiling failed: profiling exploded" in window.schema_panel.status_text().lower()
+    assert "profiling failed: profiling exploded" in window.schema_panel.warning_text().lower()
     qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
-    assert "profiling..." not in window.schema_panel.status_text().lower()
+    assert "profiling..." not in window.schema_panel.warning_text().lower()
 
 
 def test_main_window_profile_pending_state_is_visible_and_single_queued(
@@ -2109,7 +2182,7 @@ def test_main_window_profile_pending_state_is_visible_and_single_queued(
     )
 
     window.schema_panel.profile_button.click()
-    qtbot.waitUntil(lambda: "profiling" in window.schema_panel.status_text().lower(), timeout=5000)
+    qtbot.waitUntil(lambda: "profiling" in window.schema_panel.warning_text().lower(), timeout=5000)
     assert not window.schema_panel.profile_button.isEnabled()
     assert len(window._profile_workers) == 1
 
@@ -2118,7 +2191,7 @@ def test_main_window_profile_pending_state_is_visible_and_single_queued(
 
     qtbot.waitUntil(lambda: not window._profile_workers, timeout=5000)
     qtbot.waitUntil(lambda: window.schema_panel.profile_button.isEnabled(), timeout=5000)
-    assert "profiling" not in window.schema_panel.status_text().lower()
+    assert "profiling" not in window.schema_panel.warning_text().lower()
     assert window.schema_panel.cell_text(0, 4)
     assert window.schema_panel.column_count_rows() == 2
 

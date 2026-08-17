@@ -547,6 +547,7 @@ class MainWindow(QMainWindow):
     def _on_query_status_changed(self, status: ExecutionStatus) -> None:
         self._query_status = status
         if status is ExecutionStatus.RUNNING:
+            self._set_result_summary("")
             self._query_started_at = time.monotonic()
             self._elapsed_timer.start()
             self.desktop_actions.run.setEnabled(False)
@@ -611,6 +612,16 @@ class MainWindow(QMainWindow):
             "DuckDB" if request.engine is EngineKind.DUCKDB else request.engine.value.title()
         )
         if result.status is ExecutionStatus.SUCCEEDED:
+            row_text = f"{result.preview_row_count} rows"
+            if (
+                result.total_row_count is not None
+                and result.total_row_count != result.preview_row_count
+            ):
+                row_text = f"showing {result.preview_row_count} of {result.total_row_count} rows"
+            summary = f"{engine_name} · {row_text} · {result.execution_seconds:.2f}s"
+            if result.truncated:
+                summary += f" · truncated at {result.preview_row_count} preview rows"
+            self._set_result_summary(summary)
             catalog_dict = {b.alias: str(b.path) for b in request.catalog}
             self.history_manager.add_entry(
                 engine=request.engine.value,
@@ -626,11 +637,17 @@ class MainWindow(QMainWindow):
             )
             self._show_status(msg, 10000)
         elif result.status is ExecutionStatus.FAILED:
+            self._set_result_summary(
+                f"{engine_name} · failed after {result.execution_seconds:.2f}s"
+            )
             self._show_status(
                 f"Engine: {engine_name} | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}",
                 10000,
             )
         elif result.status is ExecutionStatus.CANCELLED:
+            self._set_result_summary(
+                f"{engine_name} · cancelled after {result.execution_seconds:.2f}s"
+            )
             self._show_status(
                 f"Engine: {engine_name} | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed",
                 10000,
@@ -821,7 +838,12 @@ class MainWindow(QMainWindow):
     def _show_value_counts(self, entry, column_name: str) -> None:
         binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
         window = ValueCountsWindow(
-            binding, column_name, cast(ValueCountsRegistry, self._engine_registry), self
+            binding,
+            column_name,
+            cast(ValueCountsRegistry, self._engine_registry),
+            self,
+            file_dialog_service=self._file_dialog_service,
+            settings_service=self._settings_service,
         )
         self._value_counts_windows.append(window)
         window.destroyed.connect(
@@ -896,6 +918,10 @@ class MainWindow(QMainWindow):
         self.result_sort_notice.setObjectName("result_sort_notice")
         self.result_sort_notice.setVisible(False)
         results_layout.addWidget(self.result_sort_notice)
+        self.result_summary_label = QLabel(results_page)
+        self.result_summary_label.setObjectName("result_summary_label")
+        self.result_summary_label.setVisible(False)
+        results_layout.addWidget(self.result_summary_label)
         self.result_truncation_notice = QLabel(
             "Preview is truncated at the selected row limit. Export Full Results for all rows.",
             results_page,
@@ -1323,3 +1349,7 @@ class MainWindow(QMainWindow):
 
     def _show_status(self, message: str, timeout: int = 3000) -> None:
         self.status_bar.showMessage(message, timeout)
+
+    def _set_result_summary(self, text: str) -> None:
+        self.result_summary_label.setText(text)
+        self.result_summary_label.setVisible(bool(text))

@@ -1,9 +1,11 @@
 from pathlib import Path
 from uuid import uuid4
 
-from PyQt6.QtCore import QRect, Qt
+import polars as pl
+from PyQt6.QtCore import QRect, QSettings, Qt
 from PyQt6.QtWidgets import QApplication
 
+from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.widgets.value_counts_window import (
     ValueCount,
     ValueCountsChart,
@@ -13,6 +15,7 @@ from wherewolf.desktop.widgets.value_counts_window import (
 from wherewolf.desktop.workers.value_counts_worker import ValueCountsWorker
 from wherewolf.domain import CatalogBinding
 from wherewolf.domain.enums import EngineKind, SourceFormat
+from wherewolf.services import ExportFormat, SettingsService
 
 
 class _FakeAdapter:
@@ -85,6 +88,129 @@ def test_value_counts_chart_has_a_scrollable_height_for_full_results(qtbot) -> N
         )
     )
     qtbot.waitUntil(lambda: scrollbar.maximum() == 0)
+
+
+def test_value_counts_window_uses_a_splitter_for_table_and_chart(qtbot) -> None:
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(_FakeAdapter()))
+    qtbot.addWidget(window)
+    window.resize(800, 600)
+    window.show()
+
+    assert window.content_splitter.orientation() == Qt.Orientation.Vertical
+    assert window.content_splitter.count() == 2
+    assert window.content_splitter.widget(0) is window.table
+    assert window.content_splitter.widget(1) is window.chart_scroll_area
+
+    window.content_splitter.setSizes([100, 400])
+    table_small_sizes = window.content_splitter.sizes()
+    window.content_splitter.setSizes([400, 100])
+    table_large_sizes = window.content_splitter.sizes()
+
+    assert table_small_sizes != table_large_sizes
+
+
+def test_value_counts_window_sorts_count_values_numerically(qtbot) -> None:
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(_FakeAdapter()))
+    qtbot.addWidget(window)
+    window._on_result(
+        ValueCountsResult(
+            entry_id=window.entry.entry_id,
+            column_name="category",
+            counts=(
+                ValueCount("nine", 9, 1.0),
+                ValueCount("hundred", 100, 50.0),
+                ValueCount("twenty-five", 25, 25.0),
+            ),
+            total_distinct=3,
+        )
+    )
+
+    assert window.table.isSortingEnabled()
+    window.table.sortItems(1, Qt.SortOrder.AscendingOrder)
+
+    sorted_counts = []
+    for row in range(window.table.rowCount()):
+        item = window.table.item(row, 1)
+        assert item is not None
+        sorted_counts.append(item.text())
+    assert sorted_counts == ["9", "25", "100"]
+
+
+def test_value_counts_window_retains_only_the_latest_successful_result(qtbot) -> None:
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(_FakeAdapter()))
+    qtbot.addWidget(window)
+    successful_result = ValueCountsResult(
+        entry_id=window.entry.entry_id,
+        column_name="category",
+        counts=(ValueCount("a", 3, 75.0),),
+        total_distinct=1,
+    )
+    error_result = ValueCountsResult(
+        entry_id=window.entry.entry_id,
+        column_name="category",
+        counts=(),
+        total_distinct=0,
+        error_type="RuntimeError",
+        error_message="source unavailable",
+    )
+
+    assert window._last_result is None
+
+    window._on_result(successful_result)
+    assert window._last_result is successful_result
+
+    window._on_result(error_result)
+    assert window._last_result is None
+
+
+def test_value_counts_window_exports_the_latest_counts_in_the_saved_format(
+    tmp_path: Path, qtbot
+) -> None:
+    destination = tmp_path / "value-counts"
+    settings = SettingsService(
+        QSettings(str(tmp_path / "settings.ini"), QSettings.Format.IniFormat)
+    )
+    settings.save_export_format(ExportFormat.PARQUET.value)
+    window = ValueCountsWindow(
+        _binding(),
+        "category",
+        _FakeRegistry(_FakeAdapter()),
+        file_dialog_service=FakeFileDialogService(paths=(), value_counts_path=destination),
+        settings_service=settings,
+    )
+    qtbot.addWidget(window)
+    successful_result = ValueCountsResult(
+        entry_id=window.entry.entry_id,
+        column_name="category",
+        counts=(
+            ValueCount("active", 9, 75.0),
+            ValueCount(None, 3, 25.0),
+        ),
+        total_distinct=2,
+    )
+    error_result = ValueCountsResult(
+        entry_id=window.entry.entry_id,
+        column_name="category",
+        counts=(),
+        total_distinct=0,
+        error_type="RuntimeError",
+        error_message="source unavailable",
+    )
+
+    assert not window.export_button.isEnabled()
+
+    window._on_result(successful_result)
+    assert window.export_button.isEnabled()
+    window.export_button.click()
+
+    artifact = destination.with_suffix(".parquet")
+    exported = pl.read_parquet(artifact)
+    assert exported.height == 2
+    assert exported["value"].to_list() == ["active", "<null>"]
+    assert exported["count"].to_list() == [9, 3]
+
+    window._on_result(error_result)
+    assert not window.export_button.isEnabled()
 
 
 def test_value_counts_chart_culls_large_result_paints(qtbot) -> None:

@@ -27,6 +27,15 @@ class FakeFileDialogService:
         }
         return self.paths
 
+    def choose_value_counts_path(
+        self,
+        default_directory: Path | None,
+        export_format: ExportFormat,
+        parent: QWidget | None = None,
+    ) -> Path | None:
+        del default_directory, export_format, parent
+        return None
+
 
 def test_fake_file_dialog_service_protocol_and_cancellation() -> None:
     service: FileDialogService = FakeFileDialogService(())

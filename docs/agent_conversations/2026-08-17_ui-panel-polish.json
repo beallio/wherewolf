@@ -1,0 +1,65 @@
+{
+  "date": "2026-08-17",
+  "task_objective": "Implement the ui-panel-polish plan: persistent query results metadata, a concise filterable schema panel, and a resizable, sortable, exportable value-counts window.",
+  "files_modified": [
+    "docs/plans/2026-08-17_ui-panel-polish.md",
+    "src/wherewolf/desktop/dialogs/file_dialog_service.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/schema_panel.py",
+    "src/wherewolf/desktop/widgets/value_counts_window.py",
+    "tests/test_actions.py",
+    "tests/test_file_dialog_service.py",
+    "tests/test_main_window.py",
+    "tests/test_schema_panel.py",
+    "tests/test_value_counts_window.py"
+  ],
+  "tests_added": [
+    "Result-summary creation, terminal-state content, truncation, and fresh-run clearing coverage.",
+    "Schema identity, full-path tooltip, separate warnings, and persistent column-filter coverage.",
+    "Schema tooltip reset coverage after switching from a successful entry to a schema-error entry, preventing the prior dataset path from leaking into the error state.",
+    "Value-count splitter behavior, numeric sorting for 9/25/100, last-result lifecycle, and export format/row round-trip coverage.",
+    "Value-counts splitter orientation coverage, so the layout cannot regress from vertical stacking to a horizontal side-by-side split.",
+    "File-dialog test doubles for the value-counts export path."
+  ],
+  "test_rationale": [
+    "The existing schema warning assertions were moved from status_text() to warning_text() because the plan deliberately separates identity from warnings; their warning content assertions were retained.",
+    "The numeric sort test uses values whose lexical and numeric order differ, so it rejects string-based sorting.",
+    "The vertical-orientation test was proven load-bearing by a temporary Horizontal splitter mutation, which failed the focused suite before the production orientation was restored.",
+    "The export test restores Parquet from settings and includes None, proving both selected-format handling and <null> serialization."
+  ],
+  "design_decisions": [
+    "The transient status-bar messages remain unchanged; a dedicated result-summary label retains the terminal result metadata until the next run begins.",
+    "Schema identity uses the dataset basename with the complete path in a tooltip, while profile state is isolated in a separate hidden-when-empty warning label.",
+    "The value-counts table uses EditRole numeric data for correct sorting and a percentage delegate to preserve two-decimal percent rendering.",
+    "Value-count export reuses the application's destination normalization, file filters, preview writer, and saved format preference.",
+    "The existing persistent truncation notice remains alongside the summary strip; Review 01 identified this as harmless optional redundancy, not a required change."
+  ],
+  "verification_outputs": {
+    "baseline": "555 passed, 7 deselected; exit=0 on dev.",
+    "V2": "Final focused suites: main window 100 passed; schema panel 16 passed; value-counts window 13 passed; all exit=0.",
+    "V3": "1 passed, 12 deselected for the numeric-sort selection; exit=0.",
+    "V4": [
+      "1: making _set_result_summary a no-op failed the main-window result-summary coverage; restoration: 100 passed.",
+      "2: dropping the truncated clause failed the expected truncation text assertion; restoration: 100 passed.",
+      "3: using the full path in schema identity failed the basename-only identity assertion; restoration: 16 passed.",
+      "4: skipping filter re-application failed the post-repopulation hidden-row assertion; restoration: 16 passed.",
+      "5: removing EditRole numeric data produced lexical counts [9, 100, 25] instead of [9, 25, 100]; restoration: 13 passed.",
+      "6: replacing QSplitter with direct layout adds failed because content_splitter was absent; restoration: 13 passed.",
+      "7: retaining the result through an error failed the _last_result is None assertion; restoration: 13 passed.",
+      "8: hardcoding CSV made the expected Parquet artifact unavailable; restoration: 13 passed."
+    ],
+    "pre-session-quality-gate": "563 passed, 7 deselected; ruff and ty passed.",
+    "review_round_01": [
+      "M1 red: the stale-tooltip test failed with the prior customers.parquet path still present; after clearing the tooltip at every view update, the schema suite reported 17 passed.",
+      "M2 green: the value-counts suite reported 13 passed with the new orientation assertion. The temporary Horizontal splitter mutation made that focused test fail with Horizontal != Vertical; restoring Vertical returned the suite to 13 passed.",
+      "Post-M1 and post-M2 quality gates both passed: ruff check and ty passed, ruff format left 165 files unchanged, pytest reported 564 passed and 7 deselected, coverage 91%, and review-note deletion protection passed."
+    ]
+  },
+  "deferred_and_unverified": [
+    "No pixel or visual verification was performed. Assertions cover widget state, visibility, hidden rows, and splitter sizes rather than rendered output.",
+    "Light and dark theme contrast for the new labels and export button is not asserted.",
+    "Export is verified through FakeFileDialogService rather than a real save-dialog interaction, so dialog wiring is not exercised end to end.",
+    "No Windows verification was performed; the suite ran with Linux Qt offscreen."
+  ],
+  "results": "Implementation commits are 4930969, 1b460c8, 5722895, 70f6b16, 2e94d3a, 6094a81, 19404d8, 3428edc, 2e2dea6, and 7033558. Review 01's required M1 and M2 findings are resolved. The final quality gates passed before this record was committed; the remaining round action is clean-tree confirmation followed by the required round-complete marker."
+}

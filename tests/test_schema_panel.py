@@ -83,6 +83,98 @@ def test_schema_panel_displays_nullable_state_and_ordinal(qtbot: QtBot) -> None:
     assert "users.parquet" in panel.status_text()
 
 
+def test_schema_panel_separates_dataset_identity_from_profile_warnings(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    path = Path("/an/intentionally/long/parent/directory/wide-users.parquet")
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="users",
+            path=path,
+            source_format=SourceFormat.PARQUET,
+            schema=(ColumnSchema("id", "BIGINT"),),
+            profile_stale=True,
+            profile_skipped_reason="Profile skipped: source exceeds the configured limit.",
+        )
+    )
+
+    assert "wide-users.parquet" in panel.status_text()
+    assert "/an/intentionally/long/parent" not in panel.status_text()
+    assert panel._status_label.toolTip() == str(path)
+    assert "Profile skipped" in panel.warning_text()
+    assert "Profile is stale" in panel.warning_text()
+    assert "Profile skipped" not in panel.status_text()
+    assert "Profile is stale" not in panel.status_text()
+
+
+def test_schema_panel_clears_previous_dataset_tooltip_on_schema_error(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    previous_path = Path("/data/exports/2026/customers.parquet")
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="customers",
+            path=previous_path,
+            source_format=SourceFormat.PARQUET,
+            schema=(ColumnSchema("id", "BIGINT"),),
+        )
+    )
+    assert panel._status_label.toolTip() == str(previous_path)
+
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="loans",
+            path=Path("/data/exports/2026/loans.parquet"),
+            source_format=SourceFormat.PARQUET,
+            schema=None,
+            schema_error="could not read file",
+        )
+    )
+
+    assert panel._status_label.toolTip() == ""
+
+
+def test_schema_panel_filters_columns_and_reapplies_filter_after_repopulation(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    entry_id = uuid4()
+    panel.set_entry(
+        CatalogEntry(
+            id=entry_id,
+            alias="users",
+            path=Path("users.csv"),
+            source_format=SourceFormat.CSV,
+            schema=(
+                ColumnSchema("id", "BIGINT"),
+                ColumnSchema("customer_name", "VARCHAR"),
+                ColumnSchema("email", "VARCHAR"),
+            ),
+        )
+    )
+
+    panel.column_filter.setText("CUSTOMER")
+
+    assert [panel._table_widget.isRowHidden(row) for row in range(3)] == [True, False, True]
+
+    panel.set_entry(
+        CatalogEntry(
+            id=entry_id,
+            alias="users",
+            path=Path("users.csv"),
+            source_format=SourceFormat.CSV,
+            schema=(
+                ColumnSchema("customer_id", "BIGINT"),
+                ColumnSchema("status", "VARCHAR"),
+            ),
+        )
+    )
+
+    assert [panel._table_widget.isRowHidden(row) for row in range(2)] == [False, True]
+
+
 def test_schema_panel_displays_profile_with_approximate_distinct_label(qtbot: QtBot) -> None:
     panel = SchemaPanel()
     qtbot.addWidget(panel)
