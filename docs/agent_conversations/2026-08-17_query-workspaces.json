@@ -24,12 +24,14 @@
     "tests/test_saved_queries.py",
     "tests/test_saved_queries_dock.py",
     "tests/test_saved_query_store.py",
+    "tests/test_spark_engine.py",
     "tests/test_settings_service.py"
   ],
   "tests_added": [
     "Editor tab creation, focus, independent buffers, close handling, per-tab SQL file paths, result isolation, restoration, and legacy single-draft migration.",
     "Saved-query storage round trips, duplicate-name handling, corrupt or malformed input, and atomic interrupted-write safety.",
     "Parameter extraction against casts, quoted literals, comments, repeated names, and safe DuckDB transport of an injection-shaped value.",
+    "Spark rejects bound query parameters before attempting to start PySpark, preserving an actionable DuckDB-only limitation.",
     "Saved-query dock filtering and action emission; save-current-query, parameter prompt and binding, and quoted {dataset} replacement through catalog aliases."
   ],
   "design_decisions": [
@@ -57,13 +59,15 @@
       "7 dataset alias substituted without quoting: saved-query UI suite failed (1 failure), then recovered green.",
       "8 tab close signal disconnected: main-window suite failed (1 failure), then recovered green.",
       "9 SQL path made window-global: main-window suite failed (2 failures), then recovered green.",
-      "10 binding re-scanned with a looser regex: parameter suite failed (1 failure), then recovered green."
+      "10 binding re-scanned with a looser regex: parameter suite failed (1 failure), then recovered green.",
+      "11 Spark bound-parameter refusal removed: spark-engine suite failed (1 failure, receiving the PySpark-not-installed error), then recovered green."
     ],
     "full_gate_before_session_record": "Ruff, formatting, ty, review-note integrity, and the full suite passed: 603 passed, 7 deselected, 90% coverage."
   },
   "deferred_and_unverified": [
     "No performance measurement was made for many open tabs retaining result frames.",
     "Prompted parameter values remain string-only; there is no typed or list-parameter support.",
+    "Parameterised saved queries are DuckDB-only. SparkEngine.execute rejects bound parameters with an explicit error rather than interpolating them; Spark users cannot run saved queries that declare :parameters.",
     "The lexer does not support every SQL dialect construct such as dollar-quoted strings or nested block comments.",
     "Dialog interactions are monkeypatched in tests, and no Windows-specific verification was performed."
   ],

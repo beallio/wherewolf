@@ -44,6 +44,15 @@ def test_spark_engine_init():
     assert engine is not None
 
 
+def test_spark_engine_refuses_bound_parameters() -> None:
+    engine = SparkEngine.__new__(SparkEngine)
+
+    result = SparkEngine.execute(engine, "SELECT ?", params=["x"])
+
+    assert result.success is False
+    assert result.error_message == "Spark does not support bound query parameters"
+
+
 def test_spark_engine_creates_a_memory_bounded_session_lazily_and_reuses_it():
     with (
         patch("wherewolf.execution.spark_engine.SPARK_AVAILABLE", True),
