@@ -61,6 +61,22 @@ def extract_parameters(sql: str) -> tuple[str, ...]:
     return tuple(names)
 
 
+def bind_parameters(sql: str, values: dict[str, str]) -> tuple[str, list[str]]:
+    """Rewrite recognized placeholders to positional markers with ordered bound values."""
+    parts: list[str] = []
+    bound_values: list[str] = []
+    cursor = 0
+    for span in parameter_spans(sql):
+        if span.name not in values:
+            raise ValueError(f"Missing value for parameter :{span.name}")
+        parts.append(sql[cursor : span.start])
+        parts.append("?")
+        bound_values.append(values[span.name])
+        cursor = span.end
+    parts.append(sql[cursor:])
+    return "".join(parts), bound_values
+
+
 def _skip_quoted(sql: str, index: int, quote: str) -> int:
     index += 1
     while index < len(sql):
@@ -81,4 +97,4 @@ def _is_parameter_character(character: str) -> bool:
     return character.isalnum() or character == "_"
 
 
-__all__ = ["ParameterSpan", "extract_parameters", "parameter_spans"]
+__all__ = ["ParameterSpan", "bind_parameters", "extract_parameters", "parameter_spans"]
