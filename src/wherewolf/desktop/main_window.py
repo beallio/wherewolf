@@ -1318,6 +1318,7 @@ class MainWindow(QMainWindow):
 
         font_size = self._settings_service.restore_editor_font_size()
         self.editor.set_font_size(font_size)
+        self.editor.setText(self._settings_service.restore_editor_text())
         self.result_table_view.set_auto_size_policy(
             self._settings_service.restore_auto_size_columns(),
             self._settings_service.restore_auto_size_max_width(),
@@ -1374,6 +1375,7 @@ class MainWindow(QMainWindow):
         font = self.editor.font()
         if isinstance(font, QFont):
             self._settings_service.save_editor_font_size(font.pointSize())
+        self._settings_service.save_editor_text(self.editor.text())
         super().closeEvent(a0)
 
     def dragEnterEvent(self, a0: QDragEnterEvent | None) -> None:

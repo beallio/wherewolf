@@ -180,6 +180,22 @@ def test_main_window_reinspects_only_available_restored_catalog_entries(
     assert [binding.path for binding in requested] == list(available_paths)
 
 
+def test_main_window_restores_editor_draft_without_clobbering_it(tmp_path: Path, qtbot) -> None:
+    settings = _configure_qsettings_path(tmp_path)
+    first = MainWindow(settings_service=settings)
+    qtbot.addWidget(first)
+    first.editor.setText("SELECT preserved_draft")
+    first.close()
+
+    dataset = tmp_path / "data.csv"
+    dataset.write_text("id\n1")
+    second = MainWindow(settings_service=settings)
+    qtbot.addWidget(second)
+    second.catalog.add_paths((dataset,))
+
+    assert second.editor.text() == "SELECT preserved_draft"
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
