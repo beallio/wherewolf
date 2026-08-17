@@ -96,6 +96,7 @@ def test_value_counts_window_uses_a_splitter_for_table_and_chart(qtbot) -> None:
     window.resize(800, 600)
     window.show()
 
+    assert window.content_splitter.orientation() == Qt.Orientation.Vertical
     assert window.content_splitter.count() == 2
     assert window.content_splitter.widget(0) is window.table
     assert window.content_splitter.widget(1) is window.chart_scroll_area
