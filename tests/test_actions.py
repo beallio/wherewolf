@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from PyQt6.QtGui import QKeySequence
+from PyQt6.QtWidgets import QWidget
 
 from wherewolf.desktop import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FakeFileDialogService
@@ -79,6 +80,18 @@ def test_add_datasets_opens_at_last_directory_and_updates_on_success(tmp_path, q
             parent=None,
         ) -> Path | None:
             del default_directory, export_format, parent
+            return None
+
+        def choose_sql_open_path(
+            self, default_directory: Path | None, parent: QWidget | None = None
+        ) -> Path | None:
+            del default_directory, parent
+            return None
+
+        def choose_sql_save_path(
+            self, default_directory: Path | None, parent: QWidget | None = None
+        ) -> Path | None:
+            del default_directory, parent
             return None
 
     service = CatalogService()

@@ -196,6 +196,51 @@ def test_main_window_restores_editor_draft_without_clobbering_it(tmp_path: Path,
     assert second.editor.text() == "SELECT preserved_draft"
 
 
+def test_main_window_open_and_save_sql_tracks_the_current_file_and_dirty_state(
+    tmp_path: Path, qtbot
+) -> None:
+    opened_path = tmp_path / "opened.sql"
+    opened_path.write_text("SELECT opened", encoding="utf-8")
+    save_as_path = tmp_path / "saved_copy"
+    file_service = FakeFileDialogService((), sql_open_path=opened_path, sql_save_path=save_as_path)
+    window = MainWindow(file_dialog_service=file_service)
+    qtbot.addWidget(window)
+
+    window.desktop_actions.open_sql.trigger()
+
+    assert window.editor.text() == "SELECT opened"
+    assert opened_path.name in window.windowTitle()
+    assert not window.isWindowModified()
+
+    window.editor.setText("SELECT changed")
+
+    assert window.isWindowModified()
+    assert window.windowTitle().endswith(f"{opened_path.name} *")
+
+    window.desktop_actions.save_sql.trigger()
+
+    assert opened_path.read_text(encoding="utf-8") == "SELECT changed"
+    assert not window.isWindowModified()
+
+    window.desktop_actions.save_sql_as.trigger()
+
+    assert save_as_path.with_suffix(".sql").read_text(encoding="utf-8") == "SELECT changed"
+    assert save_as_path.with_suffix(".sql").name in window.windowTitle()
+
+
+def test_main_window_save_sql_without_a_current_file_uses_save_as(tmp_path: Path, qtbot) -> None:
+    destination = tmp_path / "untitled_query"
+    window = MainWindow(file_dialog_service=FakeFileDialogService((), sql_save_path=destination))
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT untitled")
+
+    window.desktop_actions.save_sql.trigger()
+
+    expected_path = destination.with_suffix(".sql")
+    assert expected_path.read_text(encoding="utf-8") == "SELECT untitled"
+    assert window._current_sql_path == expected_path
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

@@ -16,6 +16,9 @@ class DesktopActions:
     cancel: QAction
     format_sql: QAction
     add_datasets: QAction
+    open_sql: QAction
+    save_sql: QAction
+    save_sql_as: QAction
     show_completion: QAction
     reset_layout: QAction
     clear_history: QAction
@@ -45,6 +48,16 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     add_datasets.setShortcut(QKeySequence.StandardKey.Open)
     add_datasets.setToolTip("Add datasets (Ctrl+O)")
 
+    open_sql = QAction("Open SQL…", parent)
+    open_sql.setShortcut(QKeySequence("Ctrl+Shift+O"))
+    open_sql.setToolTip("Open SQL file (Ctrl+Shift+O)")
+    save_sql = QAction("Save SQL", parent)
+    save_sql.setShortcut(QKeySequence.StandardKey.Save)
+    save_sql.setToolTip("Save SQL file")
+    save_sql_as = QAction("Save SQL As…", parent)
+    save_sql_as.setShortcut(QKeySequence.StandardKey.SaveAs)
+    save_sql_as.setToolTip("Save SQL file as")
+
     show_completion = QAction("Show Completion", parent)
     show_completion.setEnabled(True)
     show_completion.setShortcut(QKeySequence("Ctrl+Space"))
@@ -73,6 +86,9 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
         cancel=cancel,
         format_sql=format_sql,
         add_datasets=add_datasets,
+        open_sql=open_sql,
+        save_sql=save_sql,
+        save_sql_as=save_sql_as,
         show_completion=show_completion,
         reset_layout=reset_layout,
         clear_history=clear_history,

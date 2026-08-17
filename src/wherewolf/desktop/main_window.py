@@ -263,10 +263,12 @@ class MainWindow(QMainWindow):
         self._last_request: ExecutionRequest | None = None
         self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
+        self._current_sql_path: Path | None = None
+        self._last_saved_sql_text = ""
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
         self._value_counts_windows: list[ValueCountsWindow] = []
-        self.setWindowTitle(f"Wherewolf {version('wherewolf')}")
+        self._update_window_title()
 
         self.main_toolbar = self._build_toolbar()
         self.query_controls_toolbar = self._build_query_controls_toolbar()
@@ -497,6 +499,9 @@ class MainWindow(QMainWindow):
 
     def _connect_actions(self) -> None:
         self.desktop_actions.add_datasets.triggered.connect(self._on_add_datasets)
+        self.desktop_actions.open_sql.triggered.connect(self._open_sql)
+        self.desktop_actions.save_sql.triggered.connect(self._save_sql)
+        self.desktop_actions.save_sql_as.triggered.connect(self._save_sql_as)
         self.desktop_actions.reset_layout.triggered.connect(self._reset_layout)
         self.desktop_actions.clear_history.triggered.connect(self._clear_history)
         self.desktop_actions.run.triggered.connect(self._on_run_triggered)
@@ -776,6 +781,61 @@ class MainWindow(QMainWindow):
 
         self.catalog.add_paths(paths)
 
+    def _update_window_title(self) -> None:
+        name = f" — {self._current_sql_path.name}" if self._current_sql_path else ""
+        dirty_marker = " *" if self.isWindowModified() else ""
+        self.setWindowTitle(f"Wherewolf {version('wherewolf')}{name}{dirty_marker}")
+
+    def _update_sql_dirty_state(self) -> None:
+        is_dirty = (
+            self._current_sql_path is not None and self.editor.text() != self._last_saved_sql_text
+        )
+        self.setWindowModified(is_dirty)
+        self._update_window_title()
+
+    def _open_sql(self) -> None:
+        path = self._file_dialog_service.choose_sql_open_path(
+            self._current_sql_path.parent if self._current_sql_path else None, self
+        )
+        if path is None:
+            return
+        try:
+            contents = path.read_text(encoding="utf-8")
+        except OSError as error:
+            self._show_status(f"Could not open SQL file: {error}")
+            return
+        self._current_sql_path = path
+        self._last_saved_sql_text = contents
+        self.editor.setText(contents)
+        self._update_sql_dirty_state()
+        self._update_window_title()
+
+    def _save_sql(self) -> None:
+        if self._current_sql_path is None:
+            self._save_sql_as()
+            return
+        self._write_sql(self._current_sql_path)
+
+    def _save_sql_as(self) -> None:
+        path = self._file_dialog_service.choose_sql_save_path(
+            self._current_sql_path.parent if self._current_sql_path else None, self
+        )
+        if path is not None and self._write_sql(path):
+            self._current_sql_path = path
+            self._last_saved_sql_text = self.editor.text()
+            self._update_sql_dirty_state()
+            self._update_window_title()
+
+    def _write_sql(self, path: Path) -> bool:
+        try:
+            path.write_text(self.editor.text(), encoding="utf-8")
+        except OSError as error:
+            self._show_status(f"Could not save SQL file: {error}")
+            return False
+        self._last_saved_sql_text = self.editor.text()
+        self._update_sql_dirty_state()
+        return True
+
     def _handle_add_result(self, result: CatalogServiceReport) -> None:
         duplicate_message = ""
         if result.duplicates:
@@ -1027,6 +1087,7 @@ class MainWindow(QMainWindow):
         self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._update_catalog_affordances)
+        editor.textChanged.connect(self._update_sql_dirty_state)
         self.results_tabs.addTab(translation_page, "Translation")
 
         self.empty_catalog_banner = QLabel("Please add a dataset to begin.", self.results_tabs)
@@ -1119,6 +1180,9 @@ class MainWindow(QMainWindow):
         file_menu = cast(QMenu, menu_bar.addMenu("&File"))
         file_menu.setObjectName("file_menu")
         file_menu.addAction(self.desktop_actions.add_datasets)
+        file_menu.addAction(self.desktop_actions.open_sql)
+        file_menu.addAction(self.desktop_actions.save_sql)
+        file_menu.addAction(self.desktop_actions.save_sql_as)
         file_menu.addSeparator()
         self.quit_action = QAction("Quit", self)
         self.quit_action.setShortcuts(

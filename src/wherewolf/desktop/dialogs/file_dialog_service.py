@@ -39,6 +39,14 @@ class FileDialogService(Protocol):
     ) -> Path | None:
         """Ask the user where to save value counts in the selected format."""
 
+    def choose_sql_open_path(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None: ...
+
+    def choose_sql_save_path(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None: ...
+
 
 @dataclass(frozen=True)
 class FakeFileDialogService:
@@ -46,6 +54,8 @@ class FakeFileDialogService:
     export_path: Path | None = None
     history_sql_path: Path | None = None
     value_counts_path: Path | None = None
+    sql_open_path: Path | None = None
+    sql_save_path: Path | None = None
 
     def choose_dataset_files(
         self,
@@ -78,6 +88,18 @@ class FakeFileDialogService:
         if self.history_sql_path is None:
             return None
         return normalise_sql_destination(self.history_sql_path)
+
+    def choose_sql_open_path(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None:
+        del default_directory, parent
+        return self.sql_open_path
+
+    def choose_sql_save_path(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None:
+        del default_directory, parent
+        return normalise_sql_destination(self.sql_save_path) if self.sql_save_path else None
 
 
 class QtFileDialogService:
@@ -155,6 +177,22 @@ class QtFileDialogService:
         if not name:
             return None
         return normalise_sql_destination(Path(name))
+
+    def choose_sql_open_path(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None:
+        name, _ = QFileDialog.getOpenFileName(
+            parent, "Open SQL", str(default_directory or ""), "SQL files (*.sql)"
+        )
+        return Path(name) if name else None
+
+    def choose_sql_save_path(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None:
+        name, _ = QFileDialog.getSaveFileName(
+            parent, "Save SQL", str(default_directory or ""), "SQL files (*.sql)", "*.sql"
+        )
+        return normalise_sql_destination(Path(name)) if name else None
 
     @staticmethod
     def _build_filter() -> str:
