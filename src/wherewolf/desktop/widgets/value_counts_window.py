@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -131,6 +132,23 @@ class _CopyTableWidget(QTableWidget):
             QMenu.exec(menu, viewport.mapToGlobal(pos))
 
 
+class _NumericTableWidgetItem(QTableWidgetItem):
+    def __init__(self, text: str, value: float) -> None:
+        super().__init__()
+        self._display_text = text
+        self.setData(Qt.ItemDataRole.EditRole, value)
+
+    def text(self) -> str:
+        return self._display_text
+
+
+class _PercentageItemDelegate(QStyledItemDelegate):
+    def displayText(self, value, locale) -> str:
+        if isinstance(value, (int, float)):
+            return f"{value:.2f}%"
+        return super().displayText(value, locale)
+
+
 class ValueCountsWindow(QWidget):
     """Floating, non-modal Top N value-counts view for one schema column."""
 
@@ -177,6 +195,8 @@ class ValueCountsWindow(QWidget):
         header = self.table.horizontalHeader()
         if header is not None:
             header.setStretchLastSection(True)
+        self.table.setSortingEnabled(True)
+        self.table.setItemDelegateForColumn(2, _PercentageItemDelegate(self.table))
         self.chart = ValueCountsChart(self)
         self.chart.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
         self.chart_scroll_area = QScrollArea(self)
@@ -219,13 +239,19 @@ class ValueCountsWindow(QWidget):
             return
         self.status_label.setText("")
         self.total_distinct_label.setText(f"Total distinct values: {result.total_distinct}")
+        self.table.setSortingEnabled(False)
         self.table.setRowCount(len(result.counts))
         for row, item in enumerate(result.counts):
             self.table.setItem(
                 row, 0, QTableWidgetItem("<null>" if item.value is None else str(item.value))
             )
-            self.table.setItem(row, 1, QTableWidgetItem(str(item.count)))
-            self.table.setItem(row, 2, QTableWidgetItem(f"{item.percentage:.2f}%"))
+            self.table.setItem(row, 1, _NumericTableWidgetItem(str(item.count), item.count))
+            self.table.setItem(
+                row,
+                2,
+                _NumericTableWidgetItem(f"{item.percentage:.2f}%", item.percentage),
+            )
+        self.table.setSortingEnabled(True)
         self.chart.set_counts(result.counts)
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:

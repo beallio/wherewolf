@@ -105,6 +105,33 @@ def test_value_counts_window_uses_a_splitter_for_table_and_chart(qtbot) -> None:
     assert table_small_sizes != table_large_sizes
 
 
+def test_value_counts_window_sorts_count_values_numerically(qtbot) -> None:
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(_FakeAdapter()))
+    qtbot.addWidget(window)
+    window._on_result(
+        ValueCountsResult(
+            entry_id=window.entry.entry_id,
+            column_name="category",
+            counts=(
+                ValueCount("nine", 9, 1.0),
+                ValueCount("hundred", 100, 50.0),
+                ValueCount("twenty-five", 25, 25.0),
+            ),
+            total_distinct=3,
+        )
+    )
+
+    assert window.table.isSortingEnabled()
+    window.table.sortItems(1, Qt.SortOrder.AscendingOrder)
+
+    sorted_counts = []
+    for row in range(window.table.rowCount()):
+        item = window.table.item(row, 1)
+        assert item is not None
+        sorted_counts.append(item.text())
+    assert sorted_counts == ["9", "25", "100"]
+
+
 def test_value_counts_chart_culls_large_result_paints(qtbot) -> None:
     chart = ValueCountsChart()
     qtbot.addWidget(chart)
