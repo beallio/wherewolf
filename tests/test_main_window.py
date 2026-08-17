@@ -267,6 +267,76 @@ def test_main_window_save_sql_without_a_current_file_uses_save_as(tmp_path: Path
     assert window._current_sql_path == expected_path
 
 
+def test_main_window_editor_tabs_create_focus_close_and_preserve_buffers(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+
+    assert window.editor_tabs.count() == 1
+    assert window.editor_tabs.tabsClosable()
+    assert window.editor_tabs.isMovable()
+    first_editor = window.current_editor
+    assert first_editor is not None
+    first_editor.setText("SELECT first_tab")
+    assert window.editor_tabs.tabText(0) == "SELECT first_tab"
+
+    assert window.desktop_actions.new_tab.shortcut() == QKeySequence("Ctrl+T")
+    window.desktop_actions.new_tab.trigger()
+
+    assert window.editor_tabs.count() == 2
+    assert window.editor_tabs.currentIndex() == 1
+    second_editor = window.current_editor
+    assert second_editor is not None
+    assert second_editor is not first_editor
+    second_editor.setText("SELECT second_tab")
+    assert window.editor_tabs.tabText(1) == "SELECT second_tab"
+
+    window.editor_tabs.setCurrentIndex(0)
+    assert window.current_editor is first_editor
+    assert window.current_editor.text() == "SELECT first_tab"
+
+    window.editor_tabs.setCurrentIndex(1)
+    assert window.current_editor is second_editor
+    assert window.current_editor.text() == "SELECT second_tab"
+
+    window.editor_tabs.tabCloseRequested.emit(1)
+    assert window.editor_tabs.count() == 1
+
+    window.editor_tabs.tabCloseRequested.emit(0)
+    assert window.editor_tabs.count() == 1
+    assert window.current_editor is not None
+    assert window.current_editor.text() == ""
+
+
+def test_main_window_editor_tabs_save_each_current_tab_to_its_own_path(
+    tmp_path: Path, qtbot
+) -> None:
+    first_path = tmp_path / "first.sql"
+    second_path = tmp_path / "second.sql"
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    first_editor = window.current_editor
+    assert first_editor is not None
+    first_editor.setText("SELECT first")
+    window._current_sql_path = first_path
+    window._last_saved_sql_text = first_editor.text()
+
+    window.desktop_actions.new_tab.trigger()
+    second_editor = window.current_editor
+    assert second_editor is not None
+    second_editor.setText("SELECT second")
+    window._current_sql_path = second_path
+    window.desktop_actions.save_sql.trigger()
+
+    assert second_path.read_text(encoding="utf-8") == "SELECT second"
+
+    window.editor_tabs.setCurrentIndex(0)
+    window.desktop_actions.save_sql.trigger()
+
+    assert first_path.read_text(encoding="utf-8") == "SELECT first"
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

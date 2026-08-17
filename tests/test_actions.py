@@ -32,6 +32,9 @@ def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
     )
     assert "Unavailable" not in actions.add_datasets.toolTip()
 
+    assert actions.new_tab.shortcut().toString() == QKeySequence("Ctrl+T").toString()
+    assert actions.close_tab.shortcut().toString() == QKeySequence("Ctrl+W").toString()
+
     assert actions.reset_layout.text() == "Reset Layout"
     assert actions.clear_history.text() == "Clear History"
     assert all(action.toolTip().strip() for action in actions.__dict__.values())

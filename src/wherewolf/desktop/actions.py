@@ -16,6 +16,8 @@ class DesktopActions:
     cancel: QAction
     format_sql: QAction
     add_datasets: QAction
+    new_tab: QAction
+    close_tab: QAction
     open_sql: QAction
     save_sql: QAction
     save_sql_as: QAction
@@ -47,6 +49,13 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
     add_datasets.setEnabled(True)
     add_datasets.setShortcut(QKeySequence.StandardKey.Open)
     add_datasets.setToolTip("Add datasets (Ctrl+O)")
+
+    new_tab = QAction("New Tab", parent)
+    new_tab.setShortcut(QKeySequence("Ctrl+T"))
+    new_tab.setToolTip("Open a new SQL editor tab (Ctrl+T)")
+    close_tab = QAction("Close Tab", parent)
+    close_tab.setShortcut(QKeySequence("Ctrl+W"))
+    close_tab.setToolTip("Close the current SQL editor tab (Ctrl+W)")
 
     open_sql = QAction("Open SQL…", parent)
     open_sql.setShortcut(QKeySequence("Ctrl+Shift+O"))
@@ -86,6 +95,8 @@ def build_actions(parent: QWidget | None = None) -> DesktopActions:
         cancel=cancel,
         format_sql=format_sql,
         add_datasets=add_datasets,
+        new_tab=new_tab,
+        close_tab=close_tab,
         open_sql=open_sql,
         save_sql=save_sql,
         save_sql_as=save_sql_as,

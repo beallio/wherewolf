@@ -55,6 +55,7 @@ class SqlEditor(QsciScintilla):
         completion_service: SqlCompletionService | None = None,
         format_action: QAction | None = None,
         show_completion_action: QAction | None = None,
+        bind_shared_actions: bool = True,
         parent=None,
     ) -> None:
         super().__init__(parent=parent)
@@ -63,6 +64,7 @@ class SqlEditor(QsciScintilla):
         self._formatting_service = formatting_service or SqlFormattingService()
         self._completion_service = completion_service or SqlCompletionService()
         self._format_action = format_action
+        self._bind_shared_actions = bind_shared_actions
 
         if show_completion_action is not None:
             self._show_completion_action = show_completion_action
@@ -87,7 +89,10 @@ class SqlEditor(QsciScintilla):
         self._refresh_line_margin()
         self.textChanged.connect(self._refresh_line_margin)
         self.textChanged.connect(self._on_text_changed_completion)
-        self._show_completion_action.triggered.connect(lambda: self.request_completion(forced=True))
+        if show_completion_action is None or self._bind_shared_actions:
+            self._show_completion_action.triggered.connect(
+                lambda: self.request_completion(forced=True)
+            )
 
     @property
     def font_size(self) -> int:
@@ -248,7 +253,7 @@ class SqlEditor(QsciScintilla):
         self._toggle_comment_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._toggle_comment_action.triggered.connect(self.toggle_comment)
 
-        if self._format_action is not None:
+        if self._format_action is not None and self._bind_shared_actions:
             self._format_action.triggered.connect(self.format_selection_or_statement)
 
     def _apply_lexer_colours(self, lexer: QsciLexerSQL) -> None:
