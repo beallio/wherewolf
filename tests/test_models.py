@@ -1,6 +1,6 @@
 import subprocess
 import sys
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -116,6 +116,18 @@ def test_domain_models_are_frozen() -> None:
         schema_result.columns = None  # type: ignore
     with pytest.raises(FrozenInstanceError):
         diagnostic.message = "bad"  # type: ignore
+
+
+def test_catalog_entry_unavailable_defaults_false_and_can_be_replaced() -> None:
+    entry = domain_models.CatalogEntry(
+        id=uuid4(),
+        alias="dataset",
+        path=Path("/tmp/data.csv"),
+        source_format=SourceFormat.CSV,
+    )
+
+    assert entry.unavailable is False
+    assert replace(entry, unavailable=True).unavailable is True
 
 
 def test_domain_queryresult_distinct_from_execution_queryresult() -> None:

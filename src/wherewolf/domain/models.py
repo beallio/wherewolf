@@ -52,6 +52,7 @@ class CatalogEntry:
     profile_skipped_reason: str | None = None
     profile_source_size: int | None = None
     profile_source_mtime_ns: int | None = None
+    unavailable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
