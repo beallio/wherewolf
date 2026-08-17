@@ -1577,6 +1577,28 @@ class MainWindow(QMainWindow):
         self._catalog_store.save(self._catalog_service.entries)
         self._last_persisted_catalog = projection
 
+    def _restore_editor_tabs(self) -> None:
+        tabs = self._settings_service.restore_editor_tabs()
+        if not tabs:
+            # `editor/text` is the workspace-persistence single-buffer key. Keep
+            # it readable so upgrading users retain their draft as the first tab.
+            tabs = ((self._settings_service.restore_editor_text(), None),)
+
+        for index, (text, path) in enumerate(tabs):
+            editor = self.current_editor if index == 0 else self._new_editor_tab()
+            assert editor is not None
+            state = self._editor_states[editor]
+            state.path = path
+            state.last_saved_text = text
+            editor.setText(text)
+            self._update_editor_tab_label(editor)
+
+        active_index = min(
+            self._settings_service.restore_active_editor_tab_index(),
+            self.editor_tabs.count() - 1,
+        )
+        self.editor_tabs.setCurrentIndex(max(0, active_index))
+
     def _restore_state(self) -> None:
         geometry = self._settings_service.restore_window_geometry()
         if geometry:
@@ -1592,11 +1614,10 @@ class MainWindow(QMainWindow):
         if sizes:
             self._central_splitter.setSizes(list(sizes))
 
+        self._restore_editor_tabs()
         font_size = self._settings_service.restore_editor_font_size()
-        editor = self.current_editor
-        if editor is not None:
+        for editor in self._editor_states:
             editor.set_font_size(font_size)
-            editor.setText(self._settings_service.restore_editor_text())
         self.result_table_view.set_auto_size_policy(
             self._settings_service.restore_auto_size_columns(),
             self._settings_service.restore_auto_size_max_width(),
@@ -1655,7 +1676,14 @@ class MainWindow(QMainWindow):
             font = editor.font()
             if isinstance(font, QFont):
                 self._settings_service.save_editor_font_size(font.pointSize())
-            self._settings_service.save_editor_text(editor.text())
+        self._settings_service.save_editor_tabs(
+            (
+                (tab_editor.text(), self._editor_states[tab_editor].path)
+                for index in range(self.editor_tabs.count())
+                if isinstance(tab_editor := self.editor_tabs.widget(index), SqlEditor)
+            ),
+            self.editor_tabs.currentIndex(),
+        )
         super().closeEvent(a0)
 
     def dragEnterEvent(self, a0: QDragEnterEvent | None) -> None:

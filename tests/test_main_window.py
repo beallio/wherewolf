@@ -37,6 +37,7 @@ from PyQt6.QtWidgets import (
 from wherewolf.desktop import main_window
 from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
+from wherewolf.desktop.widgets import SqlEditor
 from wherewolf.desktop.workers.schema_worker import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
@@ -392,6 +393,66 @@ def test_main_window_tab_results_restore_without_cross_tab_leaks(qtbot, monkeypa
     window.editor_tabs.setCurrentIndex(0)
 
     assert window.result_table_view.frame().to_dicts() == [{"tab": "first"}]
+
+
+def test_main_window_restores_editor_tabs_with_paths_and_active_index(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "tab-workspace")
+    first_path = tmp_path / "first.sql"
+    third_path = tmp_path / "third.sql"
+    first = MainWindow(settings_service=settings)
+    qtbot.addWidget(first)
+
+    first_editor = first.current_editor
+    assert first_editor is not None
+    first_editor.setText("SELECT first")
+    first._current_sql_path = first_path
+    first._last_saved_sql_text = first_editor.text()
+
+    first.desktop_actions.new_tab.trigger()
+    second_editor = first.current_editor
+    assert second_editor is not None
+    second_editor.setText("SELECT second")
+
+    first.desktop_actions.new_tab.trigger()
+    third_editor = first.current_editor
+    assert third_editor is not None
+    third_editor.setText("SELECT third")
+    first._current_sql_path = third_path
+    first._last_saved_sql_text = third_editor.text()
+
+    first.editor_tabs.setCurrentIndex(1)
+    first.close()
+
+    restored = MainWindow(settings_service=settings)
+    qtbot.addWidget(restored)
+
+    assert restored.editor_tabs.count() == 3
+    restored_editors = [restored.editor_tabs.widget(index) for index in range(3)]
+    assert all(isinstance(editor, SqlEditor) for editor in restored_editors)
+    typed_editors = [cast(SqlEditor, editor) for editor in restored_editors]
+    assert [editor.text() for editor in typed_editors] == [
+        "SELECT first",
+        "SELECT second",
+        "SELECT third",
+    ]
+    assert restored.editor_tabs.currentIndex() == 1
+    assert restored._editor_states[typed_editors[0]].path == first_path
+    assert restored._editor_states[typed_editors[1]].path is None
+    assert restored._editor_states[typed_editors[2]].path == third_path
+
+
+def test_main_window_migrates_legacy_single_editor_draft_to_one_tab(tmp_path: Path, qtbot) -> None:
+    settings = _configure_qsettings_path(tmp_path / "legacy-draft")
+    settings.save_editor_text("SELECT legacy_draft")
+
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    assert window.editor_tabs.count() == 1
+    assert window.current_editor is not None
+    assert window.current_editor.text() == "SELECT legacy_draft"
 
 
 def test_main_window_structure(qtbot) -> None:
