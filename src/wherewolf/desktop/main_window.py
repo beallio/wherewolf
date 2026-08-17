@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import webbrowser
+from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 from typing import Final, cast
@@ -85,6 +86,7 @@ from wherewolf.services import (
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.services.preview_export import write_selection
+from wherewolf.storage.catalog import CatalogStore
 from wherewolf.storage.history import HistoryManager
 
 SQL_DIALECT_REFERENCE_URLS: Final = {
@@ -235,11 +237,20 @@ class MainWindow(QMainWindow):
         query_controller: QueryController | None = None,
         export_controller: ExportController | None = None,
         history_manager: HistoryManager | None = None,
+        catalog_store: CatalogStore | None = None,
     ) -> None:
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._settings_service = settings_service or SettingsService()
-        self._catalog_service = catalog_service or CatalogService()
+        self._catalog_store = catalog_store or CatalogStore()
+        restored_entries = tuple(
+            replace(entry, unavailable=not entry.path.exists())
+            for entry in self._catalog_store.load()
+        )
+        self._catalog_service = catalog_service or CatalogService(restored_entries)
+        self._last_persisted_catalog = self._catalog_projection()
+        self._catalog_persistence_listener = self._persist_catalog
+        self._catalog_service.subscribe(self._catalog_persistence_listener)
         self._file_dialog_service = file_dialog_service or QtFileDialogService()
         self._engine_registry = engine_registry or EngineRegistry()
         self.desktop_actions = actions or build_actions(self)
@@ -1266,6 +1277,19 @@ class MainWindow(QMainWindow):
         self.desktop_actions.run.setEnabled(has_datasets)
         self.empty_catalog_banner.setVisible(not has_datasets)
 
+    def _catalog_projection(self) -> tuple[tuple[object, str, Path, object], ...]:
+        return tuple(
+            (entry.id, entry.alias, entry.path, entry.source_format)
+            for entry in self._catalog_service.entries
+        )
+
+    def _persist_catalog(self) -> None:
+        projection = self._catalog_projection()
+        if projection == self._last_persisted_catalog:
+            return
+        self._catalog_store.save(self._catalog_service.entries)
+        self._last_persisted_catalog = projection
+
     def _restore_state(self) -> None:
         geometry = self._settings_service.restore_window_geometry()
         if geometry:
@@ -1308,6 +1332,10 @@ class MainWindow(QMainWindow):
         self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        listener = getattr(self, "_catalog_persistence_listener", None)
+        if listener is not None:
+            self._catalog_service.unsubscribe(listener)
+            del self._catalog_persistence_listener
         self.query_controller.cancel()
         self.export_controller.cancel()
         self._elapsed_timer.stop()

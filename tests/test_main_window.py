@@ -40,6 +40,7 @@ from wherewolf.desktop.main_window import MainWindow
 from wherewolf.desktop.workers.schema_worker import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
+    CatalogEntry,
     ColumnProfile,
     ColumnSchema,
     EngineKind,
@@ -57,6 +58,7 @@ from wherewolf.services import (
     serialise_history_records_to_sql,
 )
 from wherewolf.storage import HistoryManager
+from wherewolf.storage.catalog import CatalogStore
 
 
 class _ProfileAdapter:
@@ -99,6 +101,55 @@ def _configure_qsettings_path(tmp_path: Path) -> SettingsService:
     settings = QSettings(SettingsService.ORGANIZATION, SettingsService.APPLICATION)
     settings.clear()
     return SettingsService(settings)
+
+
+def test_main_window_restores_catalog_and_persists_catalog_changes(tmp_path: Path, qtbot) -> None:
+    available_path = tmp_path / "available.csv"
+    available_path.write_text("id\n1")
+    missing_path = tmp_path / "missing.csv"
+    added_path = tmp_path / "added.csv"
+    added_path.write_text("id\n2")
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.save(
+        (
+            CatalogEntry(uuid4(), "available", available_path, SourceFormat.CSV),
+            CatalogEntry(uuid4(), "missing", missing_path, SourceFormat.CSV),
+        )
+    )
+
+    window = MainWindow(catalog_store=store)
+    qtbot.addWidget(window)
+
+    restored = window._catalog_service.entries
+    assert [entry.alias for entry in restored] == ["available", "missing"]
+    assert [entry.unavailable for entry in restored] == [False, True]
+
+    window.catalog.add_paths((added_path,))
+
+    assert [entry.alias for entry in store.load()] == ["available", "missing", "added"]
+
+
+def test_catalog_persistence_ignores_derived_schema_updates(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    dataset = tmp_path / "available.csv"
+    dataset.write_text("id\n1")
+    entry = CatalogEntry(uuid4(), "available", dataset, SourceFormat.CSV)
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.save((entry,))
+    writes: list[tuple[CatalogEntry, ...]] = []
+    monkeypatch.setattr(store, "save", lambda entries: writes.append(entries))
+    window = MainWindow(catalog_store=store)
+    qtbot.addWidget(window)
+
+    restored = window._catalog_service.entries[0]
+    window._catalog_service.update_schema(SchemaResult(restored.id, ()))
+
+    assert writes == []
+
+    window._catalog_service.rename(restored.id, "renamed")
+
+    assert [entry.alias for entry in writes[-1]] == ["renamed"]
 
 
 def test_main_window_structure(qtbot) -> None:
