@@ -106,6 +106,8 @@ class _EditorTabState:
 
     path: Path | None = None
     last_saved_text: str = ""
+    last_request: ExecutionRequest | None = None
+    last_result: QueryResult | None = None
 
 
 class FindReplaceDialog(QDialog):
@@ -272,6 +274,7 @@ class MainWindow(QMainWindow):
         self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
         self._editor_states: dict[SqlEditor, _EditorTabState] = {}
+        self._result_origin_by_request_id: dict[object, SqlEditor] = {}
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
         self._value_counts_windows: list[ValueCountsWindow] = []
@@ -608,7 +611,8 @@ class MainWindow(QMainWindow):
             self._show_status(f"Failed to prepare query: {exc}", 5000)
             return
 
-        self.query_controller.execute(request)
+        if self.query_controller.execute(request):
+            self._result_origin_by_request_id[request.request_id] = editor
 
     def _format_current_editor(self) -> None:
         editor = self.current_editor
@@ -653,6 +657,36 @@ class MainWindow(QMainWindow):
             self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
+        origin = self._result_origin_by_request_id.pop(request.request_id, self.current_editor)
+        if origin is None:
+            return
+        state = self._editor_states.get(origin)
+        if state is None:
+            return
+        state.last_request, state.last_result = request, result
+        self._record_query_history(result, request)
+        if origin is self.current_editor:
+            self._render_query_result(result, request, show_message=True)
+
+    def _record_query_history(self, result: QueryResult, request: ExecutionRequest) -> None:
+        if result.status is not ExecutionStatus.SUCCEEDED:
+            return
+        catalog_dict = {binding.alias: str(binding.path) for binding in request.catalog}
+        self.history_manager.add_entry(
+            engine=request.engine.value,
+            query=request.original_sql,
+            catalog=catalog_dict,
+        )
+        self.history_dock.refresh()
+
+    def _render_query_result(
+        self,
+        result: QueryResult,
+        request: ExecutionRequest,
+        *,
+        show_message: bool,
+    ) -> None:
+        """Render a result known to belong to the currently selected editor tab."""
         self._last_request, self._last_result = request, result
         can_export = result.status is ExecutionStatus.SUCCEEDED and result.frame is not None
         self.desktop_actions.export_preview.setEnabled(can_export)
@@ -686,7 +720,8 @@ class MainWindow(QMainWindow):
             result.status is ExecutionStatus.SUCCEEDED and result.truncated
         )
 
-        self.messages_panel.show_query_result(result)
+        if show_message:
+            self.messages_panel.show_query_result(result)
 
         engine_name = (
             "DuckDB" if request.engine is EngineKind.DUCKDB else request.engine.value.title()
@@ -702,13 +737,6 @@ class MainWindow(QMainWindow):
             if result.truncated:
                 summary += f" · truncated at {result.preview_row_count} preview rows"
             self._set_result_summary(summary)
-            catalog_dict = {b.alias: str(b.path) for b in request.catalog}
-            self.history_manager.add_entry(
-                engine=request.engine.value,
-                query=request.original_sql,
-                catalog=catalog_dict,
-            )
-            self.history_dock.refresh()
 
             trunc_str = " (truncated)" if result.truncated else ""
             msg = (
@@ -732,6 +760,25 @@ class MainWindow(QMainWindow):
                 f"Engine: {engine_name} | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed",
                 10000,
             )
+
+    def _render_current_editor_result(self) -> None:
+        state = self._current_editor_state()
+        if state is None or state.last_request is None or state.last_result is None:
+            self._last_request = None
+            self._last_result = None
+            self.desktop_actions.export_preview.setEnabled(False)
+            self.desktop_actions.export_full.setEnabled(False)
+            self.desktop_actions.export_selection.setEnabled(False)
+            self.export_button.setEnabled(False)
+            self.result_table_view.set_frame(None)
+            self.empty_result_banner.clear()
+            self.empty_result_banner.setVisible(False)
+            self.result_error_message.clear()
+            self.result_error_message.setVisible(False)
+            self.result_truncation_notice.setVisible(False)
+            self._set_result_summary("")
+            return
+        self._render_query_result(state.last_result, state.last_request, show_message=False)
 
     def _start_export(self, full_export: bool, export_format: ExportFormat | None = None) -> None:
         if (
@@ -1107,6 +1154,7 @@ class MainWindow(QMainWindow):
         editor = self.current_editor
         if editor is None:
             return
+        self._render_current_editor_result()
         self._refresh_translation()
         self._update_catalog_affordances()
         self._update_sql_dirty_state()

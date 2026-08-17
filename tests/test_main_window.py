@@ -337,6 +337,63 @@ def test_main_window_editor_tabs_save_each_current_tab_to_its_own_path(
     assert first_path.read_text(encoding="utf-8") == "SELECT first"
 
 
+def test_main_window_tab_results_restore_without_cross_tab_leaks(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller,
+        "execute",
+        lambda request: submitted.append(request) or True,
+    )
+
+    first_editor = window.current_editor
+    assert first_editor is not None
+    first_editor.setText("SELECT 1")
+    window._on_run_triggered()
+    first_request = submitted.pop()
+    first_result = QueryResult(
+        request_id=first_request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"tab": ["first"]}),
+        execution_seconds=0.01,
+        preview_row_count=1,
+        total_row_count=1,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+
+    window.desktop_actions.new_tab.trigger()
+    second_editor = window.current_editor
+    assert second_editor is not None
+    assert not window.result_table_view.has_result()
+
+    window._on_query_result_ready(first_result, first_request)
+
+    assert not window.result_table_view.has_result()
+
+    second_editor.setText("SELECT 2")
+    window._on_run_triggered()
+    second_request = submitted.pop()
+    second_result = QueryResult(
+        request_id=second_request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"tab": ["second"]}),
+        execution_seconds=0.01,
+        preview_row_count=1,
+        total_row_count=1,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+    )
+    window._on_query_result_ready(second_result, second_request)
+
+    assert window.result_table_view.frame().to_dicts() == [{"tab": "second"}]
+
+    window.editor_tabs.setCurrentIndex(0)
+
+    assert window.result_table_view.frame().to_dicts() == [{"tab": "first"}]
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
