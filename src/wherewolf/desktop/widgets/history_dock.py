@@ -9,6 +9,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QTreeWidget,
@@ -53,6 +54,10 @@ class HistoryDock(QWidget):
     def __init__(self, history_manager: HistoryManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._history_manager = history_manager
+        self.history_filter = QLineEdit(self)
+        self.history_filter.setObjectName("history_filter")
+        self.history_filter.setPlaceholderText("Filter history")
+        self.history_filter.textChanged.connect(self._apply_filter)
         self.history_table = QTreeWidget(self)
         self.history_table.setObjectName("history_table")
         self.history_table.setColumnCount(2)
@@ -80,6 +85,7 @@ class HistoryDock(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.history_filter)
         layout.addWidget(self.history_table)
         self.refresh()
 
@@ -99,6 +105,14 @@ class HistoryDock(QWidget):
             item.setToolTip(0, raw_timestamp)
             item.setToolTip(1, str(record["query"]))
             self.history_table.addTopLevelItem(item)
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        filter_text = self.history_filter.text().casefold()
+        for row in range(self.history_table.topLevelItemCount()):
+            item = self.history_table.topLevelItem(row)
+            if item is not None:
+                item.setHidden(filter_text not in item.toolTip(1).casefold())
 
     def _on_item_activated(self, item: QTreeWidgetItem, _column: int) -> None:
         entry_id = item.data(0, Qt.ItemDataRole.UserRole)
