@@ -1,0 +1,62 @@
+{
+  "date": "2026-08-17",
+  "task_objective": "Implement the workspace-persistence plan: durable catalog restoration, editor draft and SQL-file persistence, and searchable, pinnable query history.",
+  "files_modified": [
+    "src/wherewolf/domain/models.py",
+    "src/wherewolf/storage/catalog.py",
+    "src/wherewolf/storage/history.py",
+    "src/wherewolf/services/settings_service.py",
+    "src/wherewolf/desktop/actions.py",
+    "src/wherewolf/desktop/dialogs/file_dialog_service.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/models/catalog_model.py",
+    "src/wherewolf/desktop/widgets/history_dock.py",
+    "tests/test_actions.py",
+    "tests/test_catalog_model.py",
+    "tests/test_catalog_store.py",
+    "tests/test_file_dialog_service.py",
+    "tests/test_history.py",
+    "tests/test_history_dock.py",
+    "tests/test_main_window.py",
+    "tests/test_models.py",
+    "tests/test_settings_service.py"
+  ],
+  "tests_added": [
+    "Catalog-store atomic round trips, malformed-entry isolation, corruption tolerance, and interrupted-write preservation.",
+    "Unavailable catalog entries, restoration, projection-idempotent persistence, and reinspection of only available sources.",
+    "Editor draft restoration, SQL open/save/save-as routing, dirty state, and a two-window catalog persistence round trip using a tmp_path store.",
+    "History filtering that persists across refreshes, v2 pinned-field migration, pin persistence, pin-cap retention, and pinned-first sorting under both orders."
+  ],
+  "design_decisions": [
+    "Catalog persistence stores only reconstruction fields; schema and profile remain derived and are reinspected after restoration.",
+    "Catalog persistence listeners compare the persisted projection before writing, preventing derived schema/profile notifications from rewriting disk state.",
+    "Pinned records are intentionally exempt from the normal cap; all pinned records and the 100 newest unpinned records are retained.",
+    "Pinned history rows display a leading pin marker and remain above unpinned rows for ascending and descending sorts."
+  ],
+  "verification_outputs": {
+    "baseline": "576 passed, 7 deselected before completing the remaining B2/C units.",
+    "home_safety": "583 passed, 7 deselected; ~/.wherewolf/history.json had identical MD5 snapshots before and after the full suite.",
+    "per_unit": "Catalog/model: 10 passed; main-window/settings: 128 passed; history/history-dock: 34 passed.",
+    "end_to_end": "20 persistence-or-restore-selected main-window tests passed, including a new two-window catalog restore test.",
+    "migration": "11 migration-or-legacy-or-pinned history tests passed.",
+    "negative_controls": [
+      "Catalog save no-op: catalog-store/main-window suite failed, then passed after restoration.",
+      "Malformed catalog JSON raised: catalog-store suite failed, then passed after restoration.",
+      "Catalog subscription removed: main-window suite failed, then passed after restoration.",
+      "Unavailable flag stat removed: main-window suite failed, then passed after restoration.",
+      "Editor draft restore removed: main-window suite failed, then passed after restoration.",
+      "History refresh filter reapplication removed: history-dock suite failed, then passed after restoration.",
+      "v2 entries without pinned rejected: history suite failed, then passed after restoration.",
+      "Blind history[:100] truncation restored: history suite failed, then passed after restoration.",
+      "Catalog persistence made unconditional: main-window suite failed, then passed after restoration.",
+      "Restored-entry reinspection removed: main-window suite failed, then passed after restoration."
+    ],
+    "full_gate": "Ruff, formatting, ty, review-note integrity, and the full suite passed: 584 passed, 7 deselected, 90% coverage."
+  },
+  "deferred_and_unverified": [
+    "Native Qt file-dialog interactions remain covered through fakes rather than a manual desktop exercise.",
+    "No Windows-specific persistence verification was performed.",
+    "Concurrent catalog writers remain last-writer-wins and are outside this single-instance plan."
+  ],
+  "results": "The implementation branch contains the planned atomic catalog, editor, and history commits through ee24527. This session record must be committed and the final clean-tree gate run before the orchestration round-complete marker is written."
+}

@@ -13,7 +13,9 @@ from PyQt6.QtCore import (
     pyqtSignal,
     pyqtSlot,
 )
+from PyQt6.QtGui import QBrush, QColor
 
+from wherewolf.desktop.widgets.folder_column_delegate import dim_colour
 from wherewolf.domain import CatalogEntry
 from wherewolf.services import CatalogService
 
@@ -82,6 +84,9 @@ class CatalogModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.ToolTipRole and index.column() in (1, 2):
             return str(entry.path)
 
+        if role == Qt.ItemDataRole.ForegroundRole and entry.unavailable:
+            return QBrush(dim_colour(QColor(220, 220, 220), QColor(40, 40, 40)))
+
         return None
 
     def headerData(
@@ -136,6 +141,8 @@ class CatalogModel(QAbstractTableModel):
         self.endResetModel()
 
     def _schema_status_text(self, entry: CatalogEntry) -> str:
+        if entry.unavailable:
+            return "Unavailable — file not found"
         if entry.schema_error:
             return f"Error: {entry.schema_error}"
         if entry.schema is None:

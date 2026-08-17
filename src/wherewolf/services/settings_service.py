@@ -56,6 +56,10 @@ class SettingsService:
         return f"{schema_version}/editor/font_size"
 
     @staticmethod
+    def _editor_text_key(schema_version: str) -> str:
+        return f"{schema_version}/editor/text"
+
+    @staticmethod
     def _last_dataset_directory_key(schema_version: str) -> str:
         return f"{schema_version}/dataset_directory/last"
 
@@ -126,6 +130,10 @@ class SettingsService:
     @property
     def editor_font_size_key(self) -> str:
         return self._font_size_key(self.namespace_prefix)
+
+    @property
+    def editor_text_key(self) -> str:
+        return self._editor_text_key(self.namespace_prefix)
 
     @property
     def last_dataset_directory_key(self) -> str:
@@ -210,6 +218,13 @@ class SettingsService:
 
     def save_editor_font_size(self, size: int) -> None:
         self._settings.setValue(self.editor_font_size_key, int(size))
+
+    def restore_editor_text(self) -> str:
+        value = self._settings.value(self.editor_text_key, "")
+        return value if isinstance(value, str) else ""
+
+    def save_editor_text(self, text: str) -> None:
+        self._settings.setValue(self.editor_text_key, str(text))
 
     def restore_last_dataset_directory(self) -> Path:
         value = self._settings.value(

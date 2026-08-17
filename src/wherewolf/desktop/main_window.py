@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import webbrowser
+from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 from typing import Final, cast
@@ -85,6 +86,7 @@ from wherewolf.services import (
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.services.preview_export import write_selection
+from wherewolf.storage.catalog import CatalogStore
 from wherewolf.storage.history import HistoryManager
 
 SQL_DIALECT_REFERENCE_URLS: Final = {
@@ -235,11 +237,20 @@ class MainWindow(QMainWindow):
         query_controller: QueryController | None = None,
         export_controller: ExportController | None = None,
         history_manager: HistoryManager | None = None,
+        catalog_store: CatalogStore | None = None,
     ) -> None:
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self._settings_service = settings_service or SettingsService()
-        self._catalog_service = catalog_service or CatalogService()
+        self._catalog_store = catalog_store or CatalogStore()
+        restored_entries = tuple(
+            replace(entry, unavailable=not entry.path.exists())
+            for entry in self._catalog_store.load()
+        )
+        self._catalog_service = catalog_service or CatalogService(restored_entries)
+        self._last_persisted_catalog = self._catalog_projection()
+        self._catalog_persistence_listener = self._persist_catalog
+        self._catalog_service.subscribe(self._catalog_persistence_listener)
         self._file_dialog_service = file_dialog_service or QtFileDialogService()
         self._engine_registry = engine_registry or EngineRegistry()
         self.desktop_actions = actions or build_actions(self)
@@ -252,10 +263,12 @@ class MainWindow(QMainWindow):
         self._last_request: ExecutionRequest | None = None
         self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
+        self._current_sql_path: Path | None = None
+        self._last_saved_sql_text = ""
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
         self._value_counts_windows: list[ValueCountsWindow] = []
-        self.setWindowTitle(f"Wherewolf {version('wherewolf')}")
+        self._update_window_title()
 
         self.main_toolbar = self._build_toolbar()
         self.query_controls_toolbar = self._build_query_controls_toolbar()
@@ -276,6 +289,7 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._connect_actions()
         self._restore_state()
+        self._queue_restored_catalog_work()
         self._update_catalog_affordances()
 
     @property
@@ -485,6 +499,9 @@ class MainWindow(QMainWindow):
 
     def _connect_actions(self) -> None:
         self.desktop_actions.add_datasets.triggered.connect(self._on_add_datasets)
+        self.desktop_actions.open_sql.triggered.connect(self._open_sql)
+        self.desktop_actions.save_sql.triggered.connect(self._save_sql)
+        self.desktop_actions.save_sql_as.triggered.connect(self._save_sql_as)
         self.desktop_actions.reset_layout.triggered.connect(self._reset_layout)
         self.desktop_actions.clear_history.triggered.connect(self._clear_history)
         self.desktop_actions.run.triggered.connect(self._on_run_triggered)
@@ -764,6 +781,61 @@ class MainWindow(QMainWindow):
 
         self.catalog.add_paths(paths)
 
+    def _update_window_title(self) -> None:
+        name = f" — {self._current_sql_path.name}" if self._current_sql_path else ""
+        dirty_marker = " *" if self.isWindowModified() else ""
+        self.setWindowTitle(f"Wherewolf {version('wherewolf')}{name}{dirty_marker}")
+
+    def _update_sql_dirty_state(self) -> None:
+        is_dirty = (
+            self._current_sql_path is not None and self.editor.text() != self._last_saved_sql_text
+        )
+        self.setWindowModified(is_dirty)
+        self._update_window_title()
+
+    def _open_sql(self) -> None:
+        path = self._file_dialog_service.choose_sql_open_path(
+            self._current_sql_path.parent if self._current_sql_path else None, self
+        )
+        if path is None:
+            return
+        try:
+            contents = path.read_text(encoding="utf-8")
+        except OSError as error:
+            self._show_status(f"Could not open SQL file: {error}")
+            return
+        self._current_sql_path = path
+        self._last_saved_sql_text = contents
+        self.editor.setText(contents)
+        self._update_sql_dirty_state()
+        self._update_window_title()
+
+    def _save_sql(self) -> None:
+        if self._current_sql_path is None:
+            self._save_sql_as()
+            return
+        self._write_sql(self._current_sql_path)
+
+    def _save_sql_as(self) -> None:
+        path = self._file_dialog_service.choose_sql_save_path(
+            self._current_sql_path.parent if self._current_sql_path else None, self
+        )
+        if path is not None and self._write_sql(path):
+            self._current_sql_path = path
+            self._last_saved_sql_text = self.editor.text()
+            self._update_sql_dirty_state()
+            self._update_window_title()
+
+    def _write_sql(self, path: Path) -> bool:
+        try:
+            path.write_text(self.editor.text(), encoding="utf-8")
+        except OSError as error:
+            self._show_status(f"Could not save SQL file: {error}")
+            return False
+        self._last_saved_sql_text = self.editor.text()
+        self._update_sql_dirty_state()
+        return True
+
     def _handle_add_result(self, result: CatalogServiceReport) -> None:
         duplicate_message = ""
         if result.duplicates:
@@ -778,18 +850,7 @@ class MainWindow(QMainWindow):
                 self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)}")
             self._settings_service.save_last_dataset_directory(first.path.parent)
             for entry in result.added:
-                binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
-                self._queue_schema_work(binding)
-                if self._settings_service.restore_profile_on_load():
-                    if (
-                        entry.path.stat().st_size
-                        <= self._settings_service.restore_profile_max_bytes()
-                    ):
-                        self._queue_profile_work(binding)
-                    else:
-                        self._catalog_service.mark_profile_skipped(
-                            entry.id, "Profiling skipped: source exceeds the configured size limit."
-                        )
+                self._queue_initial_catalog_work(entry)
             message = f"Added `{first.alias}` to catalog."
             if duplicate_message:
                 message = f"{message} {duplicate_message}"
@@ -802,6 +863,27 @@ class MainWindow(QMainWindow):
 
     def _on_refresh_catalog_schema(self, binding: CatalogBinding) -> None:
         self._queue_schema_work(binding)
+
+    def _queue_restored_catalog_work(self) -> None:
+        for entry in self._catalog_service.entries:
+            if not entry.unavailable:
+                self._queue_initial_catalog_work(entry)
+
+    def _queue_initial_catalog_work(self, entry) -> None:
+        binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
+        self._queue_schema_work(binding)
+        if not self._settings_service.restore_profile_on_load():
+            return
+        try:
+            source_size = entry.path.stat().st_size
+        except OSError:
+            return
+        if source_size <= self._settings_service.restore_profile_max_bytes():
+            self._queue_profile_work(binding)
+        else:
+            self._catalog_service.mark_profile_skipped(
+                entry.id, "Profiling skipped: source exceeds the configured size limit."
+            )
 
     def _queue_schema_work(self, binding: CatalogBinding) -> None:
         worker = SchemaWorker(
@@ -1005,6 +1087,7 @@ class MainWindow(QMainWindow):
         self.input_dialect_selector.currentTextChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._refresh_translation)
         editor.textChanged.connect(self._update_catalog_affordances)
+        editor.textChanged.connect(self._update_sql_dirty_state)
         self.results_tabs.addTab(translation_page, "Translation")
 
         self.empty_catalog_banner = QLabel("Please add a dataset to begin.", self.results_tabs)
@@ -1097,6 +1180,9 @@ class MainWindow(QMainWindow):
         file_menu = cast(QMenu, menu_bar.addMenu("&File"))
         file_menu.setObjectName("file_menu")
         file_menu.addAction(self.desktop_actions.add_datasets)
+        file_menu.addAction(self.desktop_actions.open_sql)
+        file_menu.addAction(self.desktop_actions.save_sql)
+        file_menu.addAction(self.desktop_actions.save_sql_as)
         file_menu.addSeparator()
         self.quit_action = QAction("Quit", self)
         self.quit_action.setShortcuts(
@@ -1266,6 +1352,19 @@ class MainWindow(QMainWindow):
         self.desktop_actions.run.setEnabled(has_datasets)
         self.empty_catalog_banner.setVisible(not has_datasets)
 
+    def _catalog_projection(self) -> tuple[tuple[object, str, Path, object], ...]:
+        return tuple(
+            (entry.id, entry.alias, entry.path, entry.source_format)
+            for entry in self._catalog_service.entries
+        )
+
+    def _persist_catalog(self) -> None:
+        projection = self._catalog_projection()
+        if projection == self._last_persisted_catalog:
+            return
+        self._catalog_store.save(self._catalog_service.entries)
+        self._last_persisted_catalog = projection
+
     def _restore_state(self) -> None:
         geometry = self._settings_service.restore_window_geometry()
         if geometry:
@@ -1283,6 +1382,7 @@ class MainWindow(QMainWindow):
 
         font_size = self._settings_service.restore_editor_font_size()
         self.editor.set_font_size(font_size)
+        self.editor.setText(self._settings_service.restore_editor_text())
         self.result_table_view.set_auto_size_policy(
             self._settings_service.restore_auto_size_columns(),
             self._settings_service.restore_auto_size_max_width(),
@@ -1308,6 +1408,10 @@ class MainWindow(QMainWindow):
         self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        listener = getattr(self, "_catalog_persistence_listener", None)
+        if listener is not None:
+            self._catalog_service.unsubscribe(listener)
+            del self._catalog_persistence_listener
         self.query_controller.cancel()
         self.export_controller.cancel()
         self._elapsed_timer.stop()
@@ -1335,6 +1439,7 @@ class MainWindow(QMainWindow):
         font = self.editor.font()
         if isinstance(font, QFont):
             self._settings_service.save_editor_font_size(font.pointSize())
+        self._settings_service.save_editor_text(self.editor.text())
         super().closeEvent(a0)
 
     def dragEnterEvent(self, a0: QDragEnterEvent | None) -> None:

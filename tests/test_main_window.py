@@ -40,6 +40,7 @@ from wherewolf.desktop.main_window import MainWindow
 from wherewolf.desktop.workers.schema_worker import SchemaWorker
 from wherewolf.domain import (
     CatalogBinding,
+    CatalogEntry,
     ColumnProfile,
     ColumnSchema,
     EngineKind,
@@ -57,6 +58,7 @@ from wherewolf.services import (
     serialise_history_records_to_sql,
 )
 from wherewolf.storage import HistoryManager
+from wherewolf.storage.catalog import CatalogStore
 
 
 class _ProfileAdapter:
@@ -99,6 +101,170 @@ def _configure_qsettings_path(tmp_path: Path) -> SettingsService:
     settings = QSettings(SettingsService.ORGANIZATION, SettingsService.APPLICATION)
     settings.clear()
     return SettingsService(settings)
+
+
+def test_main_window_restores_catalog_and_persists_catalog_changes(tmp_path: Path, qtbot) -> None:
+    available_path = tmp_path / "available.csv"
+    available_path.write_text("id\n1")
+    missing_path = tmp_path / "missing.csv"
+    added_path = tmp_path / "added.csv"
+    added_path.write_text("id\n2")
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.save(
+        (
+            CatalogEntry(uuid4(), "available", available_path, SourceFormat.CSV),
+            CatalogEntry(uuid4(), "missing", missing_path, SourceFormat.CSV),
+        )
+    )
+
+    window = MainWindow(catalog_store=store)
+    qtbot.addWidget(window)
+
+    restored = window._catalog_service.entries
+    assert [entry.alias for entry in restored] == ["available", "missing"]
+    assert [entry.unavailable for entry in restored] == [False, True]
+
+    window.catalog.add_paths((added_path,))
+
+    assert [entry.alias for entry in store.load()] == ["available", "missing", "added"]
+
+
+def test_main_window_catalog_persistence_round_trip_between_windows(tmp_path: Path, qtbot) -> None:
+    dataset = tmp_path / "persisted.csv"
+    dataset.write_text("id\n1", encoding="utf-8")
+    store = CatalogStore(tmp_path / "catalog.json")
+    settings = _configure_qsettings_path(tmp_path)
+    history_manager = HistoryManager(tmp_path / "history.json")
+    first = MainWindow(
+        catalog_store=store,
+        history_manager=history_manager,
+        settings_service=settings,
+    )
+    qtbot.addWidget(first)
+
+    first.catalog.add_paths((dataset,))
+    first.close()
+
+    second = MainWindow(
+        catalog_store=store,
+        history_manager=history_manager,
+        settings_service=settings,
+    )
+    qtbot.addWidget(second)
+
+    assert [entry.path for entry in second._catalog_service.entries] == [dataset]
+
+
+def test_catalog_persistence_ignores_derived_schema_updates(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    dataset = tmp_path / "available.csv"
+    dataset.write_text("id\n1")
+    entry = CatalogEntry(uuid4(), "available", dataset, SourceFormat.CSV)
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.save((entry,))
+    writes: list[tuple[CatalogEntry, ...]] = []
+    monkeypatch.setattr(store, "save", lambda entries: writes.append(entries))
+    window = MainWindow(catalog_store=store)
+    qtbot.addWidget(window)
+
+    restored = window._catalog_service.entries[0]
+    window._catalog_service.update_schema(SchemaResult(restored.id, ()))
+
+    assert writes == []
+
+    window._catalog_service.rename(restored.id, "renamed")
+
+    assert [entry.alias for entry in writes[-1]] == ["renamed"]
+
+
+def test_main_window_reinspects_only_available_restored_catalog_entries(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    available_paths = (tmp_path / "one.csv", tmp_path / "two.csv")
+    for path in available_paths:
+        path.write_text("id\n1")
+    missing_path = tmp_path / "missing.csv"
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.save(
+        tuple(
+            CatalogEntry(uuid4(), path.stem, path, SourceFormat.CSV)
+            for path in (*available_paths, missing_path)
+        )
+    )
+    requested: list[CatalogBinding] = []
+    monkeypatch.setattr(
+        MainWindow,
+        "_queue_schema_work",
+        lambda _self, binding: requested.append(binding),
+    )
+    monkeypatch.setattr(MainWindow, "_queue_profile_work", lambda _self, _binding: None)
+
+    window = MainWindow(catalog_store=store)
+    qtbot.addWidget(window)
+
+    assert [binding.path for binding in requested] == list(available_paths)
+
+
+def test_main_window_restores_editor_draft_without_clobbering_it(tmp_path: Path, qtbot) -> None:
+    settings = _configure_qsettings_path(tmp_path)
+    first = MainWindow(settings_service=settings)
+    qtbot.addWidget(first)
+    first.editor.setText("SELECT preserved_draft")
+    first.close()
+
+    dataset = tmp_path / "data.csv"
+    dataset.write_text("id\n1")
+    second = MainWindow(settings_service=settings)
+    qtbot.addWidget(second)
+    second.catalog.add_paths((dataset,))
+
+    assert second.editor.text() == "SELECT preserved_draft"
+
+
+def test_main_window_open_and_save_sql_tracks_the_current_file_and_dirty_state(
+    tmp_path: Path, qtbot
+) -> None:
+    opened_path = tmp_path / "opened.sql"
+    opened_path.write_text("SELECT opened", encoding="utf-8")
+    save_as_path = tmp_path / "saved_copy"
+    file_service = FakeFileDialogService((), sql_open_path=opened_path, sql_save_path=save_as_path)
+    window = MainWindow(file_dialog_service=file_service)
+    qtbot.addWidget(window)
+
+    window.desktop_actions.open_sql.trigger()
+
+    assert window.editor.text() == "SELECT opened"
+    assert opened_path.name in window.windowTitle()
+    assert not window.isWindowModified()
+
+    window.editor.setText("SELECT changed")
+
+    assert window.isWindowModified()
+    assert window.windowTitle().endswith(f"{opened_path.name} *")
+
+    window.desktop_actions.save_sql.trigger()
+
+    assert opened_path.read_text(encoding="utf-8") == "SELECT changed"
+    assert not window.isWindowModified()
+
+    window.desktop_actions.save_sql_as.trigger()
+
+    assert save_as_path.with_suffix(".sql").read_text(encoding="utf-8") == "SELECT changed"
+    assert save_as_path.with_suffix(".sql").name in window.windowTitle()
+
+
+def test_main_window_save_sql_without_a_current_file_uses_save_as(tmp_path: Path, qtbot) -> None:
+    destination = tmp_path / "untitled_query"
+    window = MainWindow(file_dialog_service=FakeFileDialogService((), sql_save_path=destination))
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT untitled")
+
+    window.desktop_actions.save_sql.trigger()
+
+    expected_path = destination.with_suffix(".sql")
+    assert expected_path.read_text(encoding="utf-8") == "SELECT untitled"
+    assert window._current_sql_path == expected_path
 
 
 def test_main_window_structure(qtbot) -> None:

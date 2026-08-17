@@ -9,6 +9,7 @@ from PyQt6.QtCore import QSettings
 
 from wherewolf.services import SettingsService
 from wherewolf.storage import HistoryManager
+from wherewolf.storage.catalog import CatalogStore
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -49,6 +50,7 @@ def spark_session() -> Iterator[Any]:
 def isolate_persistent_desktop_storage(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep default desktop persistence away from each developer's real profile."""
     monkeypatch.setattr(HistoryManager, "DEFAULT_PATH", tmp_path / "history" / "history.json")
+    monkeypatch.setattr(CatalogStore, "DEFAULT_PATH", tmp_path / "catalog" / "catalog.json")
 
     settings_path = tmp_path / "qsettings"
     QSettings.setDefaultFormat(QSettings.Format.IniFormat)
