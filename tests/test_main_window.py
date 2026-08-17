@@ -508,6 +508,40 @@ def test_main_window_binds_saved_query_parameters_before_execution(
     assert submitted[0].parameters == ("'; DROP TABLE t; --",)
 
 
+def test_main_window_binds_saved_query_dataset_alias_as_a_quoted_identifier(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    dataset = tmp_path / "weekly.csv"
+    dataset.write_text("id\n1\n", encoding="utf-8")
+    catalog = CatalogService((CatalogEntry(uuid4(), "weekly export", dataset, SourceFormat.CSV),))
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    query = store.save_query(
+        name="Weekly rule",
+        description="",
+        sql="SELECT * FROM {dataset}",
+    )
+    window = MainWindow(catalog_service=catalog, saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    prompted_aliases: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    monkeypatch.setattr(
+        main_window.QInputDialog,
+        "getItem",
+        lambda _parent, _title, _label, aliases, *_args: (
+            prompted_aliases.append(tuple(aliases)) or "weekly export",
+            True,
+        ),
+    )
+
+    window._run_saved_query(query)
+
+    assert prompted_aliases == [("weekly export",)]
+    assert submitted[0].executable_sql == 'SELECT * FROM "weekly export"'
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

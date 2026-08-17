@@ -673,7 +673,10 @@ class MainWindow(QMainWindow):
         self.saved_queries_dock.refresh()
 
     def _run_saved_query(self, query: SavedQuery) -> None:
-        parameter_names = extract_parameters(query.sql)
+        sql = self._bind_saved_query_dataset(query.sql)
+        if sql is None:
+            return
+        parameter_names = extract_parameters(sql)
         values: dict[str, str] = {}
         for name in parameter_names:
             value, accepted = QInputDialog.getText(
@@ -685,11 +688,31 @@ class MainWindow(QMainWindow):
                 return
             values[name] = value
         try:
-            sql, parameters = bind_parameters(query.sql, values)
+            sql, parameters = bind_parameters(sql, values)
         except ValueError as error:
             self._show_status(f"Could not bind query parameters: {error}", 5000)
             return
         self._execute_sql(sql, parameters=tuple(parameters))
+
+    def _bind_saved_query_dataset(self, sql: str) -> str | None:
+        """Resolve the saved-query identifier token through the current catalog aliases."""
+        if "{dataset}" not in sql:
+            return sql
+        aliases = tuple(entry.alias for entry in self._catalog_service.entries)
+        if not aliases:
+            self._show_status("Add a dataset before running this saved query", 5000)
+            return None
+        alias, accepted = QInputDialog.getItem(
+            self,
+            "Run Saved Query",
+            "Dataset",
+            aliases,
+            0,
+            False,
+        )
+        if not accepted:
+            return None
+        return sql.replace("{dataset}", quote_identifier(alias))
 
     def _open_saved_query_in_new_tab(self, query: SavedQuery) -> None:
         editor = self._new_editor_tab()
