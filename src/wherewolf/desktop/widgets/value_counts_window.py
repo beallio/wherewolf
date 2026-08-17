@@ -167,6 +167,7 @@ class ValueCountsWindow(QWidget):
         self._engine_registry = engine_registry
         self._workers: list[ValueCountsWorker] = []
         self._current_worker: ValueCountsWorker | None = None
+        self._last_result: ValueCountsResult | None = None
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setWindowModality(Qt.WindowModality.NonModal)
         self.setWindowTitle(f"Value counts: {entry.alias}.{column_name}")
@@ -233,10 +234,12 @@ class ValueCountsWindow(QWidget):
 
     def _on_result(self, result: ValueCountsResult) -> None:
         if result.error_message is not None:
+            self._last_result = None
             self.status_label.setText(f"Value counts error: {result.error_message}")
             self.table.setRowCount(0)
             self.chart.set_counts(())
             return
+        self._last_result = result
         self.status_label.setText("")
         self.total_distinct_label.setText(f"Total distinct values: {result.total_distinct}")
         self.table.setSortingEnabled(False)

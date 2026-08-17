@@ -132,6 +132,33 @@ def test_value_counts_window_sorts_count_values_numerically(qtbot) -> None:
     assert sorted_counts == ["9", "25", "100"]
 
 
+def test_value_counts_window_retains_only_the_latest_successful_result(qtbot) -> None:
+    window = ValueCountsWindow(_binding(), "category", _FakeRegistry(_FakeAdapter()))
+    qtbot.addWidget(window)
+    successful_result = ValueCountsResult(
+        entry_id=window.entry.entry_id,
+        column_name="category",
+        counts=(ValueCount("a", 3, 75.0),),
+        total_distinct=1,
+    )
+    error_result = ValueCountsResult(
+        entry_id=window.entry.entry_id,
+        column_name="category",
+        counts=(),
+        total_distinct=0,
+        error_type="RuntimeError",
+        error_message="source unavailable",
+    )
+
+    assert window._last_result is None
+
+    window._on_result(successful_result)
+    assert window._last_result is successful_result
+
+    window._on_result(error_result)
+    assert window._last_result is None
+
+
 def test_value_counts_chart_culls_large_result_paints(qtbot) -> None:
     chart = ValueCountsChart()
     qtbot.addWidget(chart)
