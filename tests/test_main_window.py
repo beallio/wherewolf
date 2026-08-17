@@ -152,6 +152,34 @@ def test_catalog_persistence_ignores_derived_schema_updates(
     assert [entry.alias for entry in writes[-1]] == ["renamed"]
 
 
+def test_main_window_reinspects_only_available_restored_catalog_entries(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    available_paths = (tmp_path / "one.csv", tmp_path / "two.csv")
+    for path in available_paths:
+        path.write_text("id\n1")
+    missing_path = tmp_path / "missing.csv"
+    store = CatalogStore(tmp_path / "catalog.json")
+    store.save(
+        tuple(
+            CatalogEntry(uuid4(), path.stem, path, SourceFormat.CSV)
+            for path in (*available_paths, missing_path)
+        )
+    )
+    requested: list[CatalogBinding] = []
+    monkeypatch.setattr(
+        MainWindow,
+        "_queue_schema_work",
+        lambda _self, binding: requested.append(binding),
+    )
+    monkeypatch.setattr(MainWindow, "_queue_profile_work", lambda _self, _binding: None)
+
+    window = MainWindow(catalog_store=store)
+    qtbot.addWidget(window)
+
+    assert [binding.path for binding in requested] == list(available_paths)
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

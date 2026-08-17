@@ -287,6 +287,7 @@ class MainWindow(QMainWindow):
         self._build_menus()
         self._connect_actions()
         self._restore_state()
+        self._queue_restored_catalog_work()
         self._update_catalog_affordances()
 
     @property
@@ -789,18 +790,7 @@ class MainWindow(QMainWindow):
                 self.editor.setText(f"SELECT * FROM {quote_identifier(first.alias)}")
             self._settings_service.save_last_dataset_directory(first.path.parent)
             for entry in result.added:
-                binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
-                self._queue_schema_work(binding)
-                if self._settings_service.restore_profile_on_load():
-                    if (
-                        entry.path.stat().st_size
-                        <= self._settings_service.restore_profile_max_bytes()
-                    ):
-                        self._queue_profile_work(binding)
-                    else:
-                        self._catalog_service.mark_profile_skipped(
-                            entry.id, "Profiling skipped: source exceeds the configured size limit."
-                        )
+                self._queue_initial_catalog_work(entry)
             message = f"Added `{first.alias}` to catalog."
             if duplicate_message:
                 message = f"{message} {duplicate_message}"
@@ -813,6 +803,27 @@ class MainWindow(QMainWindow):
 
     def _on_refresh_catalog_schema(self, binding: CatalogBinding) -> None:
         self._queue_schema_work(binding)
+
+    def _queue_restored_catalog_work(self) -> None:
+        for entry in self._catalog_service.entries:
+            if not entry.unavailable:
+                self._queue_initial_catalog_work(entry)
+
+    def _queue_initial_catalog_work(self, entry) -> None:
+        binding = CatalogBinding(entry.id, entry.alias, entry.path, entry.source_format)
+        self._queue_schema_work(binding)
+        if not self._settings_service.restore_profile_on_load():
+            return
+        try:
+            source_size = entry.path.stat().st_size
+        except OSError:
+            return
+        if source_size <= self._settings_service.restore_profile_max_bytes():
+            self._queue_profile_work(binding)
+        else:
+            self._catalog_service.mark_profile_skipped(
+                entry.id, "Profiling skipped: source exceeds the configured size limit."
+            )
 
     def _queue_schema_work(self, binding: CatalogBinding) -> None:
         worker = SchemaWorker(
