@@ -129,6 +129,32 @@ def test_main_window_restores_catalog_and_persists_catalog_changes(tmp_path: Pat
     assert [entry.alias for entry in store.load()] == ["available", "missing", "added"]
 
 
+def test_main_window_catalog_persistence_round_trip_between_windows(tmp_path: Path, qtbot) -> None:
+    dataset = tmp_path / "persisted.csv"
+    dataset.write_text("id\n1", encoding="utf-8")
+    store = CatalogStore(tmp_path / "catalog.json")
+    settings = _configure_qsettings_path(tmp_path)
+    history_manager = HistoryManager(tmp_path / "history.json")
+    first = MainWindow(
+        catalog_store=store,
+        history_manager=history_manager,
+        settings_service=settings,
+    )
+    qtbot.addWidget(first)
+
+    first.catalog.add_paths((dataset,))
+    first.close()
+
+    second = MainWindow(
+        catalog_store=store,
+        history_manager=history_manager,
+        settings_service=settings,
+    )
+    qtbot.addWidget(second)
+
+    assert [entry.path for entry in second._catalog_service.entries] == [dataset]
+
+
 def test_catalog_persistence_ignores_derived_schema_updates(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
