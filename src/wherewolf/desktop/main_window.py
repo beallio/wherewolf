@@ -87,7 +87,12 @@ from wherewolf.services import (
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.services.preview_export import write_selection
-from wherewolf.services.query_parameters import bind_parameters, extract_parameters
+from wherewolf.services.query_parameters import (
+    bind_dataset_tokens,
+    bind_parameters,
+    contains_dataset_token,
+    extract_parameters,
+)
 from wherewolf.storage.catalog import CatalogStore
 from wherewolf.storage.history import HistoryManager
 from wherewolf.storage.saved_queries import SavedQuery, SavedQueryStore
@@ -707,7 +712,7 @@ class MainWindow(QMainWindow):
 
     def _bind_saved_query_dataset(self, sql: str) -> str | None:
         """Resolve the saved-query identifier token through the current catalog aliases."""
-        if "{dataset}" not in sql:
+        if not contains_dataset_token(sql):
             return sql
         aliases = tuple(entry.alias for entry in self._catalog_service.entries)
         if not aliases:
@@ -723,7 +728,7 @@ class MainWindow(QMainWindow):
         )
         if not accepted:
             return None
-        return sql.replace("{dataset}", quote_identifier(alias))
+        return bind_dataset_tokens(sql, quote_identifier(alias))
 
     def _open_saved_query_in_new_tab(self, query: SavedQuery) -> None:
         editor = self._new_editor_tab()

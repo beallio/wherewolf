@@ -587,6 +587,33 @@ def test_main_window_binds_saved_query_dataset_alias_as_a_quoted_identifier(
     assert submitted[0].executable_sql == 'SELECT * FROM "weekly export"'
 
 
+def test_saved_query_dataset_text_inside_literals_or_comments_never_prompts(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    query = store.save_query(
+        name="Literal token",
+        description="",
+        sql="SELECT '{dataset}', \"{dataset}\" -- {dataset}\n/* {dataset} */",
+    )
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    monkeypatch.setattr(
+        main_window.QInputDialog,
+        "getItem",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("dataset picker opened")),
+    )
+
+    window._run_saved_query(query)
+
+    assert submitted[0].original_sql == query.sql
+    assert submitted[0].executable_sql == query.sql
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
