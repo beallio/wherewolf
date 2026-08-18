@@ -36,11 +36,11 @@ class _MaterialisationTrap:
 
 class _CopySpyConnection:
     def __init__(self) -> None:
-        self.statements: list[str] = []
+        self.statements: list[tuple[str, tuple[object, ...] | None]] = []
         self.relation = _MaterialisationTrap()
 
-    def execute(self, statement: str) -> None:
-        self.statements.append(statement)
+    def execute(self, statement: str, parameters: tuple[object, ...] | None = None) -> None:
+        self.statements.append((statement, parameters))
         match = re.search(r"TO '((?:''|[^'])*)'", statement)
         assert match is not None
         Path(match.group(1).replace("''", "'")).write_text("streamed")
@@ -96,8 +96,9 @@ def test_full_export_issues_copy_without_materialising_result(
     adapter.export_full(_request(source, limit=2), tmp_path / f"full.{fmt}", fmt)
 
     assert len(connection.statements) == 1
-    assert connection.statements[0].startswith("COPY (SELECT * FROM data) TO ")
-    assert f"FORMAT {fmt.upper()}" in connection.statements[0]
+    assert connection.statements[0][0].startswith("COPY (SELECT * FROM data) TO ")
+    assert f"FORMAT {fmt.upper()}" in connection.statements[0][0]
+    assert connection.statements[0][1] == ()
     assert connection.relation.calls == []
 
 
@@ -111,3 +112,33 @@ def test_full_xlsx_limit_and_source_warning(tmp_path: Path) -> None:
     pl.DataFrame({"id": range(FULL_XLSX_ROW_LIMIT + 1)}).write_csv(source)
     with pytest.raises(ValueError, match="CSV or Parquet"):
         _DuckDBAdapter(uuid4()).export_full(_request(source, 1), tmp_path / "x.xlsx", "xlsx")
+
+
+@pytest.mark.parametrize("fmt", ("csv", "parquet", "xlsx"))
+def test_full_export_binds_repeated_parameters_into_emitted_data(tmp_path: Path, fmt: str) -> None:
+    source = tmp_path / "data.csv"
+    pl.DataFrame({"id": [1]}).write_csv(source)
+    stat = source.stat()
+    request = ExecutionRequest(
+        uuid4(),
+        EngineKind.DUCKDB,
+        "duckdb",
+        "SELECT :value AS first_value, :value AS second_value",
+        "SELECT ? AS first_value, ? AS second_value",
+        (CatalogBinding(uuid4(), "data", source, SourceFormat.CSV),),
+        2,
+        datetime.now(UTC),
+        (SourceSnapshot(source, stat.st_size, stat.st_mtime_ns),),
+        ("bound value", "bound value"),
+    )
+    destination = tmp_path / f"bound.{fmt}"
+
+    _DuckDBAdapter(uuid4()).export_full(request, destination, fmt)
+
+    if fmt == "csv":
+        exported = pl.read_csv(destination)
+    elif fmt == "parquet":
+        exported = pl.read_parquet(destination)
+    else:
+        exported = pl.read_excel(destination)
+    assert exported.to_dicts() == [{"first_value": "bound value", "second_value": "bound value"}]

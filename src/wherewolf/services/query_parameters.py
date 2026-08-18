@@ -19,25 +19,25 @@ class ParameterSpan:
     end: int
 
 
+@dataclass(frozen=True, slots=True)
+class DatasetTokenSpan:
+    """The source span of one real ``{dataset}`` token."""
+
+    start: int
+    end: int
+
+
 def parameter_spans(sql: str) -> tuple[ParameterSpan, ...]:
     """Return real ``:name`` placeholder spans, skipping SQL comments and literals."""
     spans: list[ParameterSpan] = []
     index = 0
     length = len(sql)
     while index < length:
-        character = sql[index]
-        if character == "'":
-            index = _skip_quoted(sql, index, "'")
-        elif character == '"':
-            index = _skip_quoted(sql, index, '"')
-        elif sql.startswith("--", index):
-            newline = sql.find("\n", index + 2)
-            index = length if newline == -1 else newline + 1
-        elif sql.startswith("/*", index):
-            close = sql.find("*/", index + 2)
-            index = length if close == -1 else close + 2
+        skipped_to = _skip_non_code(sql, index)
+        if skipped_to is not None:
+            index = skipped_to
         elif (
-            character == ":"
+            sql[index] == ":"
             and (index == 0 or sql[index - 1] != ":")
             and index + 1 < length
             and _is_parameter_start(sql[index + 1])
@@ -50,6 +50,40 @@ def parameter_spans(sql: str) -> tuple[ParameterSpan, ...]:
         else:
             index += 1
     return tuple(spans)
+
+
+def dataset_token_spans(sql: str) -> tuple[DatasetTokenSpan, ...]:
+    """Return real ``{dataset}`` token spans, skipping SQL comments and literals."""
+    spans: list[DatasetTokenSpan] = []
+    index = 0
+    while index < len(sql):
+        skipped_to = _skip_non_code(sql, index)
+        if skipped_to is not None:
+            index = skipped_to
+        elif sql.startswith("{dataset}", index):
+            end = index + len("{dataset}")
+            spans.append(DatasetTokenSpan(index, end))
+            index = end
+        else:
+            index += 1
+    return tuple(spans)
+
+
+def contains_dataset_token(sql: str) -> bool:
+    """Return whether a query contains a bindable ``{dataset}`` token."""
+    return bool(dataset_token_spans(sql))
+
+
+def bind_dataset_tokens(sql: str, replacement: str) -> str:
+    """Replace only real ``{dataset}`` tokens with an already quoted identifier."""
+    parts: list[str] = []
+    cursor = 0
+    for span in dataset_token_spans(sql):
+        parts.append(sql[cursor : span.start])
+        parts.append(replacement)
+        cursor = span.end
+    parts.append(sql[cursor:])
+    return "".join(parts)
 
 
 def extract_parameters(sql: str) -> tuple[str, ...]:
@@ -89,6 +123,22 @@ def _skip_quoted(sql: str, index: int, quote: str) -> int:
     return index
 
 
+def _skip_non_code(sql: str, index: int) -> int | None:
+    """Return the index after a literal or comment beginning at ``index``."""
+    character = sql[index]
+    if character == "'":
+        return _skip_quoted(sql, index, "'")
+    if character == '"':
+        return _skip_quoted(sql, index, '"')
+    if sql.startswith("--", index):
+        newline = sql.find("\n", index + 2)
+        return len(sql) if newline == -1 else newline + 1
+    if sql.startswith("/*", index):
+        close = sql.find("*/", index + 2)
+        return len(sql) if close == -1 else close + 2
+    return None
+
+
 def _is_parameter_start(character: str) -> bool:
     return character.isalpha() or character == "_"
 
@@ -97,4 +147,13 @@ def _is_parameter_character(character: str) -> bool:
     return character.isalnum() or character == "_"
 
 
-__all__ = ["ParameterSpan", "bind_parameters", "extract_parameters", "parameter_spans"]
+__all__ = [
+    "DatasetTokenSpan",
+    "ParameterSpan",
+    "bind_dataset_tokens",
+    "bind_parameters",
+    "contains_dataset_token",
+    "dataset_token_spans",
+    "extract_parameters",
+    "parameter_spans",
+]

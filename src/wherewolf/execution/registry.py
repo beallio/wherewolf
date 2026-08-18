@@ -336,7 +336,9 @@ class _DuckDBAdapter(ExecutionEngine):
                 self._register_view(con, str(binding.path), binding.alias)
             fmt = ExportFormat(export_format)
             if fmt is ExportFormat.XLSX:
-                row = con.sql(f"SELECT count(*) FROM ({request.executable_sql})").fetchone()
+                row = con.execute(
+                    f"SELECT count(*) FROM ({request.executable_sql})", request.parameters
+                ).fetchone()
                 assert row is not None
                 count = row[0]
                 if count > FULL_XLSX_ROW_LIMIT:
@@ -345,7 +347,7 @@ class _DuckDBAdapter(ExecutionEngine):
                     )
 
                 def write_xlsx(path: Path) -> None:
-                    con.sql(request.executable_sql).pl().write_excel(path)
+                    con.execute(request.executable_sql, request.parameters).pl().write_excel(path)
 
                 write_atomically(destination, write_xlsx)
             else:
@@ -354,7 +356,8 @@ class _DuckDBAdapter(ExecutionEngine):
                 def copy_to(path: Path) -> None:
                     escaped_temp = str(path).replace("'", "''")
                     con.execute(
-                        f"COPY ({request.executable_sql}) TO '{escaped_temp}' (FORMAT {format_sql})"
+                        f"COPY ({request.executable_sql}) TO '{escaped_temp}' (FORMAT {format_sql})",
+                        request.parameters,
                     )
 
                 write_atomically(destination, copy_to)

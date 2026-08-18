@@ -87,7 +87,12 @@ from wherewolf.services import (
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.services.preview_export import write_selection
-from wherewolf.services.query_parameters import bind_parameters, extract_parameters
+from wherewolf.services.query_parameters import (
+    bind_dataset_tokens,
+    bind_parameters,
+    contains_dataset_token,
+    extract_parameters,
+)
 from wherewolf.storage.catalog import CatalogStore
 from wherewolf.storage.history import HistoryManager
 from wherewolf.storage.saved_queries import SavedQuery, SavedQueryStore
@@ -108,9 +113,10 @@ class _EditorTabState:
     """State that belongs to one SQL editor tab rather than the whole window."""
 
     path: Path | None = None
-    last_saved_text: str = ""
+    last_saved_text: str | None = ""
     last_request: ExecutionRequest | None = None
     last_result: QueryResult | None = None
+    result_origin: str | None = None
 
 
 class FindReplaceDialog(QDialog):
@@ -130,13 +136,21 @@ class FindReplaceDialog(QDialog):
         layout.addRow("Replace", self.replace_input)
         layout.addRow(self.find_next_button, self.replace_next_button)
         layout.addRow(self.replace_all_button)
-        self.find_next_button.clicked.connect(lambda: editor.find_text(self.find_input.text()))
-        self.replace_next_button.clicked.connect(
-            lambda: editor.replace_next(self.find_input.text(), self.replace_input.text())
-        )
-        self.replace_all_button.clicked.connect(
-            lambda: editor.replace_all(self.find_input.text(), self.replace_input.text())
-        )
+        self.find_next_button.clicked.connect(self._find_next)
+        self.replace_next_button.clicked.connect(self._replace_next)
+        self.replace_all_button.clicked.connect(self._replace_all)
+
+    def set_editor(self, editor: SqlEditor) -> None:
+        self._editor = editor
+
+    def _find_next(self) -> None:
+        self._editor.find_text(self.find_input.text())
+
+    def _replace_next(self) -> None:
+        self._editor.replace_next(self.find_input.text(), self.replace_input.text())
+
+    def _replace_all(self) -> None:
+        self._editor.replace_all(self.find_input.text(), self.replace_input.text())
 
 
 class PreferencesDialog(QDialog):
@@ -263,6 +277,7 @@ class MainWindow(QMainWindow):
         )
         self._catalog_service = catalog_service or CatalogService(restored_entries)
         self._last_persisted_catalog = self._catalog_projection()
+        self._catalog_persistence_error: str | None = None
         self._catalog_persistence_listener = self._persist_catalog
         self._catalog_service.subscribe(self._catalog_persistence_listener)
         self._file_dialog_service = file_dialog_service or QtFileDialogService()
@@ -279,7 +294,7 @@ class MainWindow(QMainWindow):
         self.history_manager = history_manager or HistoryManager()
         self.saved_query_store = saved_query_store or SavedQueryStore()
         self._editor_states: dict[SqlEditor, _EditorTabState] = {}
-        self._result_origin_by_request_id: dict[object, SqlEditor] = {}
+        self._result_origin_by_request_id: dict[object, tuple[SqlEditor, str]] = {}
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
         self._value_counts_windows: list[ValueCountsWindow] = []
@@ -376,7 +391,7 @@ class MainWindow(QMainWindow):
             state.path = path
 
     @property
-    def _last_saved_sql_text(self) -> str:
+    def _last_saved_sql_text(self) -> str | None:
         state = self._current_editor_state()
         return state.last_saved_text if state is not None else ""
 
@@ -618,12 +633,20 @@ class MainWindow(QMainWindow):
         sql: str,
         *,
         parameters: tuple[object, ...] = (),
+        original_sql: str | None = None,
         editor: SqlEditor | None = None,
+        direct_saved_query: bool = False,
     ) -> None:
-        origin = editor or self.current_editor
-        if origin is None:
+        owner = editor or self.current_editor
+        if owner is None:
             self._show_status("No SQL editor is open", 5000)
             return
+        original_sql = sql if original_sql is None else original_sql
+        if not parameters:
+            prepared = self._prompt_and_bind_parameters(original_sql)
+            if prepared is None:
+                return
+            sql, parameters = prepared
         try:
             engine = cast(EngineKind, self.engine_selector.currentData())
             source_dialect = self.input_dialect_selector.currentData()
@@ -636,6 +659,7 @@ class MainWindow(QMainWindow):
                 catalog_service=self._catalog_service,
                 preview_limit=self._preview_limit_value,
                 parameters=parameters,
+                original_sql=original_sql,
             )
         except TranslationError as exc:
             self._on_editor_diagnostics(
@@ -654,7 +678,8 @@ class MainWindow(QMainWindow):
             return
 
         if self.query_controller.execute(request):
-            self._result_origin_by_request_id[request.request_id] = origin
+            result_origin = "saved-query" if direct_saved_query else "editor"
+            self._result_origin_by_request_id[request.request_id] = (owner, result_origin)
 
     def _save_current_query(self, _checked: bool = False) -> None:
         del _checked
@@ -676,6 +701,9 @@ class MainWindow(QMainWindow):
         sql = self._bind_saved_query_dataset(query.sql)
         if sql is None:
             return
+        self._execute_sql(sql, original_sql=sql, direct_saved_query=True)
+
+    def _prompt_and_bind_parameters(self, sql: str) -> tuple[str, tuple[object, ...]] | None:
         parameter_names = extract_parameters(sql)
         values: dict[str, str] = {}
         for name in parameter_names:
@@ -688,15 +716,15 @@ class MainWindow(QMainWindow):
                 return
             values[name] = value
         try:
-            sql, parameters = bind_parameters(sql, values)
+            executable_sql, parameters = bind_parameters(sql, values)
         except ValueError as error:
             self._show_status(f"Could not bind query parameters: {error}", 5000)
-            return
-        self._execute_sql(sql, parameters=tuple(parameters))
+            return None
+        return executable_sql, tuple(parameters)
 
     def _bind_saved_query_dataset(self, sql: str) -> str | None:
         """Resolve the saved-query identifier token through the current catalog aliases."""
-        if "{dataset}" not in sql:
+        if not contains_dataset_token(sql):
             return sql
         aliases = tuple(entry.alias for entry in self._catalog_service.entries)
         if not aliases:
@@ -712,7 +740,7 @@ class MainWindow(QMainWindow):
         )
         if not accepted:
             return None
-        return sql.replace("{dataset}", quote_identifier(alias))
+        return bind_dataset_tokens(sql, quote_identifier(alias))
 
     def _open_saved_query_in_new_tab(self, query: SavedQuery) -> None:
         editor = self._new_editor_tab()
@@ -781,15 +809,19 @@ class MainWindow(QMainWindow):
             self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
-        origin = self._result_origin_by_request_id.pop(request.request_id, self.current_editor)
-        if origin is None:
+        owner, result_origin = self._result_origin_by_request_id.pop(
+            request.request_id,
+            (self.current_editor, "editor"),
+        )
+        self._record_query_history(result, request)
+        if owner is None:
             return
-        state = self._editor_states.get(origin)
+        state = self._editor_states.get(owner)
         if state is None:
             return
         state.last_request, state.last_result = request, result
-        self._record_query_history(result, request)
-        if origin is self.current_editor:
+        state.result_origin = result_origin
+        if owner is self.current_editor:
             self._render_query_result(result, request, show_message=True)
 
     def _record_query_history(self, result: QueryResult, request: ExecutionRequest) -> None:
@@ -1022,10 +1054,11 @@ class MainWindow(QMainWindow):
 
     def _update_sql_dirty_state(self) -> None:
         editor = self.current_editor
+        baseline = self._last_saved_sql_text
         is_dirty = bool(
             editor is not None
             and self._current_sql_path is not None
-            and editor.text() != self._last_saved_sql_text
+            and (baseline is None or editor.text() != baseline)
         )
         self.setWindowModified(is_dirty)
         self._update_window_title()
@@ -1041,13 +1074,19 @@ class MainWindow(QMainWindow):
             return
         try:
             contents = path.read_text(encoding="utf-8")
-        except OSError as error:
+        except (OSError, UnicodeDecodeError) as error:
             self._show_status(f"Could not open SQL file: {error}")
             return
-        self._current_sql_path = path
-        self._last_saved_sql_text = contents
-        editor.setText(contents)
-        self._update_editor_tab_label(editor)
+        state = self._editor_states[editor]
+        is_pristine_untitled = (
+            state.path is None and state.last_saved_text == "" and not editor.text()
+        )
+        target = editor if is_pristine_untitled else self._new_editor_tab()
+        target_state = self._editor_states[target]
+        target_state.path = path
+        target_state.last_saved_text = contents
+        target.setText(contents)
+        self._update_editor_tab_label(target)
         self._update_sql_dirty_state()
         self._update_window_title()
 
@@ -1111,15 +1150,24 @@ class MainWindow(QMainWindow):
             message = f"Added `{first.alias}` to catalog."
             if duplicate_message:
                 message = f"{message} {duplicate_message}"
-            self._show_status(message)
+            self._show_status(self._catalog_persistence_error or message)
             self._update_catalog_affordances()
         elif duplicate_message:
             self._show_status(duplicate_message)
         if result.warnings:
             self._show_status("\n".join(sorted(set(result.warnings))))
+        if self._catalog_persistence_error is not None:
+            self._show_status(self._catalog_persistence_error)
 
     def _on_refresh_catalog_schema(self, binding: CatalogBinding) -> None:
-        self._queue_schema_work(binding)
+        try:
+            entry = self._catalog_service.refresh_availability(binding.entry_id)
+        except KeyError:
+            return
+        if entry.unavailable:
+            self._show_status(f"Dataset is unavailable: {entry.path}", 5000)
+            return
+        self._queue_initial_catalog_work(entry)
 
     def _queue_restored_catalog_work(self) -> None:
         for entry in self._catalog_service.entries:
@@ -1282,6 +1330,9 @@ class MainWindow(QMainWindow):
         self._refresh_translation()
         self._update_catalog_affordances()
         self._update_sql_dirty_state()
+        dialog = getattr(self, "find_replace_dialog", None)
+        if isinstance(dialog, FindReplaceDialog):
+            dialog.set_editor(editor)
         editor.setFocus()
 
     def _update_editor_tab_label(self, editor: SqlEditor) -> None:
@@ -1480,7 +1531,17 @@ class MainWindow(QMainWindow):
         if not self.result_table_view.has_result():
             return
         editor = self.current_editor
-        if editor is None:
+        state = self._current_editor_state()
+        if (
+            editor is None
+            or state is None
+            or state.result_origin == "saved-query"
+            or state.last_request is not self._last_request
+            or state.last_result is not self._last_result
+        ):
+            self._show_status(
+                "Open and run this query in an editor before applying query order.", 5000
+            )
             return
         current_sql = editor.text()
         if not current_sql.strip():
@@ -1502,6 +1563,11 @@ class MainWindow(QMainWindow):
                 method()
                 return
             widget = widget.parentWidget()
+
+    def _run_current_editor_action(self, operation: str) -> None:
+        editor = self.current_editor
+        if editor is not None:
+            getattr(editor, operation)()
 
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
@@ -1527,9 +1593,19 @@ class MainWindow(QMainWindow):
         edit_menu.setObjectName("edit_menu")
         editor = self.current_editor
         assert editor is not None
-        undo, redo, _cut, _copy, _paste, toggle_comment = editor.edit_actions
-        edit_menu.addAction(undo)
-        edit_menu.addAction(redo)
+        self.undo_action = QAction("Undo", self)
+        self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self.undo_action.triggered.connect(lambda: self._run_current_editor_action("undo"))
+        self.redo_action = QAction("Redo", self)
+        self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        self.redo_action.triggered.connect(lambda: self._run_current_editor_action("redo"))
+        self.toggle_comment_action = QAction("Toggle Comment", self)
+        self.toggle_comment_action.setShortcut(QKeySequence("Ctrl+/"))
+        self.toggle_comment_action.triggered.connect(
+            lambda: self._run_current_editor_action("toggle_comment")
+        )
+        edit_menu.addAction(self.undo_action)
+        edit_menu.addAction(self.redo_action)
         edit_menu.addSeparator()
 
         self.cut_action = QAction("Cut", self)
@@ -1560,7 +1636,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.select_all_action)
         edit_menu.addAction(self.find_replace_action)
         edit_menu.addSeparator()
-        edit_menu.addAction(toggle_comment)
+        edit_menu.addAction(self.toggle_comment_action)
         edit_menu.addSeparator()
         edit_menu.addAction(self.desktop_actions.clear_history)
 
@@ -1636,6 +1712,12 @@ class MainWindow(QMainWindow):
         editor = self.current_editor
         if editor is None:
             return
+        dialog = getattr(self, "find_replace_dialog", None)
+        if isinstance(dialog, FindReplaceDialog):
+            dialog.set_editor(editor)
+            dialog.show()
+            dialog.raise_()
+            return
         self.find_replace_dialog = FindReplaceDialog(editor, self)
         self.find_replace_dialog.show()
 
@@ -1644,10 +1726,14 @@ class MainWindow(QMainWindow):
         if editor is None:
             return
         self.preferences_dialog = PreferencesDialog(self._settings_service, self)
-        original_editor_theme = editor.theme_name
+        original_editor_themes = {editor: editor.theme_name for editor in self._editor_states}
         original_program_theme = self._settings_service.restore_program_theme()
-        self.preferences_dialog.editor_theme_selector.currentTextChanged.connect(editor.set_theme)
-        self.preferences_dialog.rejected.connect(lambda: editor.set_theme(original_editor_theme))
+        self.preferences_dialog.editor_theme_selector.currentTextChanged.connect(
+            self._apply_editor_theme_to_all
+        )
+        self.preferences_dialog.rejected.connect(
+            lambda: [editor.set_theme(theme) for editor, theme in original_editor_themes.items()]
+        )
         self.preferences_dialog.program_theme_selector.currentTextChanged.connect(
             self._apply_program_theme
         )
@@ -1670,8 +1756,14 @@ class MainWindow(QMainWindow):
         )
         self._settings_service.save_program_theme(dialog.program_theme_selector.currentText())
         self._apply_program_theme(dialog.program_theme_selector.currentText())
+        self._settings_service.save_editor_theme(dialog.editor_theme_selector.currentText())
+        self._apply_editor_theme_to_all(dialog.editor_theme_selector.currentText())
         for editor in self._editor_states:
             editor.set_font_size(dialog.font_size.value())
+
+    def _apply_editor_theme_to_all(self, theme: str) -> None:
+        for editor in self._editor_states:
+            editor.set_theme(theme)
 
     @staticmethod
     def _apply_program_theme(mode: str) -> None:
@@ -1700,8 +1792,15 @@ class MainWindow(QMainWindow):
         projection = self._catalog_projection()
         if projection == self._last_persisted_catalog:
             return
-        self._catalog_store.save(self._catalog_service.entries)
+        try:
+            self._catalog_store.save(self._catalog_service.entries)
+        except OSError as exc:
+            self._catalog_persistence_error = f"Could not save dataset catalog: {exc}"
+            self.messages_panel.add_message(self._catalog_persistence_error, severity="error")
+            self._show_status(self._catalog_persistence_error, 5000)
+            return
         self._last_persisted_catalog = projection
+        self._catalog_persistence_error = None
 
     def _restore_editor_tabs(self) -> None:
         tabs = self._settings_service.restore_editor_tabs()
@@ -1715,7 +1814,13 @@ class MainWindow(QMainWindow):
             assert editor is not None
             state = self._editor_states[editor]
             state.path = path
-            state.last_saved_text = text
+            if path is None:
+                state.last_saved_text = text
+            else:
+                try:
+                    state.last_saved_text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    state.last_saved_text = None
             editor.setText(text)
             self._update_editor_tab_label(editor)
 
@@ -1724,6 +1829,7 @@ class MainWindow(QMainWindow):
             self.editor_tabs.count() - 1,
         )
         self.editor_tabs.setCurrentIndex(max(0, active_index))
+        self._update_sql_dirty_state()
 
     def _restore_state(self) -> None:
         geometry = self._settings_service.restore_window_geometry()
@@ -1770,6 +1876,7 @@ class MainWindow(QMainWindow):
         self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        self._persist_catalog()
         listener = getattr(self, "_catalog_persistence_listener", None)
         if listener is not None:
             self._catalog_service.unsubscribe(listener)

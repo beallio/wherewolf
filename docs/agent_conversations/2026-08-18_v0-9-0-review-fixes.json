@@ -1,0 +1,65 @@
+{
+  "date": "2026-08-18",
+  "objective": "Implement every v0.9.0 review fix in docs/plans/2026-08-18_v0-9-0-review-fixes.md.",
+  "files_modified": [
+    "src/wherewolf/services/execution_request_builder.py",
+    "src/wherewolf/services/query_parameters.py",
+    "src/wherewolf/services/catalog_service.py",
+    "src/wherewolf/execution/registry.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/saved_queries_dock.py",
+    "tests/test_execution_request_builder.py",
+    "tests/test_full_export.py",
+    "tests/test_query_parameters.py",
+    "tests/test_catalog_service.py",
+    "tests/test_main_window.py",
+    "tests/test_saved_queries_dock.py",
+    "CHANGELOG.md",
+    "README.md"
+  ],
+  "tests_added": [
+    "bound CSV, Parquet, and XLSX exports with repeated parameters",
+    "saved-query history preserves named parameters and rebinds on restore",
+    "dataset token lexical boundaries",
+    "active-tab edit/find-replace/theme behavior",
+    "open-SQL buffer preservation and restored disk baselines",
+    "direct-saved-query ordering and closed-tab history completion",
+    "catalog availability recovery",
+    "saved-query filtering store-read budget",
+    "direct saved-query result ownership across an inactive launch tab and rejected ordering",
+    "fail-once catalog persistence with visible error retention and successful retry",
+    "returned and disappeared catalog files through the MainWindow refresh path",
+    "unknown catalog availability IDs",
+    "cross-tab Undo, Redo, Find Next, and Replace Next routing",
+    "accepted editor-theme propagation to existing and subsequently created tabs",
+    "clean file-backed Open SQL, cancellation/decode failures, and missing or unreadable dirty baselines"
+  ],
+  "design_decisions": [
+    "ExecutionRequest carries bound executable SQL separately from user-facing original SQL.",
+    "Catalog availability and result provenance are immutable service/window state, not inferred from current widgets.",
+    "SavedQueriesDock keeps one in-memory ID-to-record snapshot per refresh.",
+    "Every submitted request retains its launch editor as result-display owner, while a separate origin label rejects ordering for direct saved-query results.",
+    "Catalog write failure state is retained and mirrored in the Messages panel until a successful projection save clears it."
+  ],
+  "verification": [
+    {"command": "./run.sh uv run pytest", "exit_code": 0, "output": "620 passed, 7 deselected baseline before review round 01 fixes"},
+    {"command": "./run.sh uv run pytest tests/test_catalog_service.py tests/test_main_window.py -q", "exit_code": "expected nonzero", "output": "direct saved-query completion rendered into the active tab and catalog success overwrote the unsaved warning; both regressions failed before the fix"},
+    {"command": "./run.sh uv run pytest tests/test_catalog_service.py tests/test_main_window.py -q", "exit_code": 0, "output": "144 passed after the review round 01 fixes"},
+    {"command": "./run.sh env QT_QPA_PLATFORM=offscreen uv run pytest tests/test_full_export.py tests/test_main_window.py -q -k 'direct_saved_query_result_stays_with_launch_tab or catalog_persistence_failure_remains_visible or refresh_catalog_schema_rechecks or edit_actions_and_find_replace_next or accepted_editor_theme_updates or open_sql_preserves_clean or restored_unknown_baseline'", "exit_code": 0, "output": "7 reproducible offscreen Qt probes passed for result ownership, catalog persistence/refresh, edit targeting, theme persistence, and document recovery"},
+    {"command": "negative control: remove DuckDB COPY parameters", "exit_code": "expected nonzero", "output": "CSV and Parquet regression failed with DuckDB missing values for prepared statement parameters 1, 2"},
+    {"command": "negative control: recapture construction-time editor", "exit_code": "expected nonzero", "output": "cross-tab Undo regression observed the startup tab changed"},
+    {"command": "git diff --check", "exit_code": 0, "output": "temporary mutations restored cleanly"},
+    {"command": "./run.sh uv run pytest tests/test_full_export.py tests/test_main_window.py -q", "exit_code": 0, "output": "138 passed after both restorations"},
+    {"command": "./run.sh uv run ruff check . --fix; ./run.sh uv run ruff format .; ./run.sh uv run ty check src/", "exit_code": 0, "output": "ruff, format, and ty passed before final gates"},
+    {"command": "./run.sh uv run pytest", "exit_code": 0, "output": "628 passed, 7 deselected"},
+    {"command": "scripts/orchestration/run-quality-gates", "exit_code": 0, "output": "ruff, format, ty, and pytest passed: 628 passed, 7 deselected"},
+    {"command": "scripts/orchestration/check-review-notes-not-deleted", "exit_code": 0, "output": "no deleted review notes"},
+    {"command": "find repository cache directories", "exit_code": 0, "output": "no __pycache__, .pytest_cache, .ruff_cache, or .venv directories remain under the repository"}
+  ],
+  "deferred_verification": [
+    "The review-required desktop paths are covered by reproducible QT_QPA_PLATFORM=offscreen probes; interactive visual presentation was not claimed.",
+    "Windows 11 native dialogs, shortcuts, and modified-window presentation were not available.",
+    "Spark parameterized execution/export remains intentionally unsupported."
+  ],
+  "final_results": "Review round 01 adds launch-tab result ownership, durable catalog write-failure reporting, and the requested regression matrix. Final local and orchestration gates passed, repository-local generated caches were removed, and the committed clean tree is ready for the round-complete marker."
+}
