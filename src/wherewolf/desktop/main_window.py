@@ -1155,7 +1155,14 @@ class MainWindow(QMainWindow):
             self._show_status("\n".join(sorted(set(result.warnings))))
 
     def _on_refresh_catalog_schema(self, binding: CatalogBinding) -> None:
-        self._queue_schema_work(binding)
+        try:
+            entry = self._catalog_service.refresh_availability(binding.entry_id)
+        except KeyError:
+            return
+        if entry.unavailable:
+            self._show_status(f"Dataset is unavailable: {entry.path}", 5000)
+            return
+        self._queue_initial_catalog_work(entry)
 
     def _queue_restored_catalog_work(self) -> None:
         for entry in self._catalog_service.entries:
@@ -1779,7 +1786,11 @@ class MainWindow(QMainWindow):
         projection = self._catalog_projection()
         if projection == self._last_persisted_catalog:
             return
-        self._catalog_store.save(self._catalog_service.entries)
+        try:
+            self._catalog_store.save(self._catalog_service.entries)
+        except OSError as exc:
+            self._show_status(f"Could not save dataset catalog: {exc}", 5000)
+            return
         self._last_persisted_catalog = projection
 
     def _restore_editor_tabs(self) -> None:
@@ -1856,6 +1867,7 @@ class MainWindow(QMainWindow):
         self.history_dock.refresh()
 
     def closeEvent(self, a0: QCloseEvent | None) -> None:
+        self._persist_catalog()
         listener = getattr(self, "_catalog_persistence_listener", None)
         if listener is not None:
             self._catalog_service.unsubscribe(listener)

@@ -165,6 +165,27 @@ def test_snapshot_is_not_mutated_by_later_service_updates(tmp_path: Path) -> Non
     assert snapshot[0].entry_id == first.id
 
 
+def test_refresh_availability_updates_both_directions_and_notifies_only_on_change(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "availability.csv"
+    service = CatalogService()
+    entry = service.add_paths((path,)).added[0]
+    notifications: list[object] = []
+    service.subscribe(lambda: notifications.append(None))
+
+    missing = service.refresh_availability(entry.id)
+    assert missing.unavailable is True
+    assert len(notifications) == 1
+    assert service.refresh_availability(entry.id).unavailable is True
+    assert len(notifications) == 1
+
+    _write_csv(path)
+    available = service.refresh_availability(entry.id)
+    assert available.unavailable is False
+    assert len(notifications) == 2
+
+
 def test_profile_is_marked_stale_when_its_source_changes(tmp_path: Path) -> None:
     service = CatalogService()
     path = tmp_path / "profile.csv"
