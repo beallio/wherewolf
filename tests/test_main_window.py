@@ -645,6 +645,73 @@ def test_saved_query_dataset_text_inside_literals_or_comments_never_prompts(
     assert submitted[0].executable_sql == query.sql
 
 
+def test_direct_saved_query_result_cannot_apply_order_to_unrelated_editor(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    query = store.save_query(name="Direct", description="", sql="SELECT 1 AS direct_value")
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT unrelated")
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+
+    window._run_saved_query(query)
+    request = submitted[0]
+    window._on_query_result_ready(
+        QueryResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            frame=pl.DataFrame({"direct_value": [1]}),
+            execution_seconds=0.01,
+            preview_row_count=1,
+            total_row_count=1,
+            truncated=False,
+            completed_at=datetime.now(UTC),
+        ),
+        request,
+    )
+
+    window._on_apply_query_order("direct_value", "ASC")
+
+    assert window.editor.text() == "SELECT unrelated"
+    assert "open and run" in window.status_bar.currentMessage().lower()
+
+
+def test_successful_result_for_a_closed_editor_still_reaches_history(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    history = HistoryManager(tmp_path / "history.json")
+    window = MainWindow(history_manager=history)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    window.editor.setText("SELECT closed_tab")
+    window._on_run_triggered()
+    request = submitted[0]
+    window._close_current_editor_tab()
+
+    window._on_query_result_ready(
+        QueryResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            frame=pl.DataFrame({"value": [1]}),
+            execution_seconds=0.01,
+            preview_row_count=1,
+            total_row_count=1,
+            truncated=False,
+            completed_at=datetime.now(UTC),
+        ),
+        request,
+    )
+
+    assert [record["query"] for record in history.get_all()] == ["SELECT closed_tab"]
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

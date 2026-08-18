@@ -292,7 +292,7 @@ class MainWindow(QMainWindow):
         self.history_manager = history_manager or HistoryManager()
         self.saved_query_store = saved_query_store or SavedQueryStore()
         self._editor_states: dict[SqlEditor, _EditorTabState] = {}
-        self._result_origin_by_request_id: dict[object, SqlEditor] = {}
+        self._result_origin_by_request_id: dict[object, SqlEditor | None] = {}
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
         self._value_counts_windows: list[ValueCountsWindow] = []
@@ -633,9 +633,10 @@ class MainWindow(QMainWindow):
         parameters: tuple[object, ...] = (),
         original_sql: str | None = None,
         editor: SqlEditor | None = None,
+        direct_saved_query: bool = False,
     ) -> None:
-        origin = editor or self.current_editor
-        if origin is None:
+        origin = None if direct_saved_query else editor or self.current_editor
+        if origin is None and not direct_saved_query:
             self._show_status("No SQL editor is open", 5000)
             return
         original_sql = sql if original_sql is None else original_sql
@@ -697,7 +698,7 @@ class MainWindow(QMainWindow):
         sql = self._bind_saved_query_dataset(query.sql)
         if sql is None:
             return
-        self._execute_sql(sql, original_sql=sql)
+        self._execute_sql(sql, original_sql=sql, direct_saved_query=True)
 
     def _prompt_and_bind_parameters(self, sql: str) -> tuple[str, tuple[object, ...]] | None:
         parameter_names = extract_parameters(sql)
@@ -805,14 +806,18 @@ class MainWindow(QMainWindow):
             self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
+        direct_saved_query = request.request_id in self._result_origin_by_request_id
         origin = self._result_origin_by_request_id.pop(request.request_id, self.current_editor)
+        self._record_query_history(result, request)
+        if direct_saved_query and origin is None:
+            self._render_query_result(result, request, show_message=True)
+            return
         if origin is None:
             return
         state = self._editor_states.get(origin)
         if state is None:
             return
         state.last_request, state.last_result = request, result
-        self._record_query_history(result, request)
         if origin is self.current_editor:
             self._render_query_result(result, request, show_message=True)
 
@@ -1514,7 +1519,16 @@ class MainWindow(QMainWindow):
         if not self.result_table_view.has_result():
             return
         editor = self.current_editor
-        if editor is None:
+        state = self._current_editor_state()
+        if (
+            editor is None
+            or state is None
+            or state.last_request is not self._last_request
+            or state.last_result is not self._last_result
+        ):
+            self._show_status(
+                "Open and run this query in an editor before applying query order.", 5000
+            )
             return
         current_sql = editor.text()
         if not current_sql.strip():
