@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.9.1] - 2026-08-18 — Queries stay with their tabs, exports keep parameters, and catalog saves recover
+
 ### Fixed
 
 - Parameterized DuckDB exports now use the same bound request as preview, while history keeps the
