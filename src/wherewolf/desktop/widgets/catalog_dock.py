@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from wherewolf.desktop.models import CatalogModel
+from wherewolf.desktop.widgets.folder_column_delegate import FolderColumnDelegate
 from wherewolf.domain import CatalogEntry
 from wherewolf.domain.models import CatalogBinding
 from wherewolf.services import CatalogService
@@ -52,9 +53,13 @@ class CatalogDock(QWidget):
         if header is not None:
             header.setSectionsMovable(True)
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
             header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+            header.resizeSection(1, 220)
+        self._folder_delegate = FolderColumnDelegate(self)
+        self._view.setItemDelegateForColumn(2, self._folder_delegate)
         self._view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
         self._view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectItems)
         self._view.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)

@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMenu,
     QPushButton,
     QTableWidget,
@@ -65,6 +66,16 @@ class SchemaPanel(QWidget):
         self._status_label = QLabel("No table selected", self)
         self._status_label.setWordWrap(True)
         layout.addWidget(self._status_label)
+        self._warning_label = QLabel(self)
+        self._warning_label.setObjectName("schema_warning_label")
+        self._warning_label.setWordWrap(True)
+        self._warning_label.setVisible(False)
+        layout.addWidget(self._warning_label)
+        self.column_filter = QLineEdit(self)
+        self.column_filter.setObjectName("schema_column_filter")
+        self.column_filter.setPlaceholderText("Filter columns")
+        self.column_filter.textChanged.connect(self._apply_column_filter)
+        layout.addWidget(self.column_filter)
 
         self._table_widget = QTableWidget(0, 9, self)
         self._table_widget.setHorizontalHeaderLabels(
@@ -159,6 +170,10 @@ class SchemaPanel(QWidget):
         """Return the current status label text."""
         return self._status_label.text()
 
+    def warning_text(self) -> str:
+        """Return the current schema-warning text."""
+        return self._warning_label.text()
+
     def column_count_rows(self) -> int:
         """Return the number of column rows displayed in the table."""
         return self._table_widget.rowCount()
@@ -246,6 +261,10 @@ class SchemaPanel(QWidget):
             profiles = self._profile_result.profiles
             profile_error_msg = self._profile_result.error_message
 
+        self._warning_label.clear()
+        self._warning_label.hide()
+        self._status_label.setToolTip("")
+
         if schema_error_msg is not None:
             prefix = f"{alias} — " if alias is not None else ""
             self._status_label.setText(f"{prefix}Schema error: {schema_error_msg}")
@@ -262,6 +281,7 @@ class SchemaPanel(QWidget):
             self._table_widget.setRowCount(0)
             self._table_widget.hide()
         else:
+            warnings: list[str] = []
             if len(columns) == 0:
                 prefix = f"{alias} — " if alias is not None else ""
                 self._status_label.setText(f"{prefix}No columns found in table")
@@ -271,22 +291,20 @@ class SchemaPanel(QWidget):
                 else:
                     assert self._entry is not None
                     self._status_label.setText(
-                        f"{alias} — {self._entry.path} ({self._entry.source_format.value}) — {len(columns)} columns"
+                        f"{alias} — {self._entry.path.name} ({self._entry.source_format.value}) — {len(columns)} columns"
                     )
+                    self._status_label.setToolTip(str(self._entry.path))
                     if self._entry.profile_skipped_reason is not None:
-                        self._status_label.setText(
-                            f"{self._status_label.text()} — {self._entry.profile_skipped_reason}"
-                        )
+                        warnings.append(self._entry.profile_skipped_reason)
                     if self._entry.profile_stale:
-                        self._status_label.setText(
-                            f"{self._status_label.text()} — Profile is stale; re-profile this source."
-                        )
+                        warnings.append("Profile is stale; re-profile this source.")
                 if profile_error_msg is not None:
-                    self._status_label.setText(
-                        f"{self._status_label.text()} — Profiling failed: {profile_error_msg}"
-                    )
+                    warnings.append(f"Profiling failed: {profile_error_msg}")
                 if self._is_profile_pending():
-                    self._status_label.setText(f"{self._status_label.text()} — Profiling...")
+                    warnings.append("Profiling...")
+                if warnings:
+                    self._warning_label.setText(" — ".join(warnings))
+                    self._warning_label.show()
             self._status_label.show()
 
             self._table_widget.show()
@@ -319,7 +337,15 @@ class SchemaPanel(QWidget):
                 ):
                     self._table_widget.setItem(r, index, QTableWidgetItem(value))
 
+        self._apply_column_filter()
         self.profile_button.setEnabled(not self._is_profile_pending())
+
+    def _apply_column_filter(self) -> None:
+        filter_text = self.column_filter.text().casefold()
+        for row in range(self._table_widget.rowCount()):
+            item = self._table_widget.item(row, 0)
+            name = item.text() if item is not None else ""
+            self._table_widget.setRowHidden(row, filter_text not in name.casefold())
 
     def _is_profile_pending(self) -> bool:
         return self._entry is not None and self._entry.id in self._pending_profile_entry_ids

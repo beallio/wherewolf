@@ -63,6 +63,17 @@ def test_duckdb_engine_failure(csv_path):
     assert result.error_message != ""
 
 
+def test_duckdb_engine_treats_bound_injection_value_as_data(csv_path):
+    engine = DuckDBEngine()
+    injection = "'; DROP TABLE dataset; --"
+
+    result = engine.execute("SELECT ? AS value", csv_path, params=[injection])
+
+    assert result.success is True
+    assert result.df["value"].to_list() == [injection]
+    assert engine.execute("SELECT count(*) AS count FROM dataset", csv_path).success is True
+
+
 def test_duckdb_get_schema(csv_path):
     engine = DuckDBEngine()
     schema_df = engine.get_schema(csv_path)

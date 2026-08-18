@@ -9,6 +9,7 @@ from PyQt6.QtGui import QAction
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
+    QLineEdit,
     QMenu,
     QMessageBox,
     QTreeWidget,
@@ -23,8 +24,9 @@ from wherewolf.storage.history import HistoryManager
 class HistoryItem(QTreeWidgetItem):
     """History row that orders timestamps by their actual instant."""
 
-    def __init__(self, labels: list[str], raw_timestamp: str) -> None:
+    def __init__(self, labels: list[str], raw_timestamp: str, pinned: bool) -> None:
         super().__init__(labels)
+        self._pinned = pinned
         try:
             parsed = datetime.fromisoformat(raw_timestamp)
             self._timestamp = parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
@@ -33,6 +35,11 @@ class HistoryItem(QTreeWidgetItem):
 
     def __lt__(self, other: QTreeWidgetItem) -> bool:
         tree = self.treeWidget()
+        if tree is not None and isinstance(other, HistoryItem) and self._pinned != other._pinned:
+            header = tree.header()
+            if header is not None and header.sortIndicatorOrder() is Qt.SortOrder.DescendingOrder:
+                return not self._pinned
+            return self._pinned
         if (
             tree is not None
             and tree.sortColumn() == 0
@@ -53,6 +60,10 @@ class HistoryDock(QWidget):
     def __init__(self, history_manager: HistoryManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._history_manager = history_manager
+        self.history_filter = QLineEdit(self)
+        self.history_filter.setObjectName("history_filter")
+        self.history_filter.setPlaceholderText("Filter history")
+        self.history_filter.textChanged.connect(self._apply_filter)
         self.history_table = QTreeWidget(self)
         self.history_table.setObjectName("history_table")
         self.history_table.setColumnCount(2)
@@ -77,9 +88,12 @@ class HistoryDock(QWidget):
         self._delete_action.triggered.connect(self._delete_selected_records)
         self._save_as_sql_action = QAction("Save as SQL…", self)
         self._save_as_sql_action.triggered.connect(self._save_selected_records_as_sql)
+        self._pin_action = QAction("Pin", self)
+        self._pin_action.triggered.connect(self._toggle_selected_record_pins)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.history_filter)
         layout.addWidget(self.history_table)
         self.refresh()
 
@@ -89,16 +103,27 @@ class HistoryDock(QWidget):
         for record in self._history_manager.get_all():
             query = str(record["query"]).replace("\n", " ")
             truncated = query[:80] + ("…" if len(query) > 80 else "")
+            pinned = bool(record["pinned"])
+            if pinned:
+                truncated = f"📌 {truncated}"
             raw_timestamp = str(record["timestamp"])
             try:
                 timestamp = datetime.fromisoformat(raw_timestamp).replace(microsecond=0).isoformat()
             except ValueError:
                 timestamp = raw_timestamp
-            item = HistoryItem([timestamp, truncated], raw_timestamp)
+            item = HistoryItem([timestamp, truncated], raw_timestamp, pinned)
             item.setData(0, Qt.ItemDataRole.UserRole, record["id"])
             item.setToolTip(0, raw_timestamp)
             item.setToolTip(1, str(record["query"]))
             self.history_table.addTopLevelItem(item)
+        self._apply_filter()
+
+    def _apply_filter(self) -> None:
+        filter_text = self.history_filter.text().casefold()
+        for row in range(self.history_table.topLevelItemCount()):
+            item = self.history_table.topLevelItem(row)
+            if item is not None:
+                item.setHidden(filter_text not in item.toolTip(1).casefold())
 
     def _on_item_activated(self, item: QTreeWidgetItem, _column: int) -> None:
         entry_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -118,7 +143,10 @@ class HistoryDock(QWidget):
         has_selected_records = bool(self._selected_record_ids())
         self._delete_action.setEnabled(has_selected_records)
         self._save_as_sql_action.setEnabled(has_selected_records)
+        self._pin_action.setEnabled(has_selected_records)
+        self._pin_action.setText("Unpin" if self._selected_records_are_pinned() else "Pin")
         menu = QMenu(self)
+        menu.addAction(self._pin_action)
         menu.addAction(self._save_as_sql_action)
         menu.addAction(self._delete_action)
 
@@ -133,6 +161,23 @@ class HistoryDock(QWidget):
             if isinstance(record_id, str):
                 record_ids.append(record_id)
         return record_ids
+
+    def _selected_records_are_pinned(self) -> bool:
+        record_ids = self._selected_record_ids()
+        return bool(record_ids) and all(
+            bool(record["pinned"])
+            for record_id in record_ids
+            if (record := self._history_manager.get_by_id(record_id)) is not None
+        )
+
+    def _toggle_selected_record_pins(self) -> None:
+        record_ids = self._selected_record_ids()
+        if not record_ids:
+            return
+        pinned = not self._selected_records_are_pinned()
+        for record_id in record_ids:
+            self._history_manager.set_pinned(record_id, pinned)
+        self.refresh()
 
     def _delete_selected_records(self) -> None:
         record_ids = self._selected_record_ids()

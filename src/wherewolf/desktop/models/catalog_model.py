@@ -13,7 +13,9 @@ from PyQt6.QtCore import (
     pyqtSignal,
     pyqtSlot,
 )
+from PyQt6.QtGui import QBrush, QColor
 
+from wherewolf.desktop.widgets.folder_column_delegate import dim_colour
 from wherewolf.domain import CatalogEntry
 from wherewolf.services import CatalogService
 
@@ -22,9 +24,10 @@ class CatalogModel(QAbstractTableModel):
     """QAbstractTableModel facade over :class:`CatalogService`."""
 
     _INVALID_PARENT: QModelIndex = QModelIndex()
-    _COLUMNS: ClassVar[tuple[str, str, str, str]] = (
+    _COLUMNS: ClassVar[tuple[str, ...]] = (
         "Alias",
         "File",
+        "Folder",
         "Format",
         "Schema status",
     )
@@ -69,15 +72,20 @@ class CatalogModel(QAbstractTableModel):
             if index.column() == 0:
                 return entry.alias
             if index.column() == 1:
-                return str(entry.path)
+                return entry.path.name
             if index.column() == 2:
-                return entry.source_format.value
+                return str(entry.path.parent)
             if index.column() == 3:
+                return entry.source_format.value
+            if index.column() == 4:
                 return self._schema_status_text(entry)
             return None
 
-        if role == Qt.ItemDataRole.ToolTipRole and index.column() == 1:
+        if role == Qt.ItemDataRole.ToolTipRole and index.column() in (1, 2):
             return str(entry.path)
+
+        if role == Qt.ItemDataRole.ForegroundRole and entry.unavailable:
+            return QBrush(dim_colour(QColor(220, 220, 220), QColor(40, 40, 40)))
 
         return None
 
@@ -133,6 +141,8 @@ class CatalogModel(QAbstractTableModel):
         self.endResetModel()
 
     def _schema_status_text(self, entry: CatalogEntry) -> str:
+        if entry.unavailable:
+            return "Unavailable — file not found"
         if entry.schema_error:
             return f"Error: {entry.schema_error}"
         if entry.schema is None:

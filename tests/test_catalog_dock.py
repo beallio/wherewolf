@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import QApplication, QDockWidget, QHeaderView, QTableView
 
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.desktop.models import CatalogModel
-from wherewolf.desktop.widgets import CatalogDock
+from wherewolf.desktop.widgets import CatalogDock, FolderColumnDelegate
 from wherewolf.domain import ColumnSchema, SchemaResult
 from wherewolf.services import CatalogService
 
@@ -53,7 +53,7 @@ def test_main_window_uses_catalog_dock_tableview(qtbot) -> None:
     assert dock_widget.model.rowCount() == 0
 
 
-def test_catalog_file_column_elides_paths_in_the_middle(qtbot) -> None:
+def test_catalog_file_column_keeps_basenames_visible_in_the_middle(qtbot) -> None:
     first_path = Path("/very/long/shared/prefix/directory/segments/customers.parquet")
     second_path = Path("/very/long/shared/prefix/directory/segments/loans.parquet")
     service = CatalogService()
@@ -67,27 +67,22 @@ def test_catalog_file_column_elides_paths_in_the_middle(qtbot) -> None:
     header.resizeSection(1, 258)
     font_metrics = QFontMetrics(view.font())
     available_width = header.sectionSize(1) - 8
-    first_middle = font_metrics.elidedText(str(first_path), view.textElideMode(), available_width)
-    second_middle = font_metrics.elidedText(str(second_path), view.textElideMode(), available_width)
-    first_right = font_metrics.elidedText(
-        str(first_path), Qt.TextElideMode.ElideRight, available_width
-    )
-    second_right = font_metrics.elidedText(
-        str(second_path), Qt.TextElideMode.ElideRight, available_width
-    )
+    first_displayed = dock.model.data(dock.model.index(0, 1), Qt.ItemDataRole.DisplayRole)
+    second_displayed = dock.model.data(dock.model.index(1, 1), Qt.ItemDataRole.DisplayRole)
+    assert isinstance(first_displayed, str)
+    assert isinstance(second_displayed, str)
+    first_middle = font_metrics.elidedText(first_displayed, view.textElideMode(), available_width)
+    second_middle = font_metrics.elidedText(second_displayed, view.textElideMode(), available_width)
 
     assert first_middle != second_middle, (
         f"identical middle-elided strings: {first_middle!r}, {second_middle!r}"
     )
     assert first_path.name in first_middle
     assert second_path.name in second_middle
-    assert first_right == second_right, (
-        f"different right-elided strings: {first_right!r}, {second_right!r}"
-    )
     assert view.textElideMode() == Qt.TextElideMode.ElideMiddle
 
 
-def test_catalog_file_column_stretches_to_available_dock_width(qtbot) -> None:
+def test_catalog_file_column_is_resizable_and_folder_column_stretches(qtbot) -> None:
     dock = CatalogDock(CatalogService())
     qtbot.addWidget(dock)
     dock.show()
@@ -96,23 +91,31 @@ def test_catalog_file_column_stretches_to_available_dock_width(qtbot) -> None:
     header = view.horizontalHeader()
     assert header is not None
 
-    dock.resize(400, 200)
-    QApplication.processEvents()
-    narrow = header.sectionSize(1)
-    dock.resize(900, 200)
-    QApplication.processEvents()
-    wide = header.sectionSize(1)
-
-    assert wide > narrow, f"File column did not grow: narrow={narrow}, wide={wide}"
     assert header.sectionResizeMode(0) == QHeaderView.ResizeMode.Interactive
-    assert header.sectionResizeMode(1) == QHeaderView.ResizeMode.Stretch
-    assert header.sectionResizeMode(2) == QHeaderView.ResizeMode.ResizeToContents
+    assert header.sectionResizeMode(1) == QHeaderView.ResizeMode.Interactive
+    assert header.sectionResizeMode(2) == QHeaderView.ResizeMode.Stretch
     assert header.sectionResizeMode(3) == QHeaderView.ResizeMode.ResizeToContents
+    assert header.sectionResizeMode(4) == QHeaderView.ResizeMode.ResizeToContents
+
+    dock.resize(450, 200)
+    QApplication.processEvents()
+    narrow_folder_width = header.sectionSize(2)
+    dock.resize(650, 200)
+    QApplication.processEvents()
+    assert header.sectionSize(2) > narrow_folder_width
+
+    header.resizeSection(1, 400)
+    assert header.sectionSize(1) == 400
+    assert isinstance(view.itemDelegateForColumn(2), FolderColumnDelegate)
 
 
-def test_catalog_file_column_keeps_paths_distinct_at_user_dock_width(qtbot) -> None:
-    first_path = Path("/run/media/beallio/external/datasets/customers.parquet")
-    second_path = Path("/run/media/beallio/external/datasets/loans.parquet")
+def test_catalog_file_column_shows_complete_basenames_at_user_dock_width(qtbot) -> None:
+    first_path = Path(
+        "C:/Users/dbeall/OneDrive - Contoso/Documents/Analytics/2026/customers.parquet"
+    )
+    second_path = Path(
+        "C:/Users/dbeall/OneDrive - Contoso/Documents/Analytics/2026/transactions_2026_q1.parquet"
+    )
     service = CatalogService()
     service.add_paths((first_path, second_path))
     dock = CatalogDock(service)
@@ -126,13 +129,15 @@ def test_catalog_file_column_keeps_paths_distinct_at_user_dock_width(qtbot) -> N
     assert header is not None
     available_width = header.sectionSize(1) - 8
     font_metrics = QFontMetrics(view.font())
-    first_shown = font_metrics.elidedText(str(first_path), view.textElideMode(), available_width)
-    second_shown = font_metrics.elidedText(str(second_path), view.textElideMode(), available_width)
+    first_displayed = dock.model.data(dock.model.index(0, 1), Qt.ItemDataRole.DisplayRole)
+    second_displayed = dock.model.data(dock.model.index(1, 1), Qt.ItemDataRole.DisplayRole)
+    assert isinstance(first_displayed, str)
+    assert isinstance(second_displayed, str)
+    first_shown = font_metrics.elidedText(first_displayed, view.textElideMode(), available_width)
+    second_shown = font_metrics.elidedText(second_displayed, view.textElideMode(), available_width)
 
-    assert first_shown != second_shown, (
-        "File cells are indistinguishable at 450 px: "
-        f"{first_shown!r}, {second_shown!r}; available_width={available_width}"
-    )
+    assert first_path.name in first_shown
+    assert second_path.name in second_shown
 
 
 def test_catalog_dock_drag_and_drop_adds_supported_files(qtbot, tmp_path: Path) -> None:
@@ -362,6 +367,7 @@ def test_catalog_vertical_header_click_selects_the_whole_row(qtbot, tmp_path: Pa
         (1, 1),
         (1, 2),
         (1, 3),
+        (1, 4),
     }
 
 
@@ -453,4 +459,4 @@ def test_catalog_dock_refresh_schema_updates_service_path(qtbot, tmp_path: Path)
             columns=(ColumnSchema("a", "BIGINT"),),
         )
     )
-    assert window.catalog.model.data(window.catalog.model.index(0, 3)) == "Ready"
+    assert window.catalog.model.data(window.catalog.model.index(0, 4)) == "Ready"

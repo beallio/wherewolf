@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Final
@@ -54,6 +55,18 @@ class SettingsService:
     @staticmethod
     def _font_size_key(schema_version: str) -> str:
         return f"{schema_version}/editor/font_size"
+
+    @staticmethod
+    def _editor_text_key(schema_version: str) -> str:
+        return f"{schema_version}/editor/text"
+
+    @staticmethod
+    def _editor_tabs_key(schema_version: str) -> str:
+        return f"{schema_version}/editor/tabs"
+
+    @staticmethod
+    def _active_editor_tab_index_key(schema_version: str) -> str:
+        return f"{schema_version}/editor/active_tab_index"
 
     @staticmethod
     def _last_dataset_directory_key(schema_version: str) -> str:
@@ -126,6 +139,18 @@ class SettingsService:
     @property
     def editor_font_size_key(self) -> str:
         return self._font_size_key(self.namespace_prefix)
+
+    @property
+    def editor_text_key(self) -> str:
+        return self._editor_text_key(self.namespace_prefix)
+
+    @property
+    def editor_tabs_key(self) -> str:
+        return self._editor_tabs_key(self.namespace_prefix)
+
+    @property
+    def active_editor_tab_index_key(self) -> str:
+        return self._active_editor_tab_index_key(self.namespace_prefix)
 
     @property
     def last_dataset_directory_key(self) -> str:
@@ -210,6 +235,53 @@ class SettingsService:
 
     def save_editor_font_size(self, size: int) -> None:
         self._settings.setValue(self.editor_font_size_key, int(size))
+
+    def restore_editor_text(self) -> str:
+        value = self._settings.value(self.editor_text_key, "")
+        return value if isinstance(value, str) else ""
+
+    def save_editor_text(self, text: str) -> None:
+        self._settings.setValue(self.editor_text_key, str(text))
+
+    def restore_editor_tabs(self) -> tuple[tuple[str, Path | None], ...]:
+        """Restore valid tab records without treating malformed settings as fatal."""
+        value = self._settings.value(self.editor_tabs_key, "")
+        if not isinstance(value, str) or not value:
+            return ()
+        try:
+            records = json.loads(value)
+        except (TypeError, ValueError):
+            return ()
+        if not isinstance(records, list):
+            return ()
+
+        tabs: list[tuple[str, Path | None]] = []
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            text = record.get("text")
+            path_value = record.get("path")
+            if not isinstance(text, str) or not (path_value is None or isinstance(path_value, str)):
+                continue
+            tabs.append((text, Path(path_value) if path_value else None))
+        return tuple(tabs)
+
+    def save_editor_tabs(
+        self,
+        tabs: Iterable[tuple[str, Path | None]],
+        active_index: int,
+    ) -> None:
+        records = [
+            {"text": text, "path": str(path) if path is not None else None} for text, path in tabs
+        ]
+        self._settings.setValue(self.editor_tabs_key, json.dumps(records))
+        self._settings.setValue(self.active_editor_tab_index_key, max(0, int(active_index)))
+
+    def restore_active_editor_tab_index(self) -> int:
+        value = self._settings.value(self.active_editor_tab_index_key, 0)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            return 0
+        return value
 
     def restore_last_dataset_directory(self) -> Path:
         value = self._settings.value(

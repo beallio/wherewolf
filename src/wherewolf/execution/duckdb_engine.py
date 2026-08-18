@@ -65,6 +65,7 @@ class DuckDBEngine:
         path: str = "",
         limit: int | None = 1000,
         catalog: dict[str, str] | None = None,
+        params: list[object] | None = None,
     ) -> QueryResult:
         """Executes a SQL query against local files using DuckDB.
 
@@ -91,7 +92,7 @@ class DuckDBEngine:
                 self._register_view(dataset_path, alias=alias)
 
             # 3. Execute the user query
-            rel = self.con.sql(query)
+            rel = self.con.sql(query, params=params or [])
 
             if limit is None:
                 # Full result set (used for full exports): no row cap.

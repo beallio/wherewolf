@@ -1,11 +1,12 @@
 from pathlib import Path
 
 from PyQt6.QtGui import QKeySequence
+from PyQt6.QtWidgets import QWidget
 
 from wherewolf.desktop import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FakeFileDialogService
 from wherewolf.desktop.main_window import MainWindow
-from wherewolf.services import CatalogService, SettingsService
+from wherewolf.services import CatalogService, ExportFormat, SettingsService
 
 
 def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
@@ -30,6 +31,10 @@ def test_build_actions_contains_expected_shortcuts_and_states(qtbot) -> None:
         == QKeySequence(QKeySequence.StandardKey.Open).toString()
     )
     assert "Unavailable" not in actions.add_datasets.toolTip()
+
+    assert actions.new_tab.shortcut().toString() == QKeySequence("Ctrl+T").toString()
+    assert actions.close_tab.shortcut().toString() == QKeySequence("Ctrl+W").toString()
+    assert actions.save_current_query.text() == "Save Current Query…"
 
     assert actions.reset_layout.text() == "Reset Layout"
     assert actions.clear_history.text() == "Clear History"
@@ -71,6 +76,27 @@ def test_add_datasets_opens_at_last_directory_and_updates_on_success(tmp_path, q
         ) -> tuple[Path, ...]:
             self.observed.append(default_directory)
             return self.paths
+
+        def choose_value_counts_path(
+            self,
+            default_directory: Path | None,
+            export_format: ExportFormat,
+            parent=None,
+        ) -> Path | None:
+            del default_directory, export_format, parent
+            return None
+
+        def choose_sql_open_path(
+            self, default_directory: Path | None, parent: QWidget | None = None
+        ) -> Path | None:
+            del default_directory, parent
+            return None
+
+        def choose_sql_save_path(
+            self, default_directory: Path | None, parent: QWidget | None = None
+        ) -> Path | None:
+            del default_directory, parent
+            return None
 
     service = CatalogService()
     start_dir = tmp_path / "start"

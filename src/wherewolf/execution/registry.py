@@ -154,7 +154,7 @@ class _DuckDBAdapter(ExecutionEngine):
             for binding in request.catalog:
                 self._register_view(con, str(binding.path), binding.alias)
 
-            rel = con.sql(request.executable_sql)
+            rel = con.sql(request.executable_sql, params=list(request.parameters))
 
             limit = request.preview_limit
             df_plus_one = rel.limit(limit + 1).pl()
@@ -431,6 +431,19 @@ class _SparkAdapter(_BaseAdapter):
         self._engine = SparkEngine(request_id=request_id)
 
         def execute_fn(request: ExecutionRequest) -> QueryResult:
+            if request.parameters:
+                return QueryResult(
+                    request_id=request.request_id,
+                    status=ExecutionStatus.FAILED,
+                    frame=None,
+                    execution_seconds=0.0,
+                    preview_row_count=0,
+                    total_row_count=None,
+                    truncated=False,
+                    completed_at=datetime.now(UTC),
+                    error_type="unsupported_parameters",
+                    error_message="Spark does not support bound query parameters",
+                )
             catalog = {binding.alias: str(binding.path) for binding in request.catalog}
             legacy_result = self._engine.execute(
                 request.executable_sql,

@@ -129,7 +129,13 @@ class SparkEngine:
         path: str = "",
         limit: int | None = 1000,
         catalog: dict[str, str] | None = None,
+        params: list[object] | None = None,
     ) -> QueryResult:
+        if params:
+            return QueryResult(
+                success=False,
+                error_message="Spark does not support bound query parameters",
+            )
         if not SPARK_AVAILABLE:
             return QueryResult(success=False, error_message="PySpark not installed")
 

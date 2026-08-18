@@ -1,5 +1,67 @@
 # Changelog
 
+## [0.9.0] - 2026-08-17 — Your work survives a restart, filenames are readable, and queries get tabs
+
+### Added
+
+- **The dataset catalog is restored when you reopen Wherewolf.** Datasets used to vanish on
+  exit, so every session began by re-adding the same files and waiting through schema
+  inspection again. The catalog now persists to `~/.wherewolf/catalog.json` and comes back on
+  launch, with schemas re-inspected in the background. A file that has moved or been deleted is
+  kept and marked "Unavailable — file not found" rather than disappearing without explanation,
+  because a query in your history that references it should still make sense.
+- **The query you were writing is still there next time.** Only *executed* queries reached
+  history, so an unfinished draft — the interesting one, because it was the one that wasn't
+  working yet — was lost on close. The editor buffer now survives a restart. `.sql` files can
+  also be opened and saved outright, with the filename in the window title and a marker when
+  there are unsaved changes.
+- **Multiple query tabs.** `Ctrl+T` opens one, `Ctrl+W` closes it, and each tab keeps its own
+  buffer, its own file, and its own results. Switching tabs shows that tab's last result, and a
+  query still running when you switch will not write its result into whichever tab you happen
+  to be looking at. Open tabs are restored on launch.
+- **A saved-query library.** Name a query, give it `:parameters`, and run it again later with
+  new values — useful for the same data-quality rule against each week's export. A `{dataset}`
+  placeholder binds to a catalog alias chosen at run time. Parameter values are bound rather
+  than pasted into the SQL, so a value containing quotes or a semicolon is data and cannot
+  change what the statement does. Parameterised queries are DuckDB-only; Spark reports that it
+  cannot run them rather than guessing.
+- **History can be searched and pinned.** A filter box narrows the list by substring, and
+  pinned records sort to the top and are exempt from the hundred-entry cap — pinning something
+  and then running a hundred more queries no longer quietly loses it.
+- **Value counts can be exported** in CSV, Excel, or Parquet, and the table sorts by count and
+  percentage numerically, so ascending order finds the rarest values instead of putting 100
+  before 9.
+- **The schema panel filters columns by name**, which matters on a two-hundred-column Parquet
+  file where finding one column otherwise means scrolling.
+
+### Changed
+
+- **The catalog shows filenames.** The File column previously rendered the whole absolute path,
+  so at any realistic dock width it displayed the directory prefix every row shares and cut off
+  the filename that distinguishes them. File now shows the filename, a new Folder column shows
+  the parent directory dimmed and elided from the left, and both carry the full path on hover.
+  The File column is also draggable again — it had been set to stretch, which silently made it
+  impossible to resize.
+- **The schema panel names its dataset by filename**, with the full path on hover, and moves
+  profiling warnings to their own line so a long warning no longer pushes the dataset name
+  around.
+- **Query results keep their summary on screen.** Engine, row count, elapsed time and the
+  truncation warning used to appear in the status bar for ten seconds and then vanish, so
+  "was this truncated?" meant running the query again.
+- **The value-counts window has an adjustable splitter** between the table and the chart.
+
+### Fixed
+
+- **The value-counts chart can be scrolled to the last row.** With the default Top N of 50 the
+  chart drew roughly 1100px of bars into a pane a few hundred pixels tall and simply painted
+  the rest off the widget, where no scrolling, resizing, or dragging could reach it. You saw
+  the top eight bars with no indication the other forty-two existed.
+- **Changing Top N runs one query instead of one per keystroke.** Clicking the arrow from 50 to
+  60 started ten concurrent scans of the column, and a slow early result could land after a
+  fast later one and overwrite it.
+- **The schema panel's tooltip no longer names the wrong file** when the selected dataset fails
+  to load.
+
 ## [0.8.0] - 2026-08-11 — History actions, self-sizing columns, cell selection, and a working Ctrl+/
 
 ### Added

@@ -1,0 +1,63 @@
+{
+  "date": "2026-08-16",
+  "task_objective": "Implement filename/folder catalog columns and make value-count charts scrollable, debounced, and stale-result safe.",
+  "files_modified": [
+    "docs/plans/2026-08-16_filename-and-value-counts-ux.md",
+    "src/wherewolf/desktop/models/catalog_model.py",
+    "src/wherewolf/desktop/widgets/__init__.py",
+    "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "src/wherewolf/desktop/widgets/folder_column_delegate.py",
+    "src/wherewolf/desktop/widgets/value_counts_window.py",
+    "tests/test_catalog_dock.py",
+    "tests/test_catalog_model.py",
+    "tests/test_folder_column_delegate.py",
+    "tests/test_value_counts_window.py"
+  ],
+  "tests_added": [
+    "Catalog model filename, folder, and full-path tooltip coverage",
+    "Folder delegate colour-direction and ElideLeft coverage",
+    "Catalog File resize, Folder stretch, and 450 px basename visibility coverage",
+    "Value-count chart scroll range, 10,000-row culling, and fixed-row paint-position coverage",
+    "Top N debounce coalescing, constant interval, and stale-worker result rejection coverage",
+    "Dock filename rendering now reads the DisplayRole value, and Folder stretch is checked at narrow and wide dock widths"
+  ],
+  "test_rationale": [
+    "Existing catalog column-index expectations moved because Folder is a required fifth column; the row-selection expectation now includes that fifth visible cell.",
+    "The fixed-height paint assertion uses ascending bar lengths and a midpoint pixel so the specified compressed-row mutation cannot accidentally pass by sampling a longer earlier bar.",
+    "The initial value-count test commits df5768f and cb0c050 followed their implementation commits because mutation checks exposed weak coverage; they were added as focused regression fences, then reviewer mutation testing independently confirmed their load-bearing behavior."
+  ],
+  "design_decisions": [
+    "The File model value is Path.name, while Folder displays Path.parent and both retain the full path in their tooltip.",
+    "FolderColumnDelegate left-elides and dims only Text and WindowText, preserving selected-row HighlightedText.",
+    "ValueCountsChart owns a fixed 24 px row height and exposes its full content height to a QScrollArea; paint work is culled to the exposed rectangle while scale uses all counts.",
+    "A single-shot 300 ms timer coalesces Top N changes, and only the most recently launched worker may apply a result."
+  ],
+  "verification_outputs": {
+    "baseline": "547 passed, 7 deselected",
+    "V1": "Catalog model: 4 passed; dropping Folder made test_catalog_model_tracks_row_and_column_counts fail with assert 4 == 5; restoration: 4 passed.",
+    "V2": "section_sizes=[100, 220, 100, 53, 93]; customers.parquet and transactions_2026_q1.parquet were both fully visible; exit=0.",
+    "V3": "1 passed, 17 deselected for resize/interactive/stretch selection.",
+    "V4": "8 passed for value-counts tests; minimumHeight=1216 sizeHint=1216 needed_at_least=1200 viewport_height=300; exit=0.",
+    "V5": "2 passed, 6 deselected for debounce/coalesce/stale selection.",
+    "V6": [
+      "1: returning the full path failed the model assertion: '/tmp/exports/a.csv' != 'a.csv'; restoration: 22 passed.",
+      "2: restoring File Stretch produced 2 catalog failures, including the Interactive resize-mode assertion; restoration: 18 passed.",
+      "3: dropping ElideLeft failed because ElideMiddle != ElideLeft; restoration: 2 passed.",
+      "4: restoring compressed row height failed the fixed-row pixel assertion; restoration: 8 passed.",
+      "5: reconnecting valueChanged directly recorded [50, 10, 20, 30] instead of [50, 30]; restoration: 8 passed."
+    ],
+    "review_round_01": [
+      "Baseline: 554 passed, 7 deselected.",
+      "Red: the constant-debounce-interval test failed with 10 == 300 while the other 26 focused tests passed.",
+      "M1 mutation: returning the full path from the File model column made the basename-selected catalog dock suite fail: 1 failed, 1 passed, 16 deselected; restoration: 2 passed, 16 deselected.",
+      "Focused post-fix catalog and value-count tests: 27 passed."
+    ]
+  },
+  "deferred_and_unverified": [
+    "Windows 11 with Segoe UI was not exercised. Confirm the reporting machine before release because its pixel thresholds differ from Linux offscreen Sans, even though the displayed filename now has no directory prefix.",
+    "Delegate output is not pixel-verified across all Qt styles; its style-option palette and ElideLeft configuration are tested directly.",
+    "The Top N = 10,000 case verifies full height and safe culling, not frame-time performance.",
+    "No real large source was used to overlap workers in wall-clock time; stale-result rejection is exercised directly."
+  ],
+  "results": "Implementation commits are e8b3be1, 71cdc22, e58055f, f6d5808, df5768f, and cb0c050. Review 01 fixed the debounce signal overload, strengthened File model-to-view coverage, removed an obsolete full-path elision assertion, and restored coverage for Folder stretch. Final quality gates and clean-tree confirmation are required before the round-complete marker is written."
+}
