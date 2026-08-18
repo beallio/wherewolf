@@ -135,13 +135,21 @@ class FindReplaceDialog(QDialog):
         layout.addRow("Replace", self.replace_input)
         layout.addRow(self.find_next_button, self.replace_next_button)
         layout.addRow(self.replace_all_button)
-        self.find_next_button.clicked.connect(lambda: editor.find_text(self.find_input.text()))
-        self.replace_next_button.clicked.connect(
-            lambda: editor.replace_next(self.find_input.text(), self.replace_input.text())
-        )
-        self.replace_all_button.clicked.connect(
-            lambda: editor.replace_all(self.find_input.text(), self.replace_input.text())
-        )
+        self.find_next_button.clicked.connect(self._find_next)
+        self.replace_next_button.clicked.connect(self._replace_next)
+        self.replace_all_button.clicked.connect(self._replace_all)
+
+    def set_editor(self, editor: SqlEditor) -> None:
+        self._editor = editor
+
+    def _find_next(self) -> None:
+        self._editor.find_text(self.find_input.text())
+
+    def _replace_next(self) -> None:
+        self._editor.replace_next(self.find_input.text(), self.replace_input.text())
+
+    def _replace_all(self) -> None:
+        self._editor.replace_all(self.find_input.text(), self.replace_input.text())
 
 
 class PreferencesDialog(QDialog):
@@ -1298,6 +1306,9 @@ class MainWindow(QMainWindow):
         self._refresh_translation()
         self._update_catalog_affordances()
         self._update_sql_dirty_state()
+        dialog = getattr(self, "find_replace_dialog", None)
+        if isinstance(dialog, FindReplaceDialog):
+            dialog.set_editor(editor)
         editor.setFocus()
 
     def _update_editor_tab_label(self, editor: SqlEditor) -> None:
@@ -1519,6 +1530,11 @@ class MainWindow(QMainWindow):
                 return
             widget = widget.parentWidget()
 
+    def _run_current_editor_action(self, operation: str) -> None:
+        editor = self.current_editor
+        if editor is not None:
+            getattr(editor, operation)()
+
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
         assert menu_bar is not None
@@ -1543,9 +1559,19 @@ class MainWindow(QMainWindow):
         edit_menu.setObjectName("edit_menu")
         editor = self.current_editor
         assert editor is not None
-        undo, redo, _cut, _copy, _paste, toggle_comment = editor.edit_actions
-        edit_menu.addAction(undo)
-        edit_menu.addAction(redo)
+        self.undo_action = QAction("Undo", self)
+        self.undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self.undo_action.triggered.connect(lambda: self._run_current_editor_action("undo"))
+        self.redo_action = QAction("Redo", self)
+        self.redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        self.redo_action.triggered.connect(lambda: self._run_current_editor_action("redo"))
+        self.toggle_comment_action = QAction("Toggle Comment", self)
+        self.toggle_comment_action.setShortcut(QKeySequence("Ctrl+/"))
+        self.toggle_comment_action.triggered.connect(
+            lambda: self._run_current_editor_action("toggle_comment")
+        )
+        edit_menu.addAction(self.undo_action)
+        edit_menu.addAction(self.redo_action)
         edit_menu.addSeparator()
 
         self.cut_action = QAction("Cut", self)
@@ -1576,7 +1602,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.select_all_action)
         edit_menu.addAction(self.find_replace_action)
         edit_menu.addSeparator()
-        edit_menu.addAction(toggle_comment)
+        edit_menu.addAction(self.toggle_comment_action)
         edit_menu.addSeparator()
         edit_menu.addAction(self.desktop_actions.clear_history)
 
@@ -1652,6 +1678,12 @@ class MainWindow(QMainWindow):
         editor = self.current_editor
         if editor is None:
             return
+        dialog = getattr(self, "find_replace_dialog", None)
+        if isinstance(dialog, FindReplaceDialog):
+            dialog.set_editor(editor)
+            dialog.show()
+            dialog.raise_()
+            return
         self.find_replace_dialog = FindReplaceDialog(editor, self)
         self.find_replace_dialog.show()
 
@@ -1660,10 +1692,14 @@ class MainWindow(QMainWindow):
         if editor is None:
             return
         self.preferences_dialog = PreferencesDialog(self._settings_service, self)
-        original_editor_theme = editor.theme_name
+        original_editor_themes = {editor: editor.theme_name for editor in self._editor_states}
         original_program_theme = self._settings_service.restore_program_theme()
-        self.preferences_dialog.editor_theme_selector.currentTextChanged.connect(editor.set_theme)
-        self.preferences_dialog.rejected.connect(lambda: editor.set_theme(original_editor_theme))
+        self.preferences_dialog.editor_theme_selector.currentTextChanged.connect(
+            self._apply_editor_theme_to_all
+        )
+        self.preferences_dialog.rejected.connect(
+            lambda: [editor.set_theme(theme) for editor, theme in original_editor_themes.items()]
+        )
         self.preferences_dialog.program_theme_selector.currentTextChanged.connect(
             self._apply_program_theme
         )
@@ -1686,8 +1722,14 @@ class MainWindow(QMainWindow):
         )
         self._settings_service.save_program_theme(dialog.program_theme_selector.currentText())
         self._apply_program_theme(dialog.program_theme_selector.currentText())
+        self._settings_service.save_editor_theme(dialog.editor_theme_selector.currentText())
+        self._apply_editor_theme_to_all(dialog.editor_theme_selector.currentText())
         for editor in self._editor_states:
             editor.set_font_size(dialog.font_size.value())
+
+    def _apply_editor_theme_to_all(self, theme: str) -> None:
+        for editor in self._editor_states:
+            editor.set_theme(theme)
 
     @staticmethod
     def _apply_program_theme(mode: str) -> None:

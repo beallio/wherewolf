@@ -1192,12 +1192,12 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Toggle Comment",
         "Clear History",
     ]
-    assert actions[:2] == list(window.editor.edit_actions[:2])
+    assert actions[:2] == [window.undo_action, window.redo_action]
     assert actions[2:5] == [window.cut_action, window.copy_action, window.paste_action]
     assert window.copy_action is not window.editor.edit_actions[3]
     assert window.select_all_action.shortcut().toString() == "Ctrl+A"
     assert window.find_replace_action.shortcut().toString() == "Ctrl+F"
-    assert window.editor.edit_actions[-1].shortcut().toString() == "Ctrl+/"
+    assert window.toggle_comment_action.shortcut().toString() == "Ctrl+/"
 
 
 def test_main_window_find_replace_dialog_changes_editor_text(qtbot) -> None:
@@ -1212,6 +1212,45 @@ def test_main_window_find_replace_dialog_changes_editor_text(qtbot) -> None:
     dialog.replace_all_button.click()
 
     assert window.editor.text() == "SELECT new_value, new_value"
+
+
+def test_main_window_edit_actions_and_find_replace_follow_the_active_tab(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    first = window.editor
+    first.setText("SELECT old_value")
+    window.find_replace_action.trigger()
+    dialog = window.find_replace_dialog
+    second = window._new_editor_tab()
+    second.setText("SELECT old_value")
+
+    window.toggle_comment_action.trigger()
+    dialog.find_input.setText("old_value")
+    dialog.replace_input.setText("new_value")
+    dialog.replace_all_button.click()
+
+    assert first.text() == "SELECT old_value"
+    assert second.text() == "-- SELECT new_value"
+
+
+def test_main_window_theme_preview_and_rejection_updates_every_open_tab(
+    tmp_path: Path, qtbot
+) -> None:
+    settings = _configure_qsettings_path(tmp_path / "multi-tab-theme")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    first = window.editor
+    second = window._new_editor_tab()
+    original_themes = (first.theme_name, second.theme_name)
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.editor_theme_selector.setCurrentText("Light")
+
+    assert (first.theme_name, second.theme_name) == ("Light", "Light")
+    dialog.reject()
+
+    assert (first.theme_name, second.theme_name) == original_themes
 
 
 def test_main_window_preview_filter_reduces_rows_and_clear_restores_them(qtbot) -> None:
