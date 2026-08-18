@@ -504,8 +504,53 @@ def test_main_window_binds_saved_query_parameters_before_execution(
 
     window._run_saved_query(query)
 
+    assert submitted[0].original_sql == "SELECT :name, ':name', value::int"
     assert submitted[0].executable_sql == "SELECT ?, ':name', value::int"
     assert submitted[0].parameters == ("'; DROP TABLE t; --",)
+
+
+def test_saved_query_history_keeps_named_parameters_and_rebinds_on_restore(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    history = HistoryManager(tmp_path / "history.json")
+    query = store.save_query(name="Find user", description="", sql="SELECT :name AS name")
+    window = MainWindow(saved_query_store=store, history_manager=history)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    monkeypatch.setattr(
+        main_window.QInputDialog, "getText", lambda *_args, **_kwargs: ("not persisted", True)
+    )
+
+    window._run_saved_query(query)
+    request = submitted[0]
+    window._on_query_result_ready(
+        QueryResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            frame=pl.DataFrame({"name": ["not persisted"]}),
+            execution_seconds=0.01,
+            preview_row_count=1,
+            total_row_count=1,
+            truncated=False,
+            completed_at=datetime.now(UTC),
+        ),
+        request,
+    )
+
+    record = history.get_all()[0]
+    assert record["query"] == "SELECT :name AS name"
+    assert "not persisted" not in (tmp_path / "history.json").read_text(encoding="utf-8")
+
+    window.history_dock.record_selected.emit(record)
+    window._on_run_triggered()
+
+    assert submitted[1].original_sql == "SELECT :name AS name"
+    assert submitted[1].executable_sql == "SELECT ? AS name"
+    assert submitted[1].parameters == ("not persisted",)
 
 
 def test_main_window_binds_saved_query_dataset_alias_as_a_quoted_identifier(

@@ -106,6 +106,34 @@ def test_build_same_dialect_does_not_rewrite_sql():
     assert req.executable_sql == sql
 
 
+def test_build_preserves_named_original_sql_while_executing_bound_sql() -> None:
+    catalog_service = CatalogService()
+
+    request = ExecutionRequestBuilder.build(
+        sql="SELECT ? AS value",
+        original_sql="SELECT :value AS value",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog_service,
+        parameters=("bound",),
+    )
+
+    assert request.original_sql == "SELECT :value AS value"
+    assert request.executable_sql == "SELECT ? AS value"
+    assert request.parameters == ("bound",)
+
+
+def test_build_rejects_empty_supplied_original_sql() -> None:
+    with pytest.raises(ValueError, match="empty|whitespace"):
+        ExecutionRequestBuilder.build(
+            sql="SELECT ?",
+            original_sql=" \n\t ",
+            source_dialect="duckdb",
+            engine=EngineKind.DUCKDB,
+            catalog_service=CatalogService(),
+        )
+
+
 def test_build_different_dialect_translates_sql():
     catalog_service = CatalogService()
     # T-SQL top N -> DuckDB LIMIT

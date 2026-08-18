@@ -618,12 +618,19 @@ class MainWindow(QMainWindow):
         sql: str,
         *,
         parameters: tuple[object, ...] = (),
+        original_sql: str | None = None,
         editor: SqlEditor | None = None,
     ) -> None:
         origin = editor or self.current_editor
         if origin is None:
             self._show_status("No SQL editor is open", 5000)
             return
+        original_sql = sql if original_sql is None else original_sql
+        if not parameters:
+            prepared = self._prompt_and_bind_parameters(original_sql)
+            if prepared is None:
+                return
+            sql, parameters = prepared
         try:
             engine = cast(EngineKind, self.engine_selector.currentData())
             source_dialect = self.input_dialect_selector.currentData()
@@ -636,6 +643,7 @@ class MainWindow(QMainWindow):
                 catalog_service=self._catalog_service,
                 preview_limit=self._preview_limit_value,
                 parameters=parameters,
+                original_sql=original_sql,
             )
         except TranslationError as exc:
             self._on_editor_diagnostics(
@@ -676,6 +684,9 @@ class MainWindow(QMainWindow):
         sql = self._bind_saved_query_dataset(query.sql)
         if sql is None:
             return
+        self._execute_sql(sql, original_sql=sql)
+
+    def _prompt_and_bind_parameters(self, sql: str) -> tuple[str, tuple[object, ...]] | None:
         parameter_names = extract_parameters(sql)
         values: dict[str, str] = {}
         for name in parameter_names:
@@ -688,11 +699,11 @@ class MainWindow(QMainWindow):
                 return
             values[name] = value
         try:
-            sql, parameters = bind_parameters(sql, values)
+            executable_sql, parameters = bind_parameters(sql, values)
         except ValueError as error:
             self._show_status(f"Could not bind query parameters: {error}", 5000)
-            return
-        self._execute_sql(sql, parameters=tuple(parameters))
+            return None
+        return executable_sql, tuple(parameters)
 
     def _bind_saved_query_dataset(self, sql: str) -> str | None:
         """Resolve the saved-query identifier token through the current catalog aliases."""
