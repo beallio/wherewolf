@@ -27,9 +27,13 @@ class ExecutionRequestBuilder:
         catalog_service: CatalogService,
         preview_limit: int = 1000,
         parameters: tuple[object, ...] = (),
+        original_sql: str | None = None,
     ) -> ExecutionRequest:
         cleaned_sql = sql.strip()
         if not cleaned_sql:
+            raise ValueError("SQL statement cannot be empty or whitespace-only")
+        cleaned_original_sql = (sql if original_sql is None else original_sql).strip()
+        if not cleaned_original_sql:
             raise ValueError("SQL statement cannot be empty or whitespace-only")
 
         unsupported_construct = _unsupported_oracle_construct(cleaned_sql, source_dialect)
@@ -56,7 +60,7 @@ class ExecutionRequestBuilder:
             request_id=uuid4(),
             engine=engine,
             source_dialect=source_dialect,
-            original_sql=cleaned_sql,
+            original_sql=cleaned_original_sql,
             executable_sql=executable_sql,
             catalog=catalog_snapshot,
             preview_limit=preview_limit,

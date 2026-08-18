@@ -28,6 +28,7 @@ class SavedQueriesDock(QWidget):
     def __init__(self, saved_query_store: SavedQueryStore, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._saved_query_store = saved_query_store
+        self._queries_by_id: dict[str, SavedQuery] = {}
         self.query_filter = QLineEdit(self)
         self.query_filter.setObjectName("saved_queries_filter")
         self.query_filter.setPlaceholderText("Filter saved queries")
@@ -58,8 +59,10 @@ class SavedQueriesDock(QWidget):
 
     def refresh(self) -> None:
         """Reload records from the store and retain stable IDs on list items."""
+        queries = self._saved_query_store.get_all()
+        self._queries_by_id = {query.id: query for query in queries}
         self.query_list.clear()
-        for query in self._saved_query_store.get_all():
+        for query in queries:
             item = QListWidgetItem(query.name)
             item.setData(Qt.ItemDataRole.UserRole, query.id)
             item.setToolTip(query.description or query.sql)
@@ -106,7 +109,7 @@ class SavedQueriesDock(QWidget):
         if item is None:
             return None
         query_id = item.data(Qt.ItemDataRole.UserRole)
-        return self._saved_query_store.get_by_id(query_id) if isinstance(query_id, str) else None
+        return self._queries_by_id.get(query_id) if isinstance(query_id, str) else None
 
     def _emit_selected(self, signal) -> None:
         query = self._selected_query()

@@ -205,6 +205,26 @@ class CatalogService:
             self._entries = tuple(entries)
             self._notify()
 
+    def refresh_availability(self, entry_id: UUID) -> CatalogEntry:
+        """Re-stat one entry and notify listeners only when availability changes."""
+        index = next((i for i, entry in enumerate(self._entries) if entry.id == entry_id), None)
+        if index is None:
+            raise KeyError(f"No catalog entry with id {entry_id}")
+        entry = self._entries[index]
+        try:
+            entry.path.stat()
+            unavailable = False
+        except OSError:
+            unavailable = True
+        if entry.unavailable == unavailable:
+            return entry
+        entries = list(self._entries)
+        updated = replace(entry, unavailable=unavailable)
+        entries[index] = updated
+        self._entries = tuple(entries)
+        self._notify()
+        return updated
+
     def snapshot(self) -> tuple[CatalogBinding, ...]:
         return tuple(
             CatalogBinding(
