@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Parameterized DuckDB exports now use the same bound request as preview, while history keeps the
+  reusable named-parameter SQL and never stores entered values.
+- `{dataset}` is replaced only in SQL code, not in strings, quoted identifiers, or comments.
+- Edit commands, Find/Replace, and theme previews follow every open editor tab rather than the
+  tab that happened to exist when the window opened.
+- Opening a SQL file preserves a non-pristine buffer in its own tab, and restored file drafts
+  correctly show as modified when they differ from disk or the file cannot be read.
+- Result ordering now refuses a direct saved-query result instead of editing unrelated SQL;
+  successful queries still reach history after their origin tab closes.
+- Returned catalog files recover from their unavailable state, catalog-save failures stay visible
+  and retry safely, and saved-query filtering no longer rereads the store for each keystroke.
+
 ## [0.9.0] - 2026-08-17 — Your work survives a restart, filenames are readable, and queries get tabs
 
 ### Added

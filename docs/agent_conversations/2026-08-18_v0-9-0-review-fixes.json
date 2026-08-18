@@ -1,0 +1,46 @@
+{
+  "date": "2026-08-18",
+  "objective": "Implement every v0.9.0 review fix in docs/plans/2026-08-18_v0-9-0-review-fixes.md.",
+  "files_modified": [
+    "src/wherewolf/services/execution_request_builder.py",
+    "src/wherewolf/services/query_parameters.py",
+    "src/wherewolf/services/catalog_service.py",
+    "src/wherewolf/execution/registry.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/saved_queries_dock.py",
+    "tests/test_execution_request_builder.py",
+    "tests/test_full_export.py",
+    "tests/test_query_parameters.py",
+    "tests/test_catalog_service.py",
+    "tests/test_main_window.py",
+    "tests/test_saved_queries_dock.py",
+    "CHANGELOG.md",
+    "README.md"
+  ],
+  "tests_added": [
+    "bound CSV, Parquet, and XLSX exports with repeated parameters",
+    "saved-query history preserves named parameters and rebinds on restore",
+    "dataset token lexical boundaries",
+    "active-tab edit/find-replace/theme behavior",
+    "open-SQL buffer preservation and restored disk baselines",
+    "direct-saved-query ordering and closed-tab history completion",
+    "catalog availability recovery",
+    "saved-query filtering store-read budget"
+  ],
+  "design_decisions": [
+    "ExecutionRequest carries bound executable SQL separately from user-facing original SQL.",
+    "Catalog availability and result provenance are immutable service/window state, not inferred from current widgets.",
+    "SavedQueriesDock keeps one in-memory ID-to-record snapshot per refresh."
+  ],
+  "verification": [
+    {"command": "./run.sh uv run pytest", "exit_code": 0, "output": "620 passed, 7 deselected before documentation"},
+    {"command": "scripts/orchestration/run-quality-gates", "exit_code": "pending", "output": "run after the documentation commit"},
+    {"command": "scripts/orchestration/check-review-notes-not-deleted", "exit_code": "pending", "output": "run after the documentation commit"}
+  ],
+  "deferred_verification": [
+    "Manual desktop smoke sequences require an interactive desktop session.",
+    "Windows 11 native dialogs, shortcuts, and modified-window presentation were not available.",
+    "Spark parameterized execution/export remains intentionally unsupported."
+  ],
+  "final_results": "All planned behavior units were implemented in atomic commits; final gates and round marker follow this documentation commit."
+}

@@ -102,7 +102,8 @@ preview only and cannot reach rows excluded by the row limit.
 Clicking a header only sorts the local preview. While a local sort is active, Wherewolf labels it
 **Sorted preview only.** It does not rerun or alter your query. To change the result order of the
 query itself, use **Apply Ascending Order to Query** or **Apply Descending Order to Query** from
-that header's context menu, then run the resulting SQL.
+that header's context menu, then run the resulting SQL. These commands apply only to a result
+produced by the current editor tab; open a saved query in a tab before changing its SQL order.
 
 ## Export
 
