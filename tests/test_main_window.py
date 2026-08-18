@@ -255,6 +255,37 @@ def test_main_window_open_and_save_sql_tracks_the_current_file_and_dirty_state(
     assert save_as_path.with_suffix(".sql").name in window.windowTitle()
 
 
+def test_open_sql_preserves_a_nonpristine_current_buffer_in_a_separate_tab(
+    tmp_path: Path, qtbot
+) -> None:
+    opened_path = tmp_path / "opened.sql"
+    opened_path.write_text("SELECT opened", encoding="utf-8")
+    window = MainWindow(file_dialog_service=FakeFileDialogService((), sql_open_path=opened_path))
+    qtbot.addWidget(window)
+    window.editor.setText("SELECT unsaved")
+
+    window.desktop_actions.open_sql.trigger()
+
+    assert window.editor_tabs.count() == 2
+    first = window.editor_tabs.widget(0)
+    assert isinstance(first, SqlEditor)
+    assert first.text() == "SELECT unsaved"
+    assert window.editor.text() == "SELECT opened"
+
+
+def test_restored_file_backed_draft_uses_disk_text_as_dirty_baseline(tmp_path: Path, qtbot) -> None:
+    path = tmp_path / "saved.sql"
+    path.write_text("SELECT disk", encoding="utf-8")
+    settings = _configure_qsettings_path(tmp_path / "restore-dirty")
+    settings.save_editor_tabs((("SELECT draft", path),), active_index=0)
+
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    assert window.editor.text() == "SELECT draft"
+    assert window.isWindowModified()
+
+
 def test_main_window_save_sql_without_a_current_file_uses_save_as(tmp_path: Path, qtbot) -> None:
     destination = tmp_path / "untitled_query"
     window = MainWindow(file_dialog_service=FakeFileDialogService((), sql_save_path=destination))

@@ -113,7 +113,7 @@ class _EditorTabState:
     """State that belongs to one SQL editor tab rather than the whole window."""
 
     path: Path | None = None
-    last_saved_text: str = ""
+    last_saved_text: str | None = ""
     last_request: ExecutionRequest | None = None
     last_result: QueryResult | None = None
 
@@ -389,7 +389,7 @@ class MainWindow(QMainWindow):
             state.path = path
 
     @property
-    def _last_saved_sql_text(self) -> str:
+    def _last_saved_sql_text(self) -> str | None:
         state = self._current_editor_state()
         return state.last_saved_text if state is not None else ""
 
@@ -1046,10 +1046,11 @@ class MainWindow(QMainWindow):
 
     def _update_sql_dirty_state(self) -> None:
         editor = self.current_editor
+        baseline = self._last_saved_sql_text
         is_dirty = bool(
             editor is not None
             and self._current_sql_path is not None
-            and editor.text() != self._last_saved_sql_text
+            and (baseline is None or editor.text() != baseline)
         )
         self.setWindowModified(is_dirty)
         self._update_window_title()
@@ -1065,13 +1066,19 @@ class MainWindow(QMainWindow):
             return
         try:
             contents = path.read_text(encoding="utf-8")
-        except OSError as error:
+        except (OSError, UnicodeDecodeError) as error:
             self._show_status(f"Could not open SQL file: {error}")
             return
-        self._current_sql_path = path
-        self._last_saved_sql_text = contents
-        editor.setText(contents)
-        self._update_editor_tab_label(editor)
+        state = self._editor_states[editor]
+        is_pristine_untitled = (
+            state.path is None and state.last_saved_text == "" and not editor.text()
+        )
+        target = editor if is_pristine_untitled else self._new_editor_tab()
+        target_state = self._editor_states[target]
+        target_state.path = path
+        target_state.last_saved_text = contents
+        target.setText(contents)
+        self._update_editor_tab_label(target)
         self._update_sql_dirty_state()
         self._update_window_title()
 
@@ -1773,7 +1780,13 @@ class MainWindow(QMainWindow):
             assert editor is not None
             state = self._editor_states[editor]
             state.path = path
-            state.last_saved_text = text
+            if path is None:
+                state.last_saved_text = text
+            else:
+                try:
+                    state.last_saved_text = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    state.last_saved_text = None
             editor.setText(text)
             self._update_editor_tab_label(editor)
 
@@ -1782,6 +1795,7 @@ class MainWindow(QMainWindow):
             self.editor_tabs.count() - 1,
         )
         self.editor_tabs.setCurrentIndex(max(0, active_index))
+        self._update_sql_dirty_state()
 
     def _restore_state(self) -> None:
         geometry = self._settings_service.restore_window_geometry()
