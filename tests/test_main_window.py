@@ -712,6 +712,255 @@ def test_successful_result_for_a_closed_editor_still_reaches_history(
     assert [record["query"] for record in history.get_all()] == ["SELECT closed_tab"]
 
 
+def test_direct_saved_query_result_stays_with_launch_tab_and_cannot_be_ordered(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    query = store.save_query(name="Direct", description="", sql="SELECT 1 AS direct_value")
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+
+    first = window.editor
+    first.setText("SELECT first_tab_sql")
+    window._run_saved_query(query)
+    request = submitted[0]
+
+    second = window._new_editor_tab()
+    second.setText("SELECT second_tab_sql")
+    window._on_query_result_ready(
+        QueryResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            frame=pl.DataFrame({"direct_value": [1]}),
+            execution_seconds=0.01,
+            preview_row_count=1,
+            total_row_count=1,
+            truncated=False,
+            completed_at=datetime.now(UTC),
+        ),
+        request,
+    )
+
+    assert not window.result_table_view.has_result()
+    assert second.text() == "SELECT second_tab_sql"
+
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(first))
+
+    assert window.result_table_view.frame().to_dicts() == [{"direct_value": 1}]
+    window._on_apply_query_order("direct_value", "ASC")
+    assert first.text() == "SELECT first_tab_sql"
+    assert "open and run" in window.status_bar.currentMessage().lower()
+
+
+def test_catalog_persistence_failure_remains_visible_until_retry_succeeds(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    dataset = tmp_path / "orders.csv"
+    dataset.write_text("id\n1\n", encoding="utf-8")
+    store = CatalogStore(tmp_path / "catalog.json")
+    saved_projections: list[tuple[CatalogEntry, ...]] = []
+    original_save = store.save
+
+    def fail_once(entries: tuple[CatalogEntry, ...]) -> None:
+        saved_projections.append(entries)
+        if len(saved_projections) == 1:
+            raise OSError("disk full")
+        original_save(entries)
+
+    monkeypatch.setattr(store, "save", fail_once)
+    window = MainWindow(catalog_store=store)
+    qtbot.addWidget(window)
+
+    window.catalog.add_paths((dataset,))
+
+    assert window.catalog.model.rowCount() == 1
+    assert store.load() == ()
+    assert "Could not save dataset catalog" in window.status_bar.currentMessage()
+    assert window._last_persisted_catalog == ()
+
+    entry = window._catalog_service.entries[0]
+    window._catalog_service.rename(entry.id, "renamed_orders")
+
+    assert [entry.alias for entry in store.load()] == ["renamed_orders"]
+    assert window._last_persisted_catalog == window._catalog_projection()
+
+
+def test_refresh_catalog_schema_rechecks_returned_and_missing_files(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    returned_path = tmp_path / "returned.csv"
+    returned_service = CatalogService()
+    returned = returned_service.add_paths((returned_path,)).added[0]
+    returned_service.refresh_availability(returned.id)
+    returned_window = MainWindow(catalog_service=returned_service)
+    qtbot.addWidget(returned_window)
+    returned_schema: list[CatalogBinding] = []
+    returned_profiles: list[CatalogBinding] = []
+    monkeypatch.setattr(returned_window, "_queue_schema_work", returned_schema.append)
+    monkeypatch.setattr(returned_window, "_queue_profile_work", returned_profiles.append)
+
+    returned_path.write_text("id\n1\n", encoding="utf-8")
+    returned_window._on_refresh_catalog_schema(
+        CatalogBinding(returned.id, returned.alias, returned.path, returned.source_format)
+    )
+
+    assert returned_window._catalog_service.entries[0].unavailable is False
+    assert [binding.entry_id for binding in returned_schema] == [returned.id]
+    assert [binding.entry_id for binding in returned_profiles] == [returned.id]
+
+    missing_path = tmp_path / "missing.csv"
+    missing_path.write_text("id\n1\n", encoding="utf-8")
+    missing_service = CatalogService()
+    missing = missing_service.add_paths((missing_path,)).added[0]
+    missing_window = MainWindow(catalog_service=missing_service)
+    qtbot.addWidget(missing_window)
+    missing_schema: list[CatalogBinding] = []
+    missing_profiles: list[CatalogBinding] = []
+    monkeypatch.setattr(missing_window, "_queue_schema_work", missing_schema.append)
+    monkeypatch.setattr(missing_window, "_queue_profile_work", missing_profiles.append)
+
+    missing_path.unlink()
+    missing_window._on_refresh_catalog_schema(
+        CatalogBinding(missing.id, missing.alias, missing.path, missing.source_format)
+    )
+
+    assert missing_window._catalog_service.entries[0].unavailable is True
+    assert missing_schema == []
+    assert missing_profiles == []
+
+
+def test_edit_actions_and_find_replace_next_follow_the_active_tab(qtbot, monkeypatch) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    first = window.editor
+    first.setText("first target")
+    first.setCursorPosition(0, len(first.text()))
+    first.insert("!")
+    window.find_replace_action.trigger()
+    dialog = window.find_replace_dialog
+
+    second = window._new_editor_tab()
+    second.setText("second target")
+    second.setCursorPosition(0, len(second.text()))
+    second.insert("!")
+
+    window.undo_action.trigger()
+    assert first.text() == "first target!"
+    assert second.text() == "second target"
+    window.redo_action.trigger()
+    assert first.text() == "first target!"
+    assert second.text() == "second target!"
+
+    found_in: list[SqlEditor] = []
+    original_find_text = SqlEditor.find_text
+
+    def record_find(editor: SqlEditor, value: str) -> bool:
+        found_in.append(editor)
+        return original_find_text(editor, value)
+
+    monkeypatch.setattr(SqlEditor, "find_text", record_find)
+    dialog.find_input.setText("target")
+    dialog.find_next_button.click()
+    assert found_in == [second]
+
+    dialog.replace_input.setText("changed")
+    dialog.replace_next_button.click()
+    assert first.text() == "first target!"
+    assert second.text() == "second changed!"
+
+
+def test_accepted_editor_theme_updates_existing_and_new_tabs(tmp_path: Path, qtbot) -> None:
+    settings = _configure_qsettings_path(tmp_path / "accepted-multi-tab-theme")
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+    first = window.editor
+    second = window._new_editor_tab()
+
+    window.preferences_action.trigger()
+    dialog = window.preferences_dialog
+    dialog.editor_theme_selector.setCurrentText("Solarized Light")
+    dialog.accept()
+
+    third = window._new_editor_tab()
+
+    assert (first.theme_name, second.theme_name, third.theme_name) == (
+        "Solarized Light",
+        "Solarized Light",
+        "Solarized Light",
+    )
+    assert settings.restore_editor_theme() == "Solarized Light"
+
+
+def test_open_sql_preserves_clean_file_backed_tab_and_failure_does_not_change_tabs(
+    tmp_path: Path, qtbot
+) -> None:
+    first_path = tmp_path / "first.sql"
+    first_path.write_text("SELECT first", encoding="utf-8")
+    second_path = tmp_path / "second.sql"
+    second_path.write_text("SELECT second", encoding="utf-8")
+    invalid_path = tmp_path / "invalid.sql"
+    invalid_path.write_bytes(b"\xff")
+    window = MainWindow(file_dialog_service=FakeFileDialogService((), sql_open_path=first_path))
+    qtbot.addWidget(window)
+
+    window.desktop_actions.open_sql.trigger()
+    first = window.editor
+    window._file_dialog_service = FakeFileDialogService((), sql_open_path=second_path)
+    window.desktop_actions.open_sql.trigger()
+
+    assert window.editor_tabs.count() == 2
+    assert first.text() == "SELECT first"
+    assert window.editor.text() == "SELECT second"
+
+    window._file_dialog_service = FakeFileDialogService((), sql_open_path=None)
+    window.desktop_actions.open_sql.trigger()
+    assert window.editor_tabs.count() == 2
+    assert window.editor.text() == "SELECT second"
+
+    window._file_dialog_service = FakeFileDialogService((), sql_open_path=invalid_path)
+    window.desktop_actions.open_sql.trigger()
+    assert window.editor_tabs.count() == 2
+    assert window.editor.text() == "SELECT second"
+
+
+def test_restored_unknown_baseline_is_dirty_and_tab_switch_recomputes_dirty_state(
+    tmp_path: Path, qtbot
+) -> None:
+    clean_path = tmp_path / "clean.sql"
+    clean_path.write_text("SELECT clean", encoding="utf-8")
+    missing_path = tmp_path / "missing.sql"
+    unreadable_path = tmp_path / "unreadable.sql"
+    unreadable_path.write_bytes(b"\xff")
+    settings = _configure_qsettings_path(tmp_path / "unknown-baseline")
+    settings.save_editor_tabs(
+        (
+            ("SELECT clean", clean_path),
+            ("SELECT missing", missing_path),
+            ("SELECT preserved", unreadable_path),
+        ),
+        active_index=0,
+    )
+
+    window = MainWindow(settings_service=settings)
+    qtbot.addWidget(window)
+
+    assert not window.isWindowModified()
+    window.editor_tabs.setCurrentIndex(1)
+    assert window.editor.text() == "SELECT missing"
+    assert window._last_saved_sql_text is None
+    assert window.isWindowModified()
+    window.editor_tabs.setCurrentIndex(2)
+    assert window.editor.text() == "SELECT preserved"
+    assert window._last_saved_sql_text is None
+    assert window.isWindowModified()
+    window.editor_tabs.setCurrentIndex(0)
+    assert not window.isWindowModified()
+
+
 def test_main_window_structure(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

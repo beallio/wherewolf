@@ -116,6 +116,7 @@ class _EditorTabState:
     last_saved_text: str | None = ""
     last_request: ExecutionRequest | None = None
     last_result: QueryResult | None = None
+    result_origin: str | None = None
 
 
 class FindReplaceDialog(QDialog):
@@ -276,6 +277,7 @@ class MainWindow(QMainWindow):
         )
         self._catalog_service = catalog_service or CatalogService(restored_entries)
         self._last_persisted_catalog = self._catalog_projection()
+        self._catalog_persistence_error: str | None = None
         self._catalog_persistence_listener = self._persist_catalog
         self._catalog_service.subscribe(self._catalog_persistence_listener)
         self._file_dialog_service = file_dialog_service or QtFileDialogService()
@@ -292,7 +294,7 @@ class MainWindow(QMainWindow):
         self.history_manager = history_manager or HistoryManager()
         self.saved_query_store = saved_query_store or SavedQueryStore()
         self._editor_states: dict[SqlEditor, _EditorTabState] = {}
-        self._result_origin_by_request_id: dict[object, SqlEditor | None] = {}
+        self._result_origin_by_request_id: dict[object, tuple[SqlEditor, str]] = {}
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
         self._value_counts_windows: list[ValueCountsWindow] = []
@@ -635,8 +637,8 @@ class MainWindow(QMainWindow):
         editor: SqlEditor | None = None,
         direct_saved_query: bool = False,
     ) -> None:
-        origin = None if direct_saved_query else editor or self.current_editor
-        if origin is None and not direct_saved_query:
+        owner = editor or self.current_editor
+        if owner is None:
             self._show_status("No SQL editor is open", 5000)
             return
         original_sql = sql if original_sql is None else original_sql
@@ -676,7 +678,8 @@ class MainWindow(QMainWindow):
             return
 
         if self.query_controller.execute(request):
-            self._result_origin_by_request_id[request.request_id] = origin
+            result_origin = "saved-query" if direct_saved_query else "editor"
+            self._result_origin_by_request_id[request.request_id] = (owner, result_origin)
 
     def _save_current_query(self, _checked: bool = False) -> None:
         del _checked
@@ -806,19 +809,19 @@ class MainWindow(QMainWindow):
             self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
-        direct_saved_query = request.request_id in self._result_origin_by_request_id
-        origin = self._result_origin_by_request_id.pop(request.request_id, self.current_editor)
+        owner, result_origin = self._result_origin_by_request_id.pop(
+            request.request_id,
+            (self.current_editor, "editor"),
+        )
         self._record_query_history(result, request)
-        if direct_saved_query and origin is None:
-            self._render_query_result(result, request, show_message=True)
+        if owner is None:
             return
-        if origin is None:
-            return
-        state = self._editor_states.get(origin)
+        state = self._editor_states.get(owner)
         if state is None:
             return
         state.last_request, state.last_result = request, result
-        if origin is self.current_editor:
+        state.result_origin = result_origin
+        if owner is self.current_editor:
             self._render_query_result(result, request, show_message=True)
 
     def _record_query_history(self, result: QueryResult, request: ExecutionRequest) -> None:
@@ -1147,12 +1150,14 @@ class MainWindow(QMainWindow):
             message = f"Added `{first.alias}` to catalog."
             if duplicate_message:
                 message = f"{message} {duplicate_message}"
-            self._show_status(message)
+            self._show_status(self._catalog_persistence_error or message)
             self._update_catalog_affordances()
         elif duplicate_message:
             self._show_status(duplicate_message)
         if result.warnings:
             self._show_status("\n".join(sorted(set(result.warnings))))
+        if self._catalog_persistence_error is not None:
+            self._show_status(self._catalog_persistence_error)
 
     def _on_refresh_catalog_schema(self, binding: CatalogBinding) -> None:
         try:
@@ -1530,6 +1535,7 @@ class MainWindow(QMainWindow):
         if (
             editor is None
             or state is None
+            or state.result_origin == "saved-query"
             or state.last_request is not self._last_request
             or state.last_result is not self._last_result
         ):
@@ -1789,9 +1795,12 @@ class MainWindow(QMainWindow):
         try:
             self._catalog_store.save(self._catalog_service.entries)
         except OSError as exc:
-            self._show_status(f"Could not save dataset catalog: {exc}", 5000)
+            self._catalog_persistence_error = f"Could not save dataset catalog: {exc}"
+            self.messages_panel.add_message(self._catalog_persistence_error, severity="error")
+            self._show_status(self._catalog_persistence_error, 5000)
             return
         self._last_persisted_catalog = projection
+        self._catalog_persistence_error = None
 
     def _restore_editor_tabs(self) -> None:
         tabs = self._settings_service.restore_editor_tabs()

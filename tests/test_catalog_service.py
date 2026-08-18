@@ -1,4 +1,5 @@
 from pathlib import Path
+from uuid import uuid4
 
 import polars as pl
 import pytest
@@ -184,6 +185,13 @@ def test_refresh_availability_updates_both_directions_and_notifies_only_on_chang
     available = service.refresh_availability(entry.id)
     assert available.unavailable is False
     assert len(notifications) == 2
+
+
+def test_refresh_availability_rejects_unknown_entry_id() -> None:
+    service = CatalogService()
+
+    with pytest.raises(KeyError, match="No catalog entry"):
+        service.refresh_availability(uuid4())
 
 
 def test_profile_is_marked_stale_when_its_source_changes(tmp_path: Path) -> None:
