@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.9.2] - 2026-08-19 — Editor shortcuts do what the menu says
+
 ### Fixed
 
 - `Ctrl+T` opens a new query tab while the SQL editor has focus instead of swapping the
