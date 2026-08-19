@@ -1601,6 +1601,9 @@ class MainWindow(QMainWindow):
         self.redo_action.triggered.connect(lambda: self._run_current_editor_action("redo"))
         self.toggle_comment_action = QAction("Toggle Comment", self)
         self.toggle_comment_action.setShortcut(QKeySequence("Ctrl+/"))
+        # The focused SqlEditor owns the live Ctrl+/ binding; this menu entry keeps the
+        # sequence for its label only, so the two do not register as an ambiguous overload.
+        self.toggle_comment_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self.toggle_comment_action.triggered.connect(
             lambda: self._run_current_editor_action("toggle_comment")
         )
