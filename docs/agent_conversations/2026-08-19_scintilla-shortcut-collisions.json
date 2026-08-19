@@ -1,0 +1,24 @@
+{
+  "date": "2026-08-19",
+  "objective": "Fix Ctrl+T being swallowed by QScintilla inside SQL editors and remove the Ctrl+/ keyPressEvent workaround.",
+  "files_modified": [
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "src/wherewolf/desktop/main_window.py",
+    "tests/test_sql_editor.py",
+    "tests/test_main_window.py",
+    "docs/plans/2026-08-19_scintilla-shortcut-collisions.md",
+    "CHANGELOG.md"
+  ],
+  "tests_added": [
+    "SqlEditor releases the Scintilla bindings for Ctrl+T and Ctrl+/",
+    "MainWindow: Ctrl+T with editor focus opens a tab and leaves the document text untouched, and Ctrl+/ still toggles comments"
+  ],
+  "design_decisions": [
+    "Root cause measured, not assumed: QsciScintillaBase accepts the ShortcutOverride event for every key in its own command set, so the editor received a plain KeyPress and the new_tab QAction never got a Shortcut event. With focus outside the editor the override was declined and the action fired, which is why the shortcut appeared to work only in some places.",
+    "Unbind the conflicting keys from the per-instance QsciCommandSet in SqlEditor._setup_editor rather than intercepting keys in keyPressEvent, so Qt's normal shortcut dispatch owns the sequences.",
+    "Ctrl+A/C/V/X/Y/Z also collide with Scintilla commands but carry equivalent semantics, so they were deliberately left bound.",
+    "SqlEditor._toggle_comment_action had a WidgetShortcut shortcut but was never added to the widget, so it could not fire once the keyPressEvent hack was removed; it is now registered with addAction.",
+    "MainWindow.toggle_comment_action kept its Ctrl+/ sequence for the menu label but moved to WidgetShortcut context, because two active Ctrl+/ shortcuts registered as an ambiguous overload and neither fired."
+  ],
+  "results": "630 tests pass; ruff check, ruff format, and ty check are clean."
+}

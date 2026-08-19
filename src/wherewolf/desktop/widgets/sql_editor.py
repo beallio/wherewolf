@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeyEvent, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeySequence
 from PyQt6.QtWidgets import QMenu, QWidget
 
 from wherewolf.desktop.widgets.completion_adapter import CompletionAdapter
@@ -21,6 +21,12 @@ from wherewolf.services import (
 from wherewolf.services.completion_context import detect_context
 
 _TOGGLE_COMMENT_SHORTCUT = QKeySequence("Ctrl+/")
+
+# QScintilla accepts the ShortcutOverride event for every key in its own command set,
+# which cancels Qt's shortcut dispatch before the application actions ever see it.
+# These sequences belong to desktop actions ("New Tab", "Toggle Comment"), so their
+# Scintilla bindings are released when the editor is set up.
+_RELEASED_SCINTILLA_SHORTCUTS = ("Ctrl+T", _TOGGLE_COMMENT_SHORTCUT.toString())
 
 
 class SqlEditor(QsciScintilla):
@@ -154,18 +160,6 @@ class SqlEditor(QsciScintilla):
             self.endUndoAction()
         self.setScrollWidth(1)
 
-    def keyPressEvent(self, e: QKeyEvent) -> None:
-        if e is None:
-            return
-        if (
-            QKeySequence(e.keyCombination()).matches(_TOGGLE_COMMENT_SHORTCUT)
-            is QKeySequence.SequenceMatch.ExactMatch
-        ):
-            self._toggle_comment_action.trigger()
-            e.accept()
-            return
-        super().keyPressEvent(e)
-
     def request_completion(self, forced: bool = False) -> None:
         text = self.text()
         line, col = self.getCursorPosition()
@@ -192,7 +186,22 @@ class SqlEditor(QsciScintilla):
     def _on_text_changed_completion(self) -> None:
         self.request_completion(forced=False)
 
+    def _release_conflicting_scintilla_keys(self) -> None:
+        """Unbind Scintilla commands whose keys belong to desktop actions."""
+        commands = self.standardCommands()
+        for sequence in _RELEASED_SCINTILLA_SHORTCUTS:
+            key = QKeySequence(sequence)[0].toCombined()
+            command = commands.boundTo(key)
+            if command is None:
+                continue
+            if command.key() == key:
+                command.setKey(0)
+            if command.alternateKey() == key:
+                command.setAlternateKey(0)
+
     def _setup_editor(self) -> None:
+        self._release_conflicting_scintilla_keys()
+
         lexer = QsciLexerSQL(self)
         self._apply_lexer_colours(lexer)
         self.setLexer(lexer)
@@ -252,6 +261,7 @@ class SqlEditor(QsciScintilla):
         self._toggle_comment_action.setShortcut(_TOGGLE_COMMENT_SHORTCUT)
         self._toggle_comment_action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
         self._toggle_comment_action.triggered.connect(self.toggle_comment)
+        self.addAction(self._toggle_comment_action)
 
         if self._format_action is not None and self._bind_shared_actions:
             self._format_action.triggered.connect(self.format_selection_or_statement)

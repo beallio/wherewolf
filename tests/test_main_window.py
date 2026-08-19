@@ -17,6 +17,7 @@ from PyQt6.QtCore import (
     QUrl,
 )
 from PyQt6.QtGui import QDropEvent, QFontMetrics, QKeySequence, QStandardItemModel
+from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -3434,3 +3435,41 @@ def test_main_window_result_grid_gui_thread_population(qtbot, monkeypatch) -> No
 
     window._on_query_result_ready(result, request)
     assert populated_thread == gui_thread
+
+
+def test_main_window_editor_shortcuts_survive_scintilla_key_bindings(qtbot) -> None:
+    """Ctrl+T and Ctrl+/ must reach the desktop actions, not Scintilla's own commands."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    QTest.qWaitForWindowExposed(window)  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+
+    editor = window.current_editor
+    assert editor is not None
+    editor.setText("SELECT first\nSELECT second")
+    editor.setCursorPosition(1, 0)
+    editor.setFocus()
+    assert QApplication.focusWidget() is editor
+
+    QTest.keyClick(  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+        editor,
+        Qt.Key.Key_T,
+        Qt.KeyboardModifier.ControlModifier,
+    )
+
+    assert window.editor_tabs.count() == 2
+    assert editor.text() == "SELECT first\nSELECT second"
+
+    second_editor = window.current_editor
+    assert second_editor is not None
+    second_editor.setText("SELECT second_tab")
+    second_editor.setCursorPosition(0, 0)
+    second_editor.setFocus()
+
+    QTest.keyClick(  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+        second_editor,
+        Qt.Key.Key_Slash,
+        Qt.KeyboardModifier.ControlModifier,
+    )
+
+    assert second_editor.text() == "-- SELECT second_tab"

@@ -1,6 +1,6 @@
 from PyQt6.Qsci import QsciLexerSQL
 from PyQt6.QtCore import QSettings, Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QKeySequence
 from PyQt6.QtTest import QTest
 
 from wherewolf.desktop.widgets import SqlEditor
@@ -563,3 +563,13 @@ def test_sql_editor_gui_thread_never_blocked_with_none_schema(qtbot) -> None:
     started = time.monotonic()
     editor.request_completion(forced=True)
     assert time.monotonic() - started < 0.5
+
+
+def test_sql_editor_releases_scintilla_keys_that_collide_with_app_shortcuts(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+
+    commands = editor.standardCommands()
+    for sequence in ("Ctrl+T", "Ctrl+/"):
+        key = QKeySequence(sequence)[0].toCombined()
+        assert commands.boundTo(key) is None, f"{sequence} is still bound in Scintilla"

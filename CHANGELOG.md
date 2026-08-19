@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- `Ctrl+T` opens a new query tab while the SQL editor has focus instead of swapping the
+  current line with the one above it, and `Ctrl+/` toggles comments through the normal
+  shortcut path rather than a key-press interception.
+
 ## [0.9.1] - 2026-08-18 — Queries stay with their tabs, exports keep parameters, and catalog saves recover
 
 ### Fixed
