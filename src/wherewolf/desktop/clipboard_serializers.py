@@ -80,13 +80,15 @@ def serialize_to_tsv(
 
 
 def serialize_table_widget_to_tsv(table: QTableWidget) -> str:
-    """Serialize selected rows from a read-only Qt table using the TSV rules above."""
+    """Serialize the selected cells of a read-only Qt table using the TSV rules above."""
     selection_model = table.selectionModel()
     if selection_model is None:
         return ""
-    rows = sorted({index.row() for index in selection_model.selectedIndexes()})
-    if not rows:
+    selected = {(index.row(), index.column()) for index in selection_model.selectedIndexes()}
+    if not selected:
         return ""
+    rows = sorted({row for row, _ in selected})
+    row_positions = {row: position for position, row in enumerate(rows)}
     column_count = table.columnCount()
     headers = [table.horizontalHeaderItem(column) for column in range(column_count)]
     columns = [header.text() if header is not None else "" for header in headers]
@@ -98,7 +100,5 @@ def serialize_table_widget_to_tsv(table: QTableWidget) -> str:
             row_values.append(item.text() if item is not None else "")
         values.append(row_values)
     frame = pl.DataFrame(values, schema=columns, orient="row")
-    selected_cells = [
-        (row_index, column) for row_index in range(len(rows)) for column in range(column_count)
-    ]
+    selected_cells = [(row_positions[row], column) for row, column in selected]
     return serialize_to_tsv(frame, selected_cells)
