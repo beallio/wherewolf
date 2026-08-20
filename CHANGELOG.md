@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.9.3] - 2026-08-20 — The fields panel copies the cell you selected
+
 ### Fixed
 
 - Copying from the dataset fields panel now copies just the selected cells instead of the
