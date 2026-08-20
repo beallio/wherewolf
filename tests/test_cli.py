@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import tomllib
+from pathlib import Path
 
 import wherewolf
 import wherewolf.cli
@@ -42,6 +43,12 @@ def test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched(monkeypa
         def setPalette(self, _palette) -> None:
             pass
 
+        def setWindowIcon(self, _icon) -> None:
+            pass
+
+        def setDesktopFileName(self, _name: str) -> None:
+            pass
+
     class FakeMainWindow:
         def __init__(self, *_args, **_kwargs):
             created["count"] += 1
@@ -73,3 +80,48 @@ def test_importing_desktop_application_is_free_of_pyspark() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_cli_install_desktop_entry_command(monkeypatch, capsys) -> None:
+    from wherewolf.services import desktop_entry
+
+    calls: list[str] = []
+
+    def fake_install():
+        calls.append("install")
+        return desktop_entry.InstallResult(
+            desktop_entry=Path("/data/applications/wherewolf.desktop"),
+            icons=(Path("/data/icons/hicolor/48x48/apps/wherewolf.png"),),
+            icon_cache_refreshed=False,
+        )
+
+    monkeypatch.setattr(desktop_entry, "install_desktop_entry", fake_install)
+
+    assert wherewolf.cli.main(["install-desktop-entry"]) == 0
+    assert calls == ["install"]
+    assert "wherewolf.desktop" in capsys.readouterr().out
+
+
+def test_cli_remove_desktop_entry_command(monkeypatch, capsys) -> None:
+    from wherewolf.services import desktop_entry
+
+    monkeypatch.setattr(
+        desktop_entry,
+        "remove_desktop_entry",
+        lambda: (Path("/data/applications/wherewolf.desktop"),),
+    )
+
+    assert wherewolf.cli.main(["remove-desktop-entry"]) == 0
+    assert "wherewolf.desktop" in capsys.readouterr().out
+
+
+def test_cli_desktop_entry_commands_do_not_launch_the_gui(monkeypatch) -> None:
+    from wherewolf.services import desktop_entry
+
+    def fail() -> int:
+        raise AssertionError("desktop main must not run for an install command")
+
+    monkeypatch.setattr("wherewolf.desktop.application.main", fail)
+    monkeypatch.setattr(desktop_entry, "remove_desktop_entry", lambda: ())
+
+    assert wherewolf.cli.main(["remove-desktop-entry"]) == 0

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Wherewolf now has an application icon instead of Qt's default placeholder, and
+  `wherewolf install-desktop-entry` installs the desktop entry and themed icons that a
+  Wayland desktop needs to display it. `wherewolf remove-desktop-entry` undoes it.
+
 ## [0.9.3] - 2026-08-20 — The fields panel copies the cell you selected
 
 ### Fixed

@@ -8,6 +8,12 @@ def test_desktop_main_applies_program_theme_before_constructing_window(monkeypat
         def __init__(self, *_args, **_kwargs):
             events.append("app")
 
+        def setWindowIcon(self, _icon) -> None:
+            events.append("window-icon")
+
+        def setDesktopFileName(self, name: str) -> None:
+            events.extend(("desktop-file-name", name))
+
         def exec(self) -> int:
             events.append("exec")
             return 0
@@ -34,10 +40,14 @@ def test_desktop_main_applies_program_theme_before_constructing_window(monkeypat
     monkeypatch.setattr(application, "SettingsService", FakeSettings)
     monkeypatch.setattr(application, "apply_program_theme", apply_theme)
     monkeypatch.setattr(application, "MainWindow", FakeMainWindow)
+    monkeypatch.setattr(application, "load_app_icon", lambda: "icon")
 
     assert application.main() == 0
     assert events == [
         "app",
+        "window-icon",
+        "desktop-file-name",
+        "wherewolf",
         "settings",
         "restore-theme",
         "apply-theme",
