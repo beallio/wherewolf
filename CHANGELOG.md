@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed
+
+- Copying from the dataset fields panel now copies just the selected cells instead of the
+  whole row.
+
 ## [0.9.2] - 2026-08-19 — Editor shortcuts do what the menu says
 
 ### Fixed

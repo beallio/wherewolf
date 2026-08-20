@@ -500,3 +500,51 @@ def test_schema_panel_cell_selection_keeps_column_names_and_context_selection(
     assert {(index.row(), index.column()) for index in selection_model.selectedIndexes()} == {
         (1, column) for column in range(table.columnCount())
     }
+
+
+def test_schema_panel_copy_single_cell_copies_only_that_cell(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="users",
+            path=Path("users.parquet"),
+            source_format=SourceFormat.PARQUET,
+            schema=(ColumnSchema("id", "BIGINT"), ColumnSchema("name", "VARCHAR")),
+        )
+    )
+    panel._table_widget.setCurrentCell(1, 1)
+    panel._table_widget.setFocus()
+    qtbot.keyClick(panel._table_widget, Qt.Key.Key_C, Qt.KeyboardModifier.ControlModifier)
+
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    assert clipboard.text() == "VARCHAR"
+
+
+def test_schema_panel_copy_multi_cell_block_copies_only_selected_columns(qtbot: QtBot) -> None:
+    panel = SchemaPanel()
+    qtbot.addWidget(panel)
+    panel.set_entry(
+        CatalogEntry(
+            id=uuid4(),
+            alias="users",
+            path=Path("users.parquet"),
+            source_format=SourceFormat.PARQUET,
+            schema=(ColumnSchema("id", "BIGINT"), ColumnSchema("name", "VARCHAR")),
+        )
+    )
+    table = panel._table_widget
+    table.setCurrentCell(0, 0)
+    item = table.item(1, 1)
+    assert item is not None
+    table.setRangeSelected(
+        QTableWidgetSelectionRange(0, 0, 1, 1),
+        True,
+    )
+    panel.copy_selection()
+
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+    assert clipboard.text() == "id\tBIGINT\nname\tVARCHAR"

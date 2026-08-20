@@ -1,0 +1,19 @@
+{
+  "date": "2026-08-20",
+  "objective": "Fix the schema (dataset fields) panel copying an entire row when a single cell is selected.",
+  "files_modified": [
+    "src/wherewolf/desktop/clipboard_serializers.py",
+    "tests/test_schema_panel.py",
+    "CHANGELOG.md"
+  ],
+  "tests_added": [
+    "SchemaPanel: Ctrl+C with one cell selected copies only that cell's text",
+    "SchemaPanel: a 2x2 range selection copies only the selected columns"
+  ],
+  "design_decisions": [
+    "Root cause measured, not assumed: serialize_table_widget_to_tsv read selectionModel().selectedIndexes() only for row numbers and then rebuilt the cell list as rows x every column, discarding the column half of the selection. SchemaPanel already used SelectionBehavior.SelectItems, so the selection itself was correct.",
+    "The helper was originally written for _CopyTableWidget in value_counts_window, which uses SelectRows, where whole-row output was accidentally correct.",
+    "Fix keeps the real (row, column) pairs and maps row numbers to compacted frame positions, letting the existing serialize_to_tsv rules handle per-row column ordering and discontiguous selections. Row-behavior tables are unaffected because their selectedIndexes() already covers every column."
+  ],
+  "results": "632 tests pass; ruff check, ruff format, and ty check are clean."
+}
