@@ -1,0 +1,36 @@
+{
+  "date": "2026-08-20",
+  "objective": "Give Wherewolf a real application icon on the window and in the GNOME menu bar, replacing Qt's default placeholder.",
+  "files_modified": [
+    "src/wherewolf/desktop/app_icon.py",
+    "src/wherewolf/desktop/application.py",
+    "src/wherewolf/services/desktop_entry.py",
+    "src/wherewolf/cli.py",
+    "tests/test_app_icon.py",
+    "tests/test_desktop_entry.py",
+    "tests/test_application.py",
+    "tests/test_cli.py",
+    "docs/plans/2026-08-20_application-icon.md",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "tests_added": [
+    "app_icon.icon_source yields an existing file carrying the PNG signature",
+    "app_icon.load_app_icon returns a non-null QIcon with available sizes",
+    "application.main sets the window icon and desktop file name before constructing MainWindow",
+    "desktop_entry.render_desktop_entry emits Icon and StartupWMClass matching the desktop file name",
+    "install_desktop_entry writes the entry plus one correctly sized PNG per hicolor size, is idempotent, and defaults Exec to the resolved console script",
+    "data_home honours XDG_DATA_HOME and falls back to ~/.local/share",
+    "remove_desktop_entry deletes exactly what install wrote and no-ops when nothing is installed",
+    "CLI dispatches both desktop-entry commands without launching the GUI"
+  ],
+  "design_decisions": [
+    "Two mechanisms are required and neither substitutes for the other: setWindowIcon covers X11 and the title bar, while Wayland ignores it and resolves the icon from the desktop entry named by the xdg-shell app_id, which Qt takes from setDesktopFileName. Both are set before MainWindow exists so the first window carries the icon.",
+    "The desktop file basename, the Icon key value, and setDesktopFileName all resolve to the single DESKTOP_FILE_NAME constant in app_icon, because a mismatch between them silently produces the placeholder with no error anywhere.",
+    "Icons are scaled into the eight standard hicolor sizes rather than shipping only the 1024x1024 master, so the shell does not downscale 1024px for a panel-sized slot. QImage load/scale/save was verified to work without a QGuiApplication, keeping the install path headless.",
+    "PyQt6 is imported inside _write_scaled_icons and the service is imported lazily in cli.main, preserving the existing rule that non-GUI commands never pay for Qt.",
+    "gtk-update-icon-cache is best-effort and skipped when the user's hicolor tree has no index.theme; GTK falls back to scanning the directory, and a cache written without an index would be the more fragile outcome. The result reports whether it ran.",
+    "Categories is Development;Database; — one main category plus one additional. Development;Database;Utility; made desktop-file-validate warn that the app could appear twice in the menu."
+  ],
+  "results": "644 tests pass; ruff check, ruff format, and ty check are clean. Verified end to end against a scratch XDG_DATA_HOME: the entry installs, desktop-file-validate passes with no hints, all eight PNGs decode at their nominal size, and a live QApplication reports a non-null window icon with desktopFileName 'wherewolf'."
+}

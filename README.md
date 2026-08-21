@@ -27,6 +27,22 @@ wherewolf
 `wherewolf 0.6.0 (build 202db43)`. It answers without loading Qt, so it works over SSH and on a
 machine with no display — useful for confirming which build an installed copy actually is.
 
+### Desktop entry and application icon
+
+`uv tool install` places no desktop entry, so a Linux desktop has nothing to read the
+application icon from and shows a placeholder — on Wayland this is true no matter what the
+application sets on its own windows, because the compositor resolves the icon through the
+installed entry rather than through the window. Install one:
+
+```bash
+wherewolf install-desktop-entry
+```
+
+That writes `wherewolf.desktop` into `$XDG_DATA_HOME/applications` and the icon into the
+hicolor theme at every standard size, which also puts Wherewolf in the application menu.
+`wherewolf remove-desktop-entry` deletes both again. Neither command loads Qt's GUI, so both
+work over SSH.
+
 ### Optional Spark engine
 
 The default installation is DuckDB-only: it neither installs nor imports PySpark. To enable the
