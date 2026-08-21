@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.10.0] - 2026-08-20 — Wherewolf has a face
+
 ### Added
 
 - Wherewolf now has an application icon instead of Qt's default placeholder, and
