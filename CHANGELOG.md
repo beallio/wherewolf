@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed
+
+- **JSON Lines files are read as JSON Lines.** `.jsonl` was accepted by the catalog, offered in
+  the file dialog, and advertised in the README, but the DuckDB engine had no branch for it and
+  fell through a catch-all that parsed the file as CSV — so a JSON Lines dataset loaded as one
+  garbage column with no error. Format dispatch now goes through `SourceFormat` with no fallback,
+  and a suffix the engine cannot read is reported instead of guessed at.
+
 ## [0.10.0] - 2026-08-20 — Wherewolf has a face
 
 ### Added

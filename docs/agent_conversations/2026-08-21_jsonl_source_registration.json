@@ -1,0 +1,38 @@
+{
+  "date": "2026-08-21",
+  "task_objective": "Fix .jsonl files being silently parsed as CSV by the DuckDB engine, and remove the dead, contradictory SUPPORTED_EXTENSIONS constant.",
+  "files_modified": [
+    "src/wherewolf/execution/duckdb_engine.py",
+    "src/wherewolf/constants.py",
+    "src/wherewolf/desktop/dialogs/file_dialog_service.py",
+    "tests/test_duckdb_engine.py",
+    "tests/test_constants.py",
+    "tests/test_file_dialog_service.py",
+    "docs/plans/jsonl_source_registration.md",
+    "CHANGELOG.md"
+  ],
+  "tests_added": [
+    "tests/test_duckdb_engine.py::test_duckdb_engine_reads_json_lines_as_typed_columns",
+    "tests/test_duckdb_engine.py::test_duckdb_get_schema_reads_json_lines_fields",
+    "tests/test_duckdb_engine.py::test_duckdb_engine_reports_unsupported_source_format",
+    "tests/test_constants.py::test_supported_extensions_is_not_exported",
+    "tests/test_file_dialog_service.py::test_qt_file_dialog_service_initial_filter_matches_built_filter"
+  ],
+  "design_decisions": [
+    "Root cause was the catch-all else arm in _register_view, which guessed CSV for any unknown suffix and so hid the missing .jsonl branch. Dispatch now goes through SourceFormat.from_path with no fallback, making SourceFormat the single source of truth and letting UnsupportedFormatError surface through the existing execute()/get_schema() boundaries.",
+    "The match statement is left exhaustive with no default arm on purpose: ty verifies exhaustiveness, so adding a SourceFormat member fails type-check rather than failing at runtime.",
+    "The unreachable .xls arm was removed with the constant. SourceFormat.from_path rejects .xls, so no .xls file could ever reach the engine; SUPPORTED_EXTENSIONS claiming otherwise was part of the drift.",
+    "SUPPORTED_EXTENSIONS was deleted rather than corrected — a second list of supported formats is what allowed the divergence, and the file dialog's _build_filter() already derives from SourceFormat.",
+    "Implementation delegated to codex gpt-5.6-terra under TDD; verified independently rather than on the strength of its report."
+  ],
+  "results": {
+    "implementer": "codex gpt-5.6-terra, workspace-write, tmux session codex-jsonl",
+    "verification": "Gates re-run by the reviewing agent, not taken from the implementer log.",
+    "ruff_check": "All checks passed!",
+    "ruff_format": "180 files already formatted",
+    "ty_check": "All checks passed!",
+    "pytest": "648 passed, 7 deselected in 17.96s",
+    "mutation_check": "Reverting the JSON_LINES arm to from_csv_auto fails test_duckdb_engine_reads_json_lines_as_typed_columns and test_duckdb_get_schema_reads_json_lines_fields; restored afterwards.",
+    "note": "The file-dialog parity test passed during RED because the hardcoded initialFilter string happened to match _build_filter() output; it is a drift guard, not a defect reproduction."
+  }
+}

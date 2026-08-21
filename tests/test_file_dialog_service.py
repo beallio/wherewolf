@@ -88,6 +88,24 @@ def test_qt_file_dialog_service_cancellation_is_empty_tuple(
     assert service.choose_dataset_files(default_directory) == ()
 
 
+def test_qt_file_dialog_service_initial_filter_matches_built_filter(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def get_open_file_names(*_args, **kwargs):
+        captured.update(kwargs)
+        return [], ""
+
+    monkeypatch.setattr(
+        "wherewolf.desktop.dialogs.file_dialog_service.QFileDialog.getOpenFileNames",
+        get_open_file_names,
+    )
+
+    service = QtFileDialogService()
+    service.choose_dataset_files(None)
+
+    assert captured["initialFilter"] == service._build_filter()
+
+
 def test_qt_file_dialog_service_show_hidden_uses_hidden_file_filter(monkeypatch) -> None:
     captured: dict[str, object] = {}
 

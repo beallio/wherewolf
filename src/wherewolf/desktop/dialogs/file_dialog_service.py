@@ -129,7 +129,7 @@ class QtFileDialogService:
             directory=directory,
             filter=self._build_filter(),
             options=QFileDialog.Option.ReadOnly,
-            initialFilter="Supported files (*.csv *.parquet *.json *.jsonl *.xlsx)",
+            initialFilter=self._build_filter(),
         )
         return tuple(Path(name) for name in names)
 
