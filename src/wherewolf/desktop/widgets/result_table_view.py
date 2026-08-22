@@ -102,7 +102,11 @@ class ResultTableView(QTableView):
         return self._source_model.frame()
 
     def selection_for_export(self) -> tuple[list[tuple[int, int]], list[int]]:
-        """Return selected source cells and the displayed visual column order."""
+        """Return selected source cells and a visual-position-to-model-column map.
+
+        The map includes hidden columns because Qt visual positions still account for them.
+        Hidden columns are excluded from the returned selected cells.
+        """
         selection_model = self.selectionModel()
         header = self.horizontalHeader()
         if selection_model is None or header is None:
@@ -112,7 +116,6 @@ class ResultTableView(QTableView):
             for _visual, logical in sorted(
                 (header.visualIndex(logical), logical)
                 for logical in range(self._proxy_model.columnCount())
-                if not self.isColumnHidden(logical)
             )
         ]
         selected_cells: list[tuple[int, int]] = []

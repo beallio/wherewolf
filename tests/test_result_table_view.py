@@ -9,7 +9,9 @@ from PyQt6.QtCore import QItemSelection, QItemSelectionModel, Qt
 from PyQt6.QtGui import QKeyEvent
 from PyQt6.QtWidgets import QApplication
 
+from wherewolf.desktop.clipboard_serializers import serialize_to_tsv
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
+from wherewolf.services.selection import selected_frame
 
 
 def test_result_table_view_selection_and_copy(qtbot):
@@ -44,6 +46,40 @@ def test_result_table_view_selection_and_copy(qtbot):
         )
     )
     assert cb.text() == "10\tx\n20\ty"
+
+
+def test_selection_for_export_maps_visual_columns_when_a_column_is_hidden(qtbot) -> None:
+    frame = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(frame)
+    table_view.hide_column(0)
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    index = table_view.proxy_model().index(0, 1)
+    selection_model.select(index, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+
+    cells, column_order = table_view.selection_for_export()
+
+    assert serialize_to_tsv(frame, cells, column_order) == "2"
+
+
+def test_selection_export_frame_maps_visual_columns_when_a_column_is_hidden(qtbot) -> None:
+    frame = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(frame)
+    table_view.hide_column(0)
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    index = table_view.proxy_model().index(0, 1)
+    selection_model.select(index, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+
+    cells, column_order = table_view.selection_for_export()
+
+    assert selected_frame(frame, cells, column_order).to_dicts() == [{"b": 2}]
 
 
 def test_result_table_view_uses_distinguishable_alternating_row_colors(qtbot) -> None:
