@@ -19,6 +19,8 @@
     "tests/test_result_table_view.py::test_selection_export_frame_maps_visual_columns_when_a_column_is_hidden",
     "tests/test_result_table_view.py::test_selection_statistics_summarises_multiple_numeric_cells",
     "tests/test_result_table_view.py::test_selection_statistics_marks_mixed_columns_non_numeric",
+    "tests/test_result_table_view.py::test_selection_statistics_handles_numeric_and_list_columns",
+    "tests/test_result_table_view.py::test_selection_statistics_counts_distinct_numeric_and_struct_values",
     "tests/test_result_table_view.py::test_selection_statistics_counts_nulls_outside_numeric_aggregates",
     "tests/test_result_table_view.py::test_selection_statistics_returns_none_for_empty_and_single_cell_selections",
     "tests/test_result_table_view.py::test_selection_statistics_maps_the_visible_column_when_a_column_is_hidden",
@@ -33,6 +35,7 @@
   "design_decisions": [
     "selection_for_export now creates a visual-position map for every logical column, including hidden ones, while its selected-cell list still excludes hidden columns. The shared TSV and selection-export consumers can therefore resolve the same visual index correctly without changes.",
     "Selection statistics use the source Polars frame and the corrected visual-to-model map. They aggregate selected values in Polars rather than reading display-role QModelIndex values, preserving typed numeric aggregation and excluding nulls from numeric calculations.",
+    "Mixed-dtype selections keep each gathered column typed. Values are grouped by dtype before distinct counts are combined, so Polars never needs to find a supertype for numeric values and JSON List or Struct values.",
     "The summary label lives directly below the persistent result summary rather than in the status bar, so it remains visible while the selection remains active.",
     "The inspector renders raw UserRole values with pretty JSON for dict/list structures or valid JSON text. It intentionally does not use TSV escaping, caps only displayed text, and copies the untruncated rendered value.",
     "Inspector windows use the ValueCountsWindow retention pattern: MainWindow retains each non-modal window, removes it after destruction, and closes all remaining inspectors during shutdown."
@@ -48,6 +51,32 @@
     "ruff_check": "All checks passed!",
     "ruff_format": "182 files left unchanged",
     "ty_check": "All checks passed!",
-    "pytest_before_documentation": "662 passed, 7 deselected in 19.53s"
-  }
+    "pytest_before_documentation": "662 passed, 7 deselected in 19.53s",
+    "nested_selection_statistics_red": "2 failed, 19 deselected, 1 error in 0.24s: numeric plus List raised SchemaError failed to determine supertype of i64 and list[i64]; numeric plus Struct reported distinct_count 1 instead of 2.",
+    "targeted_mixed_selection_statistics": "7 passed, 14 deselected in 0.16s.",
+    "pytest_after_mixed_selection_fix": "664 passed, 7 deselected in 18.90s",
+    "mutations": {
+      "2a_hidden_column_map": {
+        "change": "Restored the isColumnHidden filter in selection_for_export's column map.",
+        "result": "3 failed, 18 deselected, 1 error in 0.15s; the two export consumers and the hidden-column statistics guard failed.",
+        "restore": "Removed the filter again; 3 passed, 18 deselected in 0.16s."
+      },
+      "2b_selection_statistics": {
+        "change": "Made selection_statistics return None unconditionally.",
+        "result": "7 failed, 1 passed, 145 deselected in 0.35s; the numeric, mixed-dtype, null, hidden-column, and label guards failed while the intended none case passed.",
+        "restore": "Restored the implementation; 8 passed, 145 deselected in 0.22s."
+      },
+      "2c_cell_inspector": {
+        "change": "Made the inspector render str(value) instead of formatted JSON.",
+        "result": "1 failed, 4 passed in 0.16s; the JSON pretty-print test failed and the invalid JSON-like string test passed.",
+        "restore": "Restored JSON formatting; 5 passed in 0.15s."
+      }
+    }
+  },
+  "deferred_and_unverified": [
+    "No manual GUI verification was performed. Visual placement of the selection label, inspector readability at real window sizes, and native-dialog behavior remain unverified.",
+    "Performance was not measured. SelectionChanged frequency on 100,000-row selections and multi-megabyte inspector values remain unbenchmarked assumptions behind the typed aggregation and display cap.",
+    "Spark was not exercised. The suite ran with -m 'not spark'; the conclusion that these UI changes are engine-independent is reasoning rather than measurement.",
+    "No audit was made for callers other than serialize_to_tsv and selected_frame that might resolve columns by visual index."
+  ]
 }
