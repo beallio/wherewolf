@@ -12,6 +12,13 @@ def csv_path(tmp_path):
     return str(path)
 
 
+@pytest.fixture
+def jsonl_path(tmp_path):
+    path = tmp_path / "test.jsonl"
+    path.write_text('{"id": 1, "name": "a"}\n{"id": 2, "name": "b"}\n')
+    return str(path)
+
+
 def test_duckdb_engine_success(csv_path):
     engine = DuckDBEngine()
     # Query must use the reserved name 'dataset'
@@ -83,6 +90,38 @@ def test_duckdb_get_schema(csv_path):
     assert list(schema_df.columns) == ["Column", "Type"]
     assert "name" in schema_df["Column"].to_list()
     assert "value" in schema_df["Column"].to_list()
+
+
+def test_duckdb_engine_reads_json_lines_as_typed_columns(jsonl_path):
+    engine = DuckDBEngine()
+
+    result = engine.execute("SELECT * FROM dataset ORDER BY id", jsonl_path)
+
+    assert result.success is True
+    assert result.df.schema == {"id": pl.Int64, "name": pl.String}
+    assert result.df.to_dicts() == [{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]
+
+
+def test_duckdb_get_schema_reads_json_lines_fields(jsonl_path):
+    engine = DuckDBEngine()
+
+    schema_df = engine.get_schema(jsonl_path)
+
+    assert schema_df.to_dicts() == [
+        {"Column": "id", "Type": "BIGINT"},
+        {"Column": "name", "Type": "VARCHAR"},
+    ]
+
+
+def test_duckdb_engine_reports_unsupported_source_format(tmp_path):
+    path = tmp_path / "test.txt"
+    path.write_text("not a dataset")
+    engine = DuckDBEngine()
+
+    result = engine.execute("SELECT * FROM dataset", str(path))
+
+    assert result.success is False
+    assert "Unsupported source format: .txt" in result.error_message
 
 
 @pytest.mark.spark
