@@ -110,6 +110,12 @@ filtering, column reordering, hiding, auto-sizing, and reset. Column headers car
 badge such as `age [INT]` or `when [DATE]`, with the exact type in the tooltip. Right-click a
 header to copy or insert its name, adjust columns, or choose an ordering action.
 
+Selecting multiple result cells shows their cell, distinct-value, and null counts above the grid.
+For selections made entirely from numeric columns, it also shows the sum, mean, minimum, and
+maximum. To read a long value or nested JSON without grid truncation, right-click the cell and
+choose **Inspect Cell**, or press `Ctrl+I` while the grid is focused; the floating inspector can
+copy the complete unescaped value.
+
 The preview filter accepts either plain text, matched as a substring, or a SQL predicate over
 the previewed rows such as `age > 40` or `region = 'East' AND amount > 100`. An invalid
 expression reports the engine's error and leaves the current rows in place. Filters apply to the
