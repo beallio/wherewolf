@@ -56,6 +56,7 @@ from wherewolf.desktop.export_controller import ExportController, ExportResult
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.theming import PROGRAM_THEME_NAMES, apply_program_theme
 from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SavedQueriesDock, SqlEditor
+from wherewolf.desktop.widgets.cell_inspector_window import CellInspectorWindow
 from wherewolf.desktop.widgets.messages_panel import MessagesPanel
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
 from wherewolf.desktop.widgets.schema_panel import SchemaPanel
@@ -299,6 +300,7 @@ class MainWindow(QMainWindow):
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
         self._value_counts_windows: list[ValueCountsWindow] = []
+        self._cell_inspector_windows: list[CellInspectorWindow] = []
 
         self.main_toolbar = self._build_toolbar()
         self.query_controls_toolbar = self._build_query_controls_toolbar()
@@ -1243,6 +1245,18 @@ class MainWindow(QMainWindow):
         )
         window.show()
 
+    def _show_cell_inspector(self, value: object, column_name: str) -> None:
+        window = CellInspectorWindow(value, column_name, self)
+        self._cell_inspector_windows.append(window)
+        window.destroyed.connect(
+            lambda: (
+                self._cell_inspector_windows.remove(window)
+                if window in self._cell_inspector_windows
+                else None
+            )
+        )
+        window.show()
+
     def _on_profile_result(self, profile_result: ProfileResult) -> None:
         self._catalog_service.update_profile(profile_result)
         self._catalog_service.refresh_profile_staleness()
@@ -1366,6 +1380,12 @@ class MainWindow(QMainWindow):
         self.result_table_view.frame_changed.connect(
             self.desktop_actions.export_selection.setEnabled
         )
+        self.inspect_cell = QAction("Inspect Cell", self)
+        self.inspect_cell.setShortcut(QKeySequence("Ctrl+I"))
+        self.inspect_cell.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.inspect_cell.triggered.connect(self.result_table_view.inspect_current_cell)
+        self.result_table_view.addAction(self.inspect_cell)
+        self.result_table_view.inspect_cell_requested.connect(self._show_cell_inspector)
         results_page = QWidget(self.results_tabs)
         results_layout = QVBoxLayout(results_page)
         results_layout.setContentsMargins(0, 0, 0, 0)
@@ -1899,6 +1919,9 @@ class MainWindow(QMainWindow):
         for window in list(self._value_counts_windows):
             window.close()
         self._value_counts_windows.clear()
+        for window in list(self._cell_inspector_windows):
+            window.close()
+        self._cell_inspector_windows.clear()
         for worker in list(self._schema_workers):
             if worker.isRunning():
                 worker.quit()

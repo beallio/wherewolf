@@ -25,6 +25,7 @@ class ResultTableView(QTableView):
     local_sort_changed = pyqtSignal(bool)
     frame_changed = pyqtSignal(bool)
     selection_stats_changed = pyqtSignal(object)
+    inspect_cell_requested = pyqtSignal(object, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -333,7 +334,19 @@ class ResultTableView(QTableView):
             "Copy with Quoted Column Names",
             lambda: self.copy_selection(include_headers=True, quote_headers=True),
         )
+        menu.addSeparator()
+        inspect_action = menu.addAction("Inspect Cell", self.inspect_current_cell)
+        if inspect_action is not None:
+            inspect_action.setEnabled(self.currentIndex().isValid())
         return menu
+
+    def inspect_current_cell(self) -> None:
+        """Request inspection of the current cell's unformatted model value."""
+        index = self.currentIndex()
+        if not index.isValid():
+            return
+        value = self._proxy_model.data(index, Qt.ItemDataRole.UserRole)
+        self.inspect_cell_requested.emit(value, self._column_name(index.column()))
 
     def _on_header_context_menu_requested(self, pos: QPoint) -> None:
         header = self.horizontalHeader()
@@ -348,6 +361,7 @@ class ResultTableView(QTableView):
         idx = self.indexAt(pos)
         viewport = self.viewport()
         if idx.isValid() and viewport is not None:
+            self.setCurrentIndex(idx)
             menu = self.create_body_context_menu()
             QMenu.exec(menu, viewport.mapToGlobal(pos))
 

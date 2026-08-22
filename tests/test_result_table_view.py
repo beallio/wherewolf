@@ -7,7 +7,7 @@ from datetime import date
 import polars as pl
 from PyQt6.QtCore import QItemSelection, QItemSelectionModel, Qt
 from PyQt6.QtGui import QKeyEvent
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMenu
 
 from wherewolf.desktop.clipboard_serializers import serialize_to_tsv
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
@@ -190,6 +190,32 @@ def test_selection_statistics_maps_the_visible_column_when_a_column_is_hidden(qt
     assert statistics.numeric.mean == 1.5
     assert statistics.numeric.minimum == 1
     assert statistics.numeric.maximum == 2
+
+
+def test_body_context_menu_inspects_the_clicked_cell_not_the_previous_selection(
+    qtbot, monkeypatch
+) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.resize(400, 200)
+    table_view.show()
+    table_view.set_frame(pl.DataFrame({"first": ["A"], "second": ["B"]}))
+    first = table_view.proxy_model().index(0, 0)
+    second = table_view.proxy_model().index(0, 1)
+    table_view.setCurrentIndex(first)
+
+    inspected: list[tuple[object, str]] = []
+    table_view.inspect_cell_requested.connect(lambda value, name: inspected.append((value, name)))
+
+    def trigger_inspect_action(menu: QMenu, _position) -> None:
+        action = next(action for action in menu.actions() if action.text() == "Inspect Cell")
+        action.trigger()
+
+    monkeypatch.setattr(QMenu, "exec", trigger_inspect_action)
+
+    table_view._on_body_context_menu_requested(table_view.visualRect(second).center())
+
+    assert inspected == [("B", "second")]
 
 
 def test_result_table_view_uses_distinguishable_alternating_row_colors(qtbot) -> None:
