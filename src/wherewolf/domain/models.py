@@ -118,6 +118,26 @@ class QueryResult:
 
 
 @dataclass(frozen=True, slots=True)
+class NumericSelectionStatistics:
+    """Aggregates for a selection made entirely from numeric columns."""
+
+    total: int | float | None
+    mean: float | None
+    minimum: int | float | None
+    maximum: int | float | None
+
+
+@dataclass(frozen=True, slots=True)
+class SelectionStatistics:
+    """Counts and optional numeric aggregates for multiple selected result cells."""
+
+    cell_count: int
+    distinct_count: int
+    null_count: int
+    numeric: NumericSelectionStatistics | None
+
+
+@dataclass(frozen=True, slots=True)
 class SchemaResult:
     entry_id: UUID
     columns: tuple[ColumnSchema, ...] | None

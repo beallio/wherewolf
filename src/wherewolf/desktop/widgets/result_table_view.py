@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMenu, QTableView
 from wherewolf.desktop.clipboard_serializers import format_cell_value, format_header_name
 from wherewolf.desktop.models.polars_table_model import PolarsTableModel
 from wherewolf.desktop.models.typed_sort_proxy_model import TypedSortProxyModel
+from wherewolf.domain import NumericSelectionStatistics, SelectionStatistics
 
 
 class ResultTableView(QTableView):
@@ -23,6 +24,8 @@ class ResultTableView(QTableView):
     apply_query_order_requested = pyqtSignal(str, str)
     local_sort_changed = pyqtSignal(bool)
     frame_changed = pyqtSignal(bool)
+    selection_stats_changed = pyqtSignal(object)
+    inspect_cell_requested = pyqtSignal(object, str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -51,6 +54,9 @@ class ResultTableView(QTableView):
             header.customContextMenuRequested.connect(self._on_header_context_menu_requested)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_body_context_menu_requested)
+        selection_model = self.selectionModel()
+        if selection_model is not None:
+            selection_model.selectionChanged.connect(self._emit_selection_statistics)
 
     def proxy_model(self) -> TypedSortProxyModel:
         return self._proxy_model
@@ -102,7 +108,11 @@ class ResultTableView(QTableView):
         return self._source_model.frame()
 
     def selection_for_export(self) -> tuple[list[tuple[int, int]], list[int]]:
-        """Return selected source cells and the displayed visual column order."""
+        """Return selected source cells and a visual-position-to-model-column map.
+
+        The map includes hidden columns because Qt visual positions still account for them.
+        Hidden columns are excluded from the returned selected cells.
+        """
         selection_model = self.selectionModel()
         header = self.horizontalHeader()
         if selection_model is None or header is None:
@@ -112,7 +122,6 @@ class ResultTableView(QTableView):
             for _visual, logical in sorted(
                 (header.visualIndex(logical), logical)
                 for logical in range(self._proxy_model.columnCount())
-                if not self.isColumnHidden(logical)
             )
         ]
         selected_cells: list[tuple[int, int]] = []
@@ -123,6 +132,78 @@ class ResultTableView(QTableView):
             if source_index.isValid():
                 selected_cells.append((source_index.row(), header.visualIndex(index.column())))
         return selected_cells, column_order
+
+    def selection_statistics(self) -> SelectionStatistics | None:
+        """Summarize a multi-cell selection from the source frame in visual order."""
+        cells, column_order = self.selection_for_export()
+        unique_cells = sorted(set(cells))
+        if len(unique_cells) < 2:
+            return None
+
+        rows_by_model_column: dict[int, list[int]] = {}
+        for source_row, visual_column in unique_cells:
+            model_column = column_order[visual_column]
+            rows_by_model_column.setdefault(model_column, []).append(source_row)
+
+        frame = self.frame()
+        selected_columns_are_numeric = all(
+            frame.dtypes[column] != pl.Boolean and frame.dtypes[column].is_numeric()
+            for column in rows_by_model_column
+        )
+        selected_value_frames = [
+            frame.select(pl.col(frame.columns[column]).gather(rows).alias("value"))
+            for column, rows in rows_by_model_column.items()
+        ]
+        if selected_columns_are_numeric:
+            aggregates = (
+                pl.concat(selected_value_frames, how="vertical_relaxed")
+                .select(
+                    pl.len().alias("cell_count"),
+                    pl.col("value").n_unique().alias("distinct_count"),
+                    pl.col("value").null_count().alias("null_count"),
+                    pl.col("value").sum().alias("total"),
+                    pl.col("value").mean().alias("mean"),
+                    pl.col("value").min().alias("minimum"),
+                    pl.col("value").max().alias("maximum"),
+                )
+                .row(0, named=True)
+            )
+            return SelectionStatistics(
+                cell_count=int(aggregates["cell_count"]),
+                distinct_count=int(aggregates["distinct_count"]),
+                null_count=int(aggregates["null_count"]),
+                numeric=NumericSelectionStatistics(
+                    total=aggregates["total"],
+                    mean=aggregates["mean"],
+                    minimum=aggregates["minimum"],
+                    maximum=aggregates["maximum"],
+                ),
+            )
+
+        values_by_dtype: dict[str, list[pl.DataFrame]] = {}
+        for column, selected_values in zip(
+            rows_by_model_column, selected_value_frames, strict=True
+        ):
+            values_by_dtype.setdefault(str(frame.dtypes[column]), []).append(selected_values)
+
+        cell_count = sum(selected_values.height for selected_values in selected_value_frames)
+        null_count = sum(
+            selected_values.get_column("value").null_count()
+            for selected_values in selected_value_frames
+        )
+        distinct_count = sum(
+            pl.concat(values, how="vertical").get_column("value").n_unique()
+            for values in values_by_dtype.values()
+        )
+        return SelectionStatistics(
+            cell_count=cell_count,
+            distinct_count=distinct_count,
+            null_count=null_count,
+            numeric=None,
+        )
+
+    def _emit_selection_statistics(self) -> None:
+        self.selection_stats_changed.emit(self.selection_statistics())
 
     def has_result(self) -> bool:
         df = self._source_model.frame()
@@ -268,7 +349,19 @@ class ResultTableView(QTableView):
             "Copy with Quoted Column Names",
             lambda: self.copy_selection(include_headers=True, quote_headers=True),
         )
+        menu.addSeparator()
+        inspect_action = menu.addAction("Inspect Cell", self.inspect_current_cell)
+        if inspect_action is not None:
+            inspect_action.setEnabled(self.currentIndex().isValid())
         return menu
+
+    def inspect_current_cell(self) -> None:
+        """Request inspection of the current cell's unformatted model value."""
+        index = self.currentIndex()
+        if not index.isValid():
+            return
+        value = self._proxy_model.data(index, Qt.ItemDataRole.UserRole)
+        self.inspect_cell_requested.emit(value, self._column_name(index.column()))
 
     def _on_header_context_menu_requested(self, pos: QPoint) -> None:
         header = self.horizontalHeader()
@@ -283,6 +376,7 @@ class ResultTableView(QTableView):
         idx = self.indexAt(pos)
         viewport = self.viewport()
         if idx.isValid() and viewport is not None:
+            self.setCurrentIndex(idx)
             menu = self.create_body_context_menu()
             QMenu.exec(menu, viewport.mapToGlobal(pos))
 

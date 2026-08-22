@@ -1,16 +1,16 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=33" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=34" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=33)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=33)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=33)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=34)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=34)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=34)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 Wherewolf is a local SQL workbench for CSV, Parquet, JSON, JSON Lines, and XLSX files. It opens
 a native PyQt6 desktop window and runs queries with DuckDB by default. There is no browser UI and
 no local web server.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=33)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=34)
 
 ## Install
 
@@ -109,6 +109,12 @@ preserves values for typed sorting, and supports selection, spreadsheet-compatib
 filtering, column reordering, hiding, auto-sizing, and reset. Column headers carry a data-type
 badge such as `age [INT]` or `when [DATE]`, with the exact type in the tooltip. Right-click a
 header to copy or insert its name, adjust columns, or choose an ordering action.
+
+Selecting multiple result cells shows their cell, distinct-value, and null counts above the grid.
+For selections made entirely from numeric columns, it also shows the sum, mean, minimum, and
+maximum. To read a long value or nested JSON without grid truncation, right-click the cell and
+choose **Inspect Cell**, or press `Ctrl+I` while the grid is focused; the floating inspector can
+copy the complete unescaped value.
 
 The preview filter accepts either plain text, matched as a substring, or a SQL predicate over
 the previewed rows such as `age > 40` or `region = 'East' AND amount > 100`. An invalid

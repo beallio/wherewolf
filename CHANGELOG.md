@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## [0.10.2] - 2026-08-22 — Result selections are summarized, inspectable, and accurate
+
+### Fixed
+
+- **Copied and exported selections no longer shift to the wrong column after a column is
+  hidden.** Previously, selecting a visible cell after hiding an earlier column could copy or
+  export the neighbouring column's data instead, silently putting the wrong values in the result.
+
+### Added
+
+- **Result selections now show a summary above the grid.** Select multiple cells to see their
+  cell, distinct-value, and null counts; selections made entirely from numeric columns also show
+  their sum, mean, minimum, and maximum.
+- **Long and structured result values can be inspected in a floating window.** Right-click a cell
+  and choose **Inspect Cell**, or press `Ctrl+I` while the results grid is focused, to read and
+  copy the full value without TSV escaping or grid truncation.
+
 ## [0.10.1] - 2026-08-22 — JSON Lines files are read as JSON Lines
 
 ### Fixed
