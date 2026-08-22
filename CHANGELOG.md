@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.10.2] - 2026-08-22 — Result selections are summarized, inspectable, and accurate
+
 ### Fixed
 
 - **Copied and exported selections no longer shift to the wrong column after a column is

@@ -1,0 +1,26 @@
+{
+  "date": "2026-08-22",
+  "task_objective": "Merge the completed dev branch into main and publish the next patch release, v0.10.2.",
+  "files_modified": [
+    "CHANGELOG.md",
+    "README.md",
+    "docs/agent_conversations/2026-08-22_release_v0.10.2.json",
+    "pyproject.toml",
+    "uv.lock"
+  ],
+  "tests_added": [],
+  "design_decisions": [
+    "Use v0.10.2 because pyproject.toml and the latest release tag are at v0.10.1 and the requested release type is patch.",
+    "Promote the complete local dev branch, which contains local main plus the reviewed results-grid selection work, instead of reconstructing or cherry-picking the feature history.",
+    "Build the GitHub release title and notes from CHANGELOG.md before tagging, as required by the release workflow.",
+    "Increment README image cacheBuster values from 33 to 34 for the new release tag.",
+    "Use scripts/orchestration-hooks/finalize-release patch on main for the version bump, release commit, annotated tag, and push."
+  ],
+  "results": {
+    "ruff_check": "All checks passed.",
+    "ruff_format": "182 files left unchanged.",
+    "ty_check": "All checks passed for src/.",
+    "pytest": "664 passed, 7 deselected in 23.21s.",
+    "release_automation": "Tag-triggered CI, GitHub release creation, and PyPI publication are verified after this pre-release record is committed."
+  }
+}
