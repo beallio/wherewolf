@@ -128,6 +128,48 @@ def test_selection_statistics_marks_mixed_columns_non_numeric(qtbot) -> None:
     assert statistics.numeric is None
 
 
+def test_selection_statistics_handles_numeric_and_list_columns(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"number": [1, 2], "values": [[1, 2], [3]]}))
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(table_view.proxy_model().index(0, 0), table_view.proxy_model().index(0, 1)),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    statistics = table_view.selection_statistics()
+
+    assert statistics is not None
+    assert statistics.cell_count == 2
+    assert statistics.distinct_count == 2
+    assert statistics.null_count == 0
+    assert statistics.numeric is None
+
+
+def test_selection_statistics_counts_distinct_numeric_and_struct_values(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"number": [1, 2], "object": [{"key": 1}, {"key": 2}]}))
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(table_view.proxy_model().index(0, 0), table_view.proxy_model().index(0, 1)),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    statistics = table_view.selection_statistics()
+
+    assert statistics is not None
+    assert statistics.cell_count == 2
+    assert statistics.distinct_count == 2
+    assert statistics.null_count == 0
+    assert statistics.numeric is None
+
+
 def test_selection_statistics_counts_nulls_outside_numeric_aggregates(qtbot) -> None:
     table_view = ResultTableView()
     qtbot.addWidget(table_view)

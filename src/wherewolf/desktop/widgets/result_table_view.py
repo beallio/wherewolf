@@ -146,45 +146,60 @@ class ResultTableView(QTableView):
             rows_by_model_column.setdefault(model_column, []).append(source_row)
 
         frame = self.frame()
-        selected_values = pl.concat(
-            [
-                frame.select(pl.col(frame.columns[column]).gather(rows).alias("value"))
-                for column, rows in rows_by_model_column.items()
-            ],
-            how="vertical_relaxed",
-        )
         selected_columns_are_numeric = all(
             frame.dtypes[column] != pl.Boolean and frame.dtypes[column].is_numeric()
             for column in rows_by_model_column
         )
-        aggregate_expressions = [
-            pl.len().alias("cell_count"),
-            pl.col("value").n_unique().alias("distinct_count"),
-            pl.col("value").null_count().alias("null_count"),
+        selected_value_frames = [
+            frame.select(pl.col(frame.columns[column]).gather(rows).alias("value"))
+            for column, rows in rows_by_model_column.items()
         ]
         if selected_columns_are_numeric:
-            aggregate_expressions.extend(
-                (
+            aggregates = (
+                pl.concat(selected_value_frames, how="vertical_relaxed")
+                .select(
+                    pl.len().alias("cell_count"),
+                    pl.col("value").n_unique().alias("distinct_count"),
+                    pl.col("value").null_count().alias("null_count"),
                     pl.col("value").sum().alias("total"),
                     pl.col("value").mean().alias("mean"),
                     pl.col("value").min().alias("minimum"),
                     pl.col("value").max().alias("maximum"),
                 )
+                .row(0, named=True)
             )
-        aggregates = selected_values.select(aggregate_expressions).row(0, named=True)
-        numeric = None
-        if selected_columns_are_numeric:
-            numeric = NumericSelectionStatistics(
-                total=aggregates["total"],
-                mean=aggregates["mean"],
-                minimum=aggregates["minimum"],
-                maximum=aggregates["maximum"],
+            return SelectionStatistics(
+                cell_count=int(aggregates["cell_count"]),
+                distinct_count=int(aggregates["distinct_count"]),
+                null_count=int(aggregates["null_count"]),
+                numeric=NumericSelectionStatistics(
+                    total=aggregates["total"],
+                    mean=aggregates["mean"],
+                    minimum=aggregates["minimum"],
+                    maximum=aggregates["maximum"],
+                ),
             )
+
+        values_by_dtype: dict[str, list[pl.DataFrame]] = {}
+        for column, selected_values in zip(
+            rows_by_model_column, selected_value_frames, strict=True
+        ):
+            values_by_dtype.setdefault(str(frame.dtypes[column]), []).append(selected_values)
+
+        cell_count = sum(selected_values.height for selected_values in selected_value_frames)
+        null_count = sum(
+            selected_values.get_column("value").null_count()
+            for selected_values in selected_value_frames
+        )
+        distinct_count = sum(
+            pl.concat(values, how="vertical").get_column("value").n_unique()
+            for values in values_by_dtype.values()
+        )
         return SelectionStatistics(
-            cell_count=int(aggregates["cell_count"]),
-            distinct_count=int(aggregates["distinct_count"]),
-            null_count=int(aggregates["null_count"]),
-            numeric=numeric,
+            cell_count=cell_count,
+            distinct_count=distinct_count,
+            null_count=null_count,
+            numeric=None,
         )
 
     def _emit_selection_statistics(self) -> None:
