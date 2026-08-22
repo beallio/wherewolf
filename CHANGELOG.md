@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.10.1] - 2026-08-22 — JSON Lines files are read as JSON Lines
+
 ### Fixed
 
 - **JSON Lines files are read as JSON Lines.** `.jsonl` was accepted by the catalog, offered in
