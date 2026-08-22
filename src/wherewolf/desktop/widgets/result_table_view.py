@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QMenu, QTableView
 from wherewolf.desktop.clipboard_serializers import format_cell_value, format_header_name
 from wherewolf.desktop.models.polars_table_model import PolarsTableModel
 from wherewolf.desktop.models.typed_sort_proxy_model import TypedSortProxyModel
+from wherewolf.domain import NumericSelectionStatistics, SelectionStatistics
 
 
 class ResultTableView(QTableView):
@@ -23,6 +24,7 @@ class ResultTableView(QTableView):
     apply_query_order_requested = pyqtSignal(str, str)
     local_sort_changed = pyqtSignal(bool)
     frame_changed = pyqtSignal(bool)
+    selection_stats_changed = pyqtSignal(object)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -51,6 +53,9 @@ class ResultTableView(QTableView):
             header.customContextMenuRequested.connect(self._on_header_context_menu_requested)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self._on_body_context_menu_requested)
+        selection_model = self.selectionModel()
+        if selection_model is not None:
+            selection_model.selectionChanged.connect(self._emit_selection_statistics)
 
     def proxy_model(self) -> TypedSortProxyModel:
         return self._proxy_model
@@ -126,6 +131,63 @@ class ResultTableView(QTableView):
             if source_index.isValid():
                 selected_cells.append((source_index.row(), header.visualIndex(index.column())))
         return selected_cells, column_order
+
+    def selection_statistics(self) -> SelectionStatistics | None:
+        """Summarize a multi-cell selection from the source frame in visual order."""
+        cells, column_order = self.selection_for_export()
+        unique_cells = sorted(set(cells))
+        if len(unique_cells) < 2:
+            return None
+
+        rows_by_model_column: dict[int, list[int]] = {}
+        for source_row, visual_column in unique_cells:
+            model_column = column_order[visual_column]
+            rows_by_model_column.setdefault(model_column, []).append(source_row)
+
+        frame = self.frame()
+        selected_values = pl.concat(
+            [
+                frame.select(pl.col(frame.columns[column]).gather(rows).alias("value"))
+                for column, rows in rows_by_model_column.items()
+            ],
+            how="vertical_relaxed",
+        )
+        selected_columns_are_numeric = all(
+            frame.dtypes[column] != pl.Boolean and frame.dtypes[column].is_numeric()
+            for column in rows_by_model_column
+        )
+        aggregate_expressions = [
+            pl.len().alias("cell_count"),
+            pl.col("value").n_unique().alias("distinct_count"),
+            pl.col("value").null_count().alias("null_count"),
+        ]
+        if selected_columns_are_numeric:
+            aggregate_expressions.extend(
+                (
+                    pl.col("value").sum().alias("total"),
+                    pl.col("value").mean().alias("mean"),
+                    pl.col("value").min().alias("minimum"),
+                    pl.col("value").max().alias("maximum"),
+                )
+            )
+        aggregates = selected_values.select(aggregate_expressions).row(0, named=True)
+        numeric = None
+        if selected_columns_are_numeric:
+            numeric = NumericSelectionStatistics(
+                total=aggregates["total"],
+                mean=aggregates["mean"],
+                minimum=aggregates["minimum"],
+                maximum=aggregates["maximum"],
+            )
+        return SelectionStatistics(
+            cell_count=int(aggregates["cell_count"]),
+            distinct_count=int(aggregates["distinct_count"]),
+            null_count=int(aggregates["null_count"]),
+            numeric=numeric,
+        )
+
+    def _emit_selection_statistics(self) -> None:
+        self.selection_stats_changed.emit(self.selection_statistics())
 
     def has_result(self) -> bool:
         df = self._source_model.frame()

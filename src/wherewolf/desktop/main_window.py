@@ -71,6 +71,7 @@ from wherewolf.domain import (
     ProfileResult,
     QueryResult,
     SchemaResult,
+    SelectionStatistics,
     SqlDiagnostic,
     TranslationError,
 )
@@ -1376,6 +1377,13 @@ class MainWindow(QMainWindow):
         self.result_summary_label.setObjectName("result_summary_label")
         self.result_summary_label.setVisible(False)
         results_layout.addWidget(self.result_summary_label)
+        self.result_selection_stats_label = QLabel(results_page)
+        self.result_selection_stats_label.setObjectName("result_selection_stats_label")
+        self.result_selection_stats_label.setVisible(False)
+        results_layout.addWidget(self.result_selection_stats_label)
+        self.result_table_view.selection_stats_changed.connect(
+            self._set_result_selection_statistics
+        )
         self.result_truncation_notice = QLabel(
             "Preview is truncated at the selected row limit. Export Full Results for all rows.",
             results_page,
@@ -1939,3 +1947,26 @@ class MainWindow(QMainWindow):
     def _set_result_summary(self, text: str) -> None:
         self.result_summary_label.setText(text)
         self.result_summary_label.setVisible(bool(text))
+
+    def _set_result_selection_statistics(self, statistics: SelectionStatistics | None) -> None:
+        if statistics is None:
+            self.result_selection_stats_label.clear()
+            self.result_selection_stats_label.setVisible(False)
+            return
+        parts = [
+            f"{statistics.cell_count} cells",
+            f"{statistics.distinct_count} distinct",
+        ]
+        if statistics.null_count:
+            parts.append(f"{statistics.null_count} null")
+        if statistics.numeric is not None:
+            parts.extend(
+                (
+                    f"Sum: {statistics.numeric.total}",
+                    f"Mean: {statistics.numeric.mean}",
+                    f"Min: {statistics.numeric.minimum}",
+                    f"Max: {statistics.numeric.maximum}",
+                )
+            )
+        self.result_selection_stats_label.setText(" · ".join(parts))
+        self.result_selection_stats_label.setVisible(True)

@@ -9,6 +9,8 @@ import polars as pl
 import pytest
 from PyQt6.QtCore import (
     QCoreApplication,
+    QItemSelection,
+    QItemSelectionModel,
     QMimeData,
     QPointF,
     QSettings,
@@ -3473,3 +3475,29 @@ def test_main_window_editor_shortcuts_survive_scintilla_key_bindings(qtbot) -> N
     )
 
     assert second_editor.text() == "-- SELECT second_tab"
+
+
+def test_main_window_shows_and_clears_result_selection_statistics(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.result_table_view.set_frame(pl.DataFrame({"number": [1, 2]}))
+
+    assert window.result_selection_stats_label.isHidden()
+    selection_model = window.result_table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(
+            window.result_table_view.proxy_model().index(0, 0),
+            window.result_table_view.proxy_model().index(1, 0),
+        ),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    assert not window.result_selection_stats_label.isHidden()
+    assert window.result_selection_stats_label.text() == (
+        "2 cells · 2 distinct · Sum: 3 · Mean: 1.5 · Min: 1 · Max: 2"
+    )
+
+    selection_model.clearSelection()
+
+    assert window.result_selection_stats_label.isHidden()
