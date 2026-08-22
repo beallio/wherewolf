@@ -7,9 +7,11 @@ from datetime import date
 import polars as pl
 from PyQt6.QtCore import QItemSelection, QItemSelectionModel, Qt
 from PyQt6.QtGui import QKeyEvent
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMenu
 
+from wherewolf.desktop.clipboard_serializers import serialize_to_tsv
 from wherewolf.desktop.widgets.result_table_view import ResultTableView
+from wherewolf.services.selection import selected_frame
 
 
 def test_result_table_view_selection_and_copy(qtbot):
@@ -44,6 +46,218 @@ def test_result_table_view_selection_and_copy(qtbot):
         )
     )
     assert cb.text() == "10\tx\n20\ty"
+
+
+def test_selection_for_export_maps_visual_columns_when_a_column_is_hidden(qtbot) -> None:
+    frame = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(frame)
+    table_view.hide_column(0)
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    index = table_view.proxy_model().index(0, 1)
+    selection_model.select(index, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+
+    cells, column_order = table_view.selection_for_export()
+
+    assert serialize_to_tsv(frame, cells, column_order) == "2"
+
+
+def test_selection_export_frame_maps_visual_columns_when_a_column_is_hidden(qtbot) -> None:
+    frame = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(frame)
+    table_view.hide_column(0)
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    index = table_view.proxy_model().index(0, 1)
+    selection_model.select(index, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+
+    cells, column_order = table_view.selection_for_export()
+
+    assert selected_frame(frame, cells, column_order).to_dicts() == [{"b": 2}]
+
+
+def test_selection_statistics_summarises_multiple_numeric_cells(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"number": [1, 2, 2]}))
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(table_view.proxy_model().index(0, 0), table_view.proxy_model().index(2, 0)),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    statistics = table_view.selection_statistics()
+
+    assert statistics is not None
+    assert statistics.cell_count == 3
+    assert statistics.distinct_count == 2
+    assert statistics.null_count == 0
+    assert statistics.numeric is not None
+    assert statistics.numeric.total == 5
+    assert statistics.numeric.mean == 5 / 3
+    assert statistics.numeric.minimum == 1
+    assert statistics.numeric.maximum == 2
+
+
+def test_selection_statistics_marks_mixed_columns_non_numeric(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"number": [1, 2], "name": ["Ada", "Lin"]}))
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(table_view.proxy_model().index(0, 0), table_view.proxy_model().index(1, 1)),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    statistics = table_view.selection_statistics()
+
+    assert statistics is not None
+    assert statistics.cell_count == 4
+    assert statistics.distinct_count == 4
+    assert statistics.null_count == 0
+    assert statistics.numeric is None
+
+
+def test_selection_statistics_handles_numeric_and_list_columns(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"number": [1, 2], "values": [[1, 2], [3]]}))
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(table_view.proxy_model().index(0, 0), table_view.proxy_model().index(0, 1)),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    statistics = table_view.selection_statistics()
+
+    assert statistics is not None
+    assert statistics.cell_count == 2
+    assert statistics.distinct_count == 2
+    assert statistics.null_count == 0
+    assert statistics.numeric is None
+
+
+def test_selection_statistics_counts_distinct_numeric_and_struct_values(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"number": [1, 2], "object": [{"key": 1}, {"key": 2}]}))
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(table_view.proxy_model().index(0, 0), table_view.proxy_model().index(0, 1)),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    statistics = table_view.selection_statistics()
+
+    assert statistics is not None
+    assert statistics.cell_count == 2
+    assert statistics.distinct_count == 2
+    assert statistics.null_count == 0
+    assert statistics.numeric is None
+
+
+def test_selection_statistics_counts_nulls_outside_numeric_aggregates(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"number": [1, None, 3]}))
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(table_view.proxy_model().index(0, 0), table_view.proxy_model().index(2, 0)),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    statistics = table_view.selection_statistics()
+
+    assert statistics is not None
+    assert statistics.cell_count == 3
+    assert statistics.distinct_count == 3
+    assert statistics.null_count == 1
+    assert statistics.numeric is not None
+    assert statistics.numeric.total == 4
+    assert statistics.numeric.mean == 2
+    assert statistics.numeric.minimum == 1
+    assert statistics.numeric.maximum == 3
+
+
+def test_selection_statistics_returns_none_for_empty_and_single_cell_selections(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"number": [1, 2]}))
+
+    assert table_view.selection_statistics() is None
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        table_view.proxy_model().index(0, 0), QItemSelectionModel.SelectionFlag.ClearAndSelect
+    )
+
+    assert table_view.selection_statistics() is None
+
+
+def test_selection_statistics_maps_the_visible_column_when_a_column_is_hidden(qtbot) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.set_frame(pl.DataFrame({"hidden": [100, 200], "shown": [1, 2]}))
+    table_view.hide_column(0)
+
+    selection_model = table_view.selectionModel()
+    assert selection_model is not None
+    selection_model.select(
+        QItemSelection(table_view.proxy_model().index(0, 1), table_view.proxy_model().index(1, 1)),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    statistics = table_view.selection_statistics()
+
+    assert statistics is not None
+    assert statistics.numeric is not None
+    assert statistics.numeric.total == 3
+    assert statistics.numeric.mean == 1.5
+    assert statistics.numeric.minimum == 1
+    assert statistics.numeric.maximum == 2
+
+
+def test_body_context_menu_inspects_the_clicked_cell_not_the_previous_selection(
+    qtbot, monkeypatch
+) -> None:
+    table_view = ResultTableView()
+    qtbot.addWidget(table_view)
+    table_view.resize(400, 200)
+    table_view.show()
+    table_view.set_frame(pl.DataFrame({"first": ["A"], "second": ["B"]}))
+    first = table_view.proxy_model().index(0, 0)
+    second = table_view.proxy_model().index(0, 1)
+    table_view.setCurrentIndex(first)
+
+    inspected: list[tuple[object, str]] = []
+    table_view.inspect_cell_requested.connect(lambda value, name: inspected.append((value, name)))
+
+    def trigger_inspect_action(menu: QMenu, _position) -> None:
+        action = next(action for action in menu.actions() if action.text() == "Inspect Cell")
+        action.trigger()
+
+    monkeypatch.setattr(QMenu, "exec", trigger_inspect_action)
+
+    table_view._on_body_context_menu_requested(table_view.visualRect(second).center())
+
+    assert inspected == [("B", "second")]
 
 
 def test_result_table_view_uses_distinguishable_alternating_row_colors(qtbot) -> None:
