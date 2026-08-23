@@ -118,6 +118,42 @@ class QueryResult:
 
 
 @dataclass(frozen=True, slots=True)
+class RowCountResult:
+    """Terminal result of counting rows for one captured execution request."""
+
+    request_id: UUID
+    status: ExecutionStatus
+    total_row_count: int | None
+    completed_at: datetime
+    error_type: str | None = None
+    error_message: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.status is ExecutionStatus.SUCCEEDED:
+            if self.total_row_count is None or self.total_row_count < 0:
+                raise ValueError("successful RowCountResult requires a non-negative total")
+            if self.error_type is not None or self.error_message is not None:
+                raise ValueError("successful RowCountResult must not include an error")
+            return
+
+        if self.status is ExecutionStatus.FAILED:
+            if self.total_row_count is not None:
+                raise ValueError("failed RowCountResult must not include a total")
+            if self.error_type is None or self.error_message is None:
+                raise ValueError("failed RowCountResult requires error_type and error_message")
+            return
+
+        if self.status is ExecutionStatus.CANCELLED:
+            if self.total_row_count is not None:
+                raise ValueError("cancelled RowCountResult must not include a total")
+            if self.error_type is not None or self.error_message is not None:
+                raise ValueError("cancelled RowCountResult must not include an error")
+            return
+
+        raise ValueError("RowCountResult requires a terminal status")
+
+
+@dataclass(frozen=True, slots=True)
 class NumericSelectionStatistics:
     """Aggregates for a selection made entirely from numeric columns."""
 

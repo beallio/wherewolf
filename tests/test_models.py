@@ -134,6 +134,67 @@ def test_domain_queryresult_distinct_from_execution_queryresult() -> None:
     assert domain_models.QueryResult is not execution.models.QueryResult
 
 
+def test_row_count_result_rejects_invalid_status_total_and_error_combinations() -> None:
+    request_id = uuid4()
+    completed_at = datetime.now(UTC)
+
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=None,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=-1,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=1,
+            completed_at=completed_at,
+            error_type="RuntimeError",
+            error_message="unexpected",
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.FAILED,
+            total_row_count=None,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.FAILED,
+            total_row_count=1,
+            completed_at=completed_at,
+            error_type="RuntimeError",
+            error_message="unexpected",
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.CANCELLED,
+            total_row_count=1,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.CANCELLED,
+            total_row_count=None,
+            completed_at=completed_at,
+            error_type="CancelledError",
+            error_message="cancelled",
+        )
+
+
 def test_column_profile_preserves_non_numeric_statistics_as_none() -> None:
     entry_id = uuid4()
     profile = ColumnProfile(
