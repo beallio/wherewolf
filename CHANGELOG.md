@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- **DuckDB errors can now jump straight to the failing SQL token.** When Wherewolf executes one
+  unchanged, parameter-free DuckDB statement from an editor and DuckDB provides an exact
+  `LINE`/caret excerpt, activate its Messages entry to return to the originating tab, reveal the
+  token, and underline it. Errors without a trustworthy source position remain ordinary messages;
+  editing the SQL invalidates any previous jump target.
+
 ## [0.10.2] - 2026-08-22 — Result selections are summarized, inspectable, and accurate
 
 ### Fixed

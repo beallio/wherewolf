@@ -1,0 +1,72 @@
+{
+  "date": "2026-08-22",
+  "task_objective": "Implement exact DuckDB query-error position navigation from docs/plans/2026-08-22_error-position-navigation.md.",
+  "baseline": {
+    "command": "./run.sh uv run pytest -q",
+    "exit_code": 0,
+    "tally": "664 passed, 7 deselected in 18.79s"
+  },
+  "files_modified": [
+    "src/wherewolf/services/execution_diagnostics.py",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "src/wherewolf/desktop/widgets/messages_panel.py",
+    "src/wherewolf/desktop/main_window.py",
+    "tests/test_execution_diagnostics.py",
+    "tests/test_sql_editor.py",
+    "tests/test_messages_panel.py",
+    "tests/test_main_window.py",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "tests_added": [
+    "DuckDB LINE/caret parser accepts exact parser, binder, and catalog excerpts and rejects incomplete or elided excerpts.",
+    "SqlEditor public diagnostic navigation clamps coordinates, safely declines ambiguous Unicode positions, and clears on edit.",
+    "Messages activation emits only stored navigation payloads.",
+    "MainWindow maps selected-statement errors to the originating tab and rejects positionless, mismatched, and stale targets."
+  ],
+  "design_decisions": [
+    "Navigation data remains desktop-only; ExecutionRequest and QueryResult were not changed.",
+    "The parser and request mapping fail closed for missing carets, elision, tabs, Unicode before the target, changed documents, translated SQL, parameters, multi-statement requests, saved-query execution, and non-DuckDB engines.",
+    "The request origin records the source snapshot and adjusts the editor selection start for ExecutionRequestBuilder whitespace stripping."
+  ],
+  "verification": [
+    {
+      "command": "./run.sh uv run pytest tests/test_execution_diagnostics.py -q --no-cov",
+      "exit_code": 0,
+      "tally": "5 passed in 0.06s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_sql_editor.py -q --no-cov -k diagnostic",
+      "exit_code": 0,
+      "tally": "5 passed, 29 deselected in 0.15s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_execution_diagnostics.py tests/test_sql_editor.py tests/test_messages_panel.py tests/test_main_window.py -q --no-cov",
+      "exit_code": 0,
+      "tally": "181 passed in 5.27s"
+    },
+    {
+      "command": "./run.sh uv run pytest -q",
+      "exit_code": 0,
+      "tally": "678 passed, 7 deselected in 18.90s"
+    },
+    {
+      "command": "mutation: replace valid parser result with None",
+      "exit_code": 1,
+      "tally": "valid parser test failed (1 failed, 4 deselected); exact MainWindow navigation test failed (1 failed, 135 deselected)"
+    },
+    {
+      "command": "restored parser: ./run.sh uv run pytest tests/test_execution_diagnostics.py tests/test_main_window.py -q --no-cov -k 'parser_caret_after_source_prefix or navigation_activates_exact'",
+      "exit_code": 0,
+      "tally": "2 passed, 139 deselected in 0.22s"
+    },
+    {
+      "command": "scripts/orchestration/run-quality-gates",
+      "exit_code": 0,
+      "tally": "ruff check and format passed; ty passed; 678 passed, 7 deselected in 18.73s; no deleted review notes"
+    }
+  ],
+  "deferred_cases": [
+    "Manual interactive desktop verification, screen-reader announcements, non-Linux shortcut conventions, translated SQL source maps, Spark error formats, and parameter source maps are unverified in this non-interactive session."
+  ]
+}
