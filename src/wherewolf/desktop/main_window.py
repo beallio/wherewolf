@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import time
 import webbrowser
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from importlib.metadata import version
 from pathlib import Path
 from typing import Final, cast
+from uuid import UUID, uuid4
 
 from PyQt6.QtCore import QByteArray, Qt, QTimer
 from PyQt6.QtGui import (
@@ -83,9 +84,11 @@ from wherewolf.services import (
     ExecutionRequestBuilder,
     ExportFormat,
     SettingsService,
+    StatementService,
     serialise_history_records_to_sql,
     write_atomically,
 )
+from wherewolf.services.execution_diagnostics import parse_duckdb_error_location
 from wherewolf.services.identifier_quoting import quote_identifier
 from wherewolf.services.order_by_builder import build_order_by_sql
 from wherewolf.services.preview_export import write_selection
@@ -119,6 +122,36 @@ class _EditorTabState:
     last_request: ExecutionRequest | None = None
     last_result: QueryResult | None = None
     result_origin: str | None = None
+    navigation_id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(frozen=True, slots=True)
+class _RequestOrigin:
+    editor: SqlEditor
+    result_origin: str
+    editor_state_id: UUID
+    document_snapshot: str
+    fragment_start_codepoint_offset: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticNavigationTarget:
+    editor_state_id: UUID
+    diagnostic: SqlDiagnostic
+    document_snapshot: str
+
+
+def _scintilla_byte_offset_to_codepoint_offset(document: str, byte_offset: int) -> int | None:
+    """Convert a QScintilla UTF-8 byte position only when it is a character boundary."""
+    if byte_offset < 0:
+        return None
+    document_bytes = document.encode("utf-8")
+    if byte_offset > len(document_bytes):
+        return None
+    try:
+        return len(document_bytes[:byte_offset].decode("utf-8"))
+    except UnicodeDecodeError:
+        return None
 
 
 class FindReplaceDialog(QDialog):
@@ -296,7 +329,7 @@ class MainWindow(QMainWindow):
         self.history_manager = history_manager or HistoryManager()
         self.saved_query_store = saved_query_store or SavedQueryStore()
         self._editor_states: dict[SqlEditor, _EditorTabState] = {}
-        self._result_origin_by_request_id: dict[object, tuple[SqlEditor, str]] = {}
+        self._result_origin_by_request_id: dict[object, _RequestOrigin] = {}
         self._schema_workers: list[SchemaWorker] = []
         self._profile_workers: list[ProfileWorker] = []
         self._value_counts_windows: list[ValueCountsWindow] = []
@@ -624,12 +657,12 @@ class MainWindow(QMainWindow):
         if editor is None:
             self._show_status("No SQL editor is open", 5000)
             return
-        sql, _start, _end = editor.text_to_run()
+        sql, start, _end = editor.text_to_run()
         if not sql or not sql.strip():
             self._show_status("No SQL statement to run", 5000)
             return
 
-        self._execute_sql(sql, editor=editor)
+        self._execute_sql(sql, editor=editor, fragment_start_offset=start)
 
     def _execute_sql(
         self,
@@ -639,6 +672,7 @@ class MainWindow(QMainWindow):
         original_sql: str | None = None,
         editor: SqlEditor | None = None,
         direct_saved_query: bool = False,
+        fragment_start_offset: int | None = None,
     ) -> None:
         owner = editor or self.current_editor
         if owner is None:
@@ -682,7 +716,24 @@ class MainWindow(QMainWindow):
 
         if self.query_controller.execute(request):
             result_origin = "saved-query" if direct_saved_query else "editor"
-            self._result_origin_by_request_id[request.request_id] = (owner, result_origin)
+            state = self._editor_states.get(owner)
+            if state is None:
+                return
+            document_snapshot = owner.text()
+            adjusted_start = None
+            if fragment_start_offset is not None and not direct_saved_query:
+                codepoint_offset = _scintilla_byte_offset_to_codepoint_offset(
+                    document_snapshot, fragment_start_offset
+                )
+                if codepoint_offset is not None:
+                    adjusted_start = codepoint_offset + len(sql) - len(sql.lstrip())
+            self._result_origin_by_request_id[request.request_id] = _RequestOrigin(
+                editor=owner,
+                result_origin=result_origin,
+                editor_state_id=state.navigation_id,
+                document_snapshot=document_snapshot,
+                fragment_start_codepoint_offset=adjusted_start,
+            )
 
     def _save_current_query(self, _checked: bool = False) -> None:
         del _checked
@@ -812,10 +863,9 @@ class MainWindow(QMainWindow):
             self._show_status(f"Executing query... ({elapsed_seconds}s)")
 
     def _on_query_result_ready(self, result: QueryResult, request: ExecutionRequest) -> None:
-        owner, result_origin = self._result_origin_by_request_id.pop(
-            request.request_id,
-            (self.current_editor, "editor"),
-        )
+        origin = self._result_origin_by_request_id.pop(request.request_id, None)
+        owner = origin.editor if origin is not None else self.current_editor
+        result_origin = origin.result_origin if origin is not None else "editor"
         self._record_query_history(result, request)
         if owner is None:
             return
@@ -825,7 +875,97 @@ class MainWindow(QMainWindow):
         state.last_request, state.last_result = request, result
         state.result_origin = result_origin
         if owner is self.current_editor:
-            self._render_query_result(result, request, show_message=True)
+            self._render_query_result(
+                result,
+                request,
+                show_message=True,
+                navigation_target=self._navigation_target_for_result(origin, request, result),
+            )
+
+    def _navigation_target_for_result(
+        self,
+        origin: _RequestOrigin | None,
+        request: ExecutionRequest,
+        result: QueryResult,
+    ) -> DiagnosticNavigationTarget | None:
+        if (
+            origin is None
+            or result.status is not ExecutionStatus.FAILED
+            or origin.result_origin != "editor"
+            or origin.fragment_start_codepoint_offset is None
+            or request.engine is not EngineKind.DUCKDB
+            or request.source_dialect.casefold() != "duckdb"
+            or request.original_sql != request.executable_sql
+            or request.parameters
+        ):
+            return None
+
+        state = self._editor_states.get(origin.editor)
+        if state is None or state.navigation_id != origin.editor_state_id:
+            return None
+        if origin.document_snapshot != origin.editor.text():
+            return None
+        if len(StatementService().split_statements(request.executable_sql)) != 1:
+            return None
+
+        location = parse_duckdb_error_location(result.error_message or "")
+        if location is None:
+            return None
+        fragment_lines = request.executable_sql.splitlines()
+        if location.line > len(fragment_lines):
+            return None
+        source_line = fragment_lines[location.line - 1]
+        if source_line != location.source_excerpt:
+            return None
+
+        relative_offset = (
+            sum(
+                len(line)
+                for line in request.executable_sql.splitlines(keepends=True)[: location.line - 1]
+            )
+            + location.column
+            - 1
+        )
+        absolute_offset = origin.fragment_start_codepoint_offset + relative_offset
+        if (
+            absolute_offset < 0
+            or absolute_offset >= len(origin.document_snapshot)
+            or origin.document_snapshot[
+                origin.fragment_start_codepoint_offset : origin.fragment_start_codepoint_offset
+                + len(request.executable_sql)
+            ]
+            != request.executable_sql
+        ):
+            return None
+
+        before_location = origin.document_snapshot[:absolute_offset]
+        line_start = before_location.rfind("\n") + 1
+        diagnostic = SqlDiagnostic(
+            message=result.error_message or "",
+            severity="error",
+            start_line=before_location.count("\n") + 1,
+            start_column=absolute_offset - line_start + 1,
+        )
+        return DiagnosticNavigationTarget(
+            editor_state_id=origin.editor_state_id,
+            diagnostic=diagnostic,
+            document_snapshot=origin.document_snapshot,
+        )
+
+    def _on_diagnostic_activated(self, target: object) -> None:
+        if not isinstance(target, DiagnosticNavigationTarget):
+            return
+        for editor, state in self._editor_states.items():
+            if state.navigation_id != target.editor_state_id:
+                continue
+            if editor.text() != target.document_snapshot:
+                return
+            index = self.editor_tabs.indexOf(editor)
+            if index < 0:
+                return
+            self.editor_tabs.setCurrentIndex(index)
+            editor.show_diagnostic(target.diagnostic)
+            return
 
     def _record_query_history(self, result: QueryResult, request: ExecutionRequest) -> None:
         if result.status is not ExecutionStatus.SUCCEEDED:
@@ -844,6 +984,7 @@ class MainWindow(QMainWindow):
         request: ExecutionRequest,
         *,
         show_message: bool,
+        navigation_target: DiagnosticNavigationTarget | None = None,
     ) -> None:
         """Render a result known to belong to the currently selected editor tab."""
         self._last_request, self._last_result = request, result
@@ -880,7 +1021,7 @@ class MainWindow(QMainWindow):
         )
 
         if show_message:
-            self.messages_panel.show_query_result(result)
+            self.messages_panel.show_query_result(result, navigation_target=navigation_target)
 
         engine_name = (
             "DuckDB" if request.engine is EngineKind.DUCKDB else request.engine.value.title()
@@ -1456,6 +1597,7 @@ class MainWindow(QMainWindow):
         self.results_tabs.addTab(results_page, "Results")
         self.messages_panel = MessagesPanel(self)
         self.messages_panel.setObjectName("messages_panel")
+        self.messages_panel.diagnostic_activated.connect(self._on_diagnostic_activated)
         self.results_tabs.addTab(self.messages_panel, "Messages")
 
         translation_page = QWidget(self.results_tabs)

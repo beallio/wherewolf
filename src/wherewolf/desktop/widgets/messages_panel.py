@@ -1,6 +1,6 @@
 """Widget for displaying execution errors, diagnostics, and system messages with severity roles."""
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush
 from PyQt6.QtWidgets import (
     QListWidget,
@@ -19,6 +19,8 @@ from wherewolf.domain.models import QueryResult, SqlDiagnostic
 class MessagesPanel(QWidget):
     """Panel displaying application messages, SQL diagnostics, and execution errors with severity."""
 
+    diagnostic_activated = pyqtSignal(object)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
@@ -27,6 +29,9 @@ class MessagesPanel(QWidget):
 
         self._list_widget = QListWidget(self)
         self._list_widget.setObjectName("messages_list")
+        self._recently_activated_item: QListWidgetItem | None = None
+        self._list_widget.itemActivated.connect(self._on_item_activated)
+        self._list_widget.itemClicked.connect(self._on_item_activated)
         layout.addWidget(self._list_widget)
         self.error_details_toggle = QToolButton(self)
         self.error_details_toggle.setObjectName("error_details_toggle")
@@ -41,25 +46,38 @@ class MessagesPanel(QWidget):
         layout.addWidget(self.error_details_toggle)
         layout.addWidget(self.error_details)
 
-    def add_diagnostic(self, diagnostic: SqlDiagnostic) -> None:
+    def add_diagnostic(
+        self, diagnostic: SqlDiagnostic, navigation_target: object | None = None
+    ) -> None:
         """Add a SQL diagnostic message to the panel."""
         text = f"[{diagnostic.severity.upper()}] Line {diagnostic.start_line}: {diagnostic.message}"
-        self._append_item(text, diagnostic.severity)
+        self._append_item(text, diagnostic.severity, navigation_target)
 
-    def add_message(self, message: str, severity: str = "info", detail: str | None = None) -> None:
+    def add_message(
+        self,
+        message: str,
+        severity: str = "info",
+        detail: str | None = None,
+        navigation_target: object | None = None,
+    ) -> None:
         """Add a general message with a severity role to the panel."""
         full_text = f"[{severity.upper()}] {message}"
         if detail:
             full_text += f"\n{detail}"
-        self._append_item(full_text, severity)
+        self._append_item(full_text, severity, navigation_target)
 
-    def show_query_result(self, result: QueryResult, clear_first: bool = True) -> None:
+    def show_query_result(
+        self,
+        result: QueryResult,
+        clear_first: bool = True,
+        navigation_target: object | None = None,
+    ) -> None:
         """Surfaces execution status/errors/cancellations from a QueryResult."""
         if clear_first:
             self.clear_messages()
         if result.status is ExecutionStatus.FAILED:
             msg = f"Error ({result.error_type}): {result.error_message}"
-            self.add_message(msg, severity="error")
+            self.add_message(msg, severity="error", navigation_target=navigation_target)
             self.error_details_toggle.setVisible(bool(result.error_detail))
             self.error_details_toggle.setChecked(False)
             self.error_details.setPlainText(result.error_detail or "")
@@ -88,7 +106,22 @@ class MessagesPanel(QWidget):
         severity = str(item.data(Qt.ItemDataRole.UserRole) or "")
         return (text, severity)
 
-    def _append_item(self, text: str, severity: str) -> None:
+    def _append_item(
+        self, text: str, severity: str, navigation_target: object | None = None
+    ) -> None:
         item = QListWidgetItem(text, self._list_widget)
         item.setData(Qt.ItemDataRole.UserRole, severity)
+        item.setData(Qt.ItemDataRole.UserRole + 1, navigation_target)
         item.setForeground(QBrush(message_severity_color(severity, self.palette())))
+
+    def _on_item_activated(self, item: QListWidgetItem) -> None:
+        if item is self._recently_activated_item:
+            return
+        navigation_target = item.data(Qt.ItemDataRole.UserRole + 1)
+        if navigation_target is not None:
+            self._recently_activated_item = item
+            QTimer.singleShot(0, self._clear_recent_activation)
+            self.diagnostic_activated.emit(navigation_target)
+
+    def _clear_recent_activation(self) -> None:
+        self._recently_activated_item = None

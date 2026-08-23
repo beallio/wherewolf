@@ -4,6 +4,7 @@ from PyQt6.QtGui import QColor, QKeySequence
 from PyQt6.QtTest import QTest
 
 from wherewolf.desktop.widgets import SqlEditor
+from wherewolf.domain import SqlDiagnostic
 from wherewolf.services import (
     SettingsService,
     SqlCompletionService,
@@ -30,6 +31,40 @@ class _SpyStatementService(StatementService):
     def find_statement(self, sql: str, cursor_offset: int) -> StatementSelection:
         self.calls += 1
         return super().find_statement(sql, cursor_offset)
+
+
+class _DiagnosticSpyEditor(SqlEditor):
+    def __init__(self) -> None:
+        super().__init__()
+        self.diagnostic_fills: list[tuple[int, int, int, int, int]] = []
+        self.diagnostic_clears: list[tuple[int, int, int, int, int]] = []
+        self.diagnostic_focus_calls = 0
+
+    def fillIndicatorRange(
+        self,
+        lineFrom: int,
+        indexFrom: int,
+        lineTo: int,
+        indexTo: int,
+        indicatorNumber: int,
+    ) -> None:
+        self.diagnostic_fills.append((lineFrom, indexFrom, lineTo, indexTo, indicatorNumber))
+        super().fillIndicatorRange(lineFrom, indexFrom, lineTo, indexTo, indicatorNumber)
+
+    def clearIndicatorRange(
+        self,
+        lineFrom: int,
+        indexFrom: int,
+        lineTo: int,
+        indexTo: int,
+        indicatorNumber: int,
+    ) -> None:
+        self.diagnostic_clears.append((lineFrom, indexFrom, lineTo, indexTo, indicatorNumber))
+        super().clearIndicatorRange(lineFrom, indexFrom, lineTo, indexTo, indicatorNumber)
+
+    def setFocus(self, reason: Qt.FocusReason = Qt.FocusReason.OtherFocusReason) -> None:
+        self.diagnostic_focus_calls += 1
+        super().setFocus(reason)
 
 
 def test_sql_editor_constructs_and_round_trips_text(qtbot) -> None:
@@ -389,6 +424,62 @@ def test_format_error_leaves_text_unchanged_and_reports_diagnostic(qtbot) -> Non
     assert editor.text() == "select from"
     assert messages
     assert messages[-1]
+
+
+def test_show_diagnostic_moves_focuses_and_marks_a_visible_range(qtbot) -> None:
+    editor = _DiagnosticSpyEditor()
+    qtbot.addWidget(editor)
+    editor.setText("SELECT 1\nmissing_column")
+    editor.show()
+
+    editor.show_diagnostic(SqlDiagnostic("missing column", "error", 2, 1))
+
+    assert editor.getCursorPosition() == (1, 0)
+    assert editor.diagnostic_focus_calls == 1
+    assert editor.diagnostic_fills
+    start_line, start_column, end_line, end_column, _indicator = editor.diagnostic_fills[-1]
+    assert (start_line, start_column) == (1, 0)
+    assert end_line == 1
+    assert end_column > start_column
+
+
+def test_show_diagnostic_clamps_out_of_range_coordinates(qtbot) -> None:
+    editor = _DiagnosticSpyEditor()
+    qtbot.addWidget(editor)
+    editor.setText("first\nlast")
+
+    editor.show_diagnostic(SqlDiagnostic("bad position", "error", 99, 99))
+
+    assert editor.getCursorPosition() == (1, 4)
+    assert editor.diagnostic_fills[-1][0:4] == (1, 3, 1, 4)
+
+
+def test_show_diagnostic_declines_ambiguous_unicode_columns(qtbot) -> None:
+    editor = _DiagnosticSpyEditor()
+    qtbot.addWidget(editor)
+    editor.setText("SELECT café missing")
+    editor.setCursorPosition(0, 0)
+
+    editor.show_diagnostic(SqlDiagnostic("missing column", "error", 1, 13))
+
+    assert editor.getCursorPosition() == (0, 0)
+    assert not editor.diagnostic_fills
+
+
+def test_diagnostics_clear_when_editor_text_changes_and_are_idempotent(qtbot) -> None:
+    editor = _DiagnosticSpyEditor()
+    qtbot.addWidget(editor)
+    editor.setText("SELECT missing_column")
+    editor.show_diagnostic(SqlDiagnostic("missing column", "error", 1, 8))
+    clear_count_before_change = len(editor.diagnostic_clears)
+
+    editor.setText("SELECT repaired_column")
+    clear_count_after_change = len(editor.diagnostic_clears)
+    editor.clear_diagnostics()
+    editor.clear_diagnostics()
+
+    assert clear_count_after_change > clear_count_before_change
+    assert len(editor.diagnostic_clears) == clear_count_after_change + 2
 
 
 def test_sql_editor_completion_threshold_and_ctrl_space(qtbot, tmp_path) -> None:

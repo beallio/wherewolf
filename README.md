@@ -87,6 +87,10 @@ installing Java.
    equivalent shortcut conventions.
 4. Press **Ctrl+.** to request cancellation of the active query. The status bar and Messages tab
    report state, timing, preview rows, truncation, and errors.
+   For an unmodified, single DuckDB statement from this editor, an engine error that includes an
+   exact `LINE`/caret location is clickable in Messages: activating it returns to the originating
+   tab and marks the failing token. After you edit the SQL, the old error remains readable but no
+   longer navigates, so it cannot point at changed text.
 5. History records successful queries in `~/.wherewolf/history.json`. Selecting a history entry
    restores its SQL only — your dataset catalog is left untouched — and does not run it. The
    History dock shows timestamp and query in separate sortable columns. Use **File → Clear
