@@ -1,0 +1,113 @@
+{
+  "date": "2026-08-22",
+  "task_objective": "Implement docs/plans/2026-08-22_result-pagination.md: isolated DuckDB pagination for captured query previews.",
+  "baseline": {
+    "command": "./run.sh uv run pytest -q",
+    "exit_code": 0,
+    "output": "770 passed, 7 deselected in 21.68s"
+  },
+  "files_modified": [
+    "src/wherewolf/services/result_pagination.py",
+    "src/wherewolf/domain/models.py",
+    "src/wherewolf/domain/__init__.py",
+    "src/wherewolf/execution/registry.py",
+    "src/wherewolf/desktop/page_controller.py",
+    "src/wherewolf/desktop/main_window.py",
+    "tests/test_result_pagination.py",
+    "tests/test_models.py",
+    "tests/test_registry.py",
+    "tests/test_page_controller.py",
+    "tests/test_main_window.py",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/agent_conversations/2026-08-22_result-pagination.json"
+  ],
+  "tests_added": [
+    "Safe one-statement page SQL construction, final-terminator handling, top-level ORDER BY analysis, and inner LIMIT/OFFSET retention.",
+    "PageResult terminal-status, frame/error, offset, and page-size invariants.",
+    "DuckDB captured-page probes, parameter order, source mutation checks, cancellation, connection closure, invalid bounds, and multi-statement rejection.",
+    "Independent page-worker publication barrier, cancellation race, stale completion rejection, capability failure, controller reuse, and bounded shutdown.",
+    "Per-tab controls, captured-request routing, page ranges, export source behavior, order warnings, failure preservation, empty next pages, background tabs, closed tabs, and page-local interaction reset."
+  ],
+  "red_evidence": [
+    {
+      "command": "./run.sh uv run pytest tests/test_result_pagination.py -q --no-cov",
+      "exit_code": 1,
+      "output": "Collection failed because wherewolf.services.result_pagination did not exist.",
+      "raw_output": "/tmp/wherewolf/result-pagination/red-service.log"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_registry.py -q --no-cov -k fetch_page",
+      "exit_code": 1,
+      "output": "Collection failed because PageResult was not exported from wherewolf.domain.",
+      "raw_output": "/tmp/wherewolf/result-pagination/red-fetch-page.log"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_models.py -q --no-cov -k page_result",
+      "exit_code": 1,
+      "output": "1 failed because domain_models.PageResult did not exist.",
+      "raw_output": "/tmp/wherewolf/result-pagination/red-page-result-model.log"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_page_controller.py -q --no-cov",
+      "exit_code": 1,
+      "output": "Collection failed because wherewolf.desktop.page_controller did not exist.",
+      "raw_output": "/tmp/wherewolf/result-pagination/red-page-controller.log"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'pagination or page_navigation or page_controls'",
+      "exit_code": 1,
+      "output": "14 failed because MainWindow did not accept a page_controller injection.",
+      "raw_output": "/tmp/wherewolf/result-pagination/red-main-window.log"
+    }
+  ],
+  "failure_recovery": [
+    "The plan-required pull needed host SSH access because the sandbox could not read the system SSH proxy configuration; host Git reported dev was already up to date.",
+    "The page-fetch commit hook caught an optional test-wrapper parameter that could be None. The wrapper now records only non-None page SQL parameters; focused tests and ty then passed.",
+    "The initial page-control rendering omitted the required empty-next-page explanation because the control predicate hid page 1 once has_next became false. Page errors now retain the disabled controls and inline explanation.",
+    "The ordering warning now says that membership is not stable, matching the documented user-visible guarantee."
+  ],
+  "verification": [
+    {
+      "command": "./run.sh uv run pytest tests/test_result_pagination.py -q --no-cov",
+      "exit_code": 0,
+      "output": "14 passed in 0.10s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_models.py tests/test_registry.py -q --no-cov -k 'page_result or fetch_page'",
+      "exit_code": 0,
+      "output": "14 passed, 49 deselected in 0.39s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_page_controller.py -q --no-cov",
+      "exit_code": 0,
+      "output": "9 passed in 0.16s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'pagination or page_navigation or page_controls'",
+      "exit_code": 0,
+      "output": "14 passed, 161 deselected in 0.60s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_models.py tests/test_result_pagination.py tests/test_registry.py tests/test_page_controller.py tests/test_main_window.py tests/test_export_integrity.py -q --no-cov",
+      "exit_code": 0,
+      "output": "266 passed in 6.95s"
+    },
+    {
+      "command": "mutation: force DuckDB page offset to zero, then run fetch_page_returns_bounded_ordered_windows",
+      "exit_code": 1,
+      "output": "The three-page regression failed because the third page reported has_next=True instead of False after fetching the first page again. Raw output: /tmp/wherewolf/result-pagination/mutation-offset-zero.log. Restored from /tmp/wherewolf/result-pagination/restore-page-offset.patch; the same test then passed 1 passed, 49 deselected in 0.15s."
+    }
+  ],
+  "design_decisions": [
+    "Page SQL is constructed only from the one StatementService span, with the final terminator removed and LIMIT/OFFSET bound as parameters outside the captured statement.",
+    "Pagination is an optional DuckDB adapter capability, leaving ExecutionEngine unchanged so Spark cannot advertise support accidentally.",
+    "PageController owns an independent QThread and cancellation-handle publication barrier; it never routes through QueryController or records history/messages.",
+    "Every editor tab keeps its own page state. A page result must match the base request, requested offset, captured page size, and a pending tab operation before it can replace the displayed frame.",
+    "Known totals only constrain navigation; no count is initiated. Preview and selection export use the displayed page, while full export receives the original captured request."
+  ],
+  "deferred_and_unverified": [
+    "Manual desktop interaction with a disposable seven-row CSV, source mutation, and preview/full file inspection remains unverified because this implementation session has no interactive graphical display.",
+    "Very large offsets, Spark pagination, keyset pagination, restart persistence, and future Count All Rows interaction remain intentionally out of scope."
+  ]
+}

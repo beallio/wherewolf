@@ -160,6 +160,16 @@ local sorting, selection, exports, and query history stay intact. If a captured 
 disappeared after the preview, Wherewolf asks you to rerun the query instead of showing a count for
 different data. Spark and multi-statement previews do not offer this control.
 
+Eligible truncated DuckDB previews also offer **Previous** and **Next**. Each page re-runs the
+captured statement with the preview size that was in effect when the query ran, so changing the
+preference later does not change the page boundaries. The grid, preview export, and selection export
+follow the page on screen; **Export Full Results** still uses the original captured request. A source
+that changes after page 1, a cancelled page fetch, or a page error leaves the current page on screen
+and asks you to rerun rather than mixing data from different source versions. Pagination is limited
+to one DuckDB statement. Without a final `ORDER BY`, Wherewolf warns that page membership is not
+stable. A top-level order removes that syntactic warning, but duplicate sort keys and volatile
+expressions such as `ORDER BY random()` still need a unique, deterministic order supplied by you.
+
 Selecting multiple result cells shows their cell, distinct-value, and null counts above the grid.
 For selections made entirely from numeric columns, it also shows the sum, mean, minimum, and
 maximum. To read a long value or nested JSON without grid truncation, right-click the cell and
