@@ -24,7 +24,8 @@
     "DuckDB count capability coverage for filtered and parameterized requests, statement wrapping, exact totals, source snapshot rejection, and cancellation.",
     "RowCountResult terminal-status invariants.",
     "Independent worker/controller handle publication, cancellation races, stale signals, close, and QThread shutdown.",
-    "MainWindow eligibility, captured-request routing, summary-only updates, stale/inconsistent-result rejection, and new-query/shutdown cancellation."
+    "MainWindow eligibility, captured-request routing, summary-only updates, stale/inconsistent-result rejection, and new-query/shutdown cancellation.",
+    "Review-round MainWindow coverage for terminal count-state reset, inline count failures and cancellation, closed and background tabs, interaction/export preservation, and cancellation priority."
   ],
   "red_evidence": [
     {
@@ -79,5 +80,41 @@
   "deferred_and_unverified": [
     "Manual desktop interaction and multi-gigabyte performance measurement remain unverified in this headless environment.",
     "Spark counting, network filesystems, pagination coexistence, and automatic or cached counts remain intentionally out of scope."
-  ]
+  ],
+  "review_round_01": {
+    "review_note": "docs/review/count-all-rows-review-01.md (STATUS: CHANGES_REQUESTED)",
+    "red_evidence": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'new_query_resets_terminal or count_terminal_failure or count_success_preserves_preview_interactions or ignores_count_completion or retains_background_tab or cancel_prioritizes'",
+      "exit_code": 1,
+      "output": "3 failed, 8 passed, 150 deselected in 0.61s; completed, failed, and cancelled counts each left terminal state on the next ordinary result. Raw output: /tmp/wherewolf/count-all-rows/red-main-window.log"
+    },
+    "verification": [
+      {
+        "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'new_query_resets_terminal or count_terminal_failure or count_success_preserves_preview_interactions or ignores_count_completion or retains_background_tab or cancel_prioritizes'",
+        "exit_code": 0,
+        "output": "11 passed, 150 deselected in 0.50s"
+      },
+      {
+        "command": "./run.sh uv run pytest tests/test_models.py tests/test_registry.py tests/test_row_count_controller.py tests/test_main_window.py tests/test_export_controller.py tests/test_query_controller.py -q --no-cov",
+        "exit_code": 0,
+        "output": "227 passed in 6.38s"
+      },
+      {
+        "command": "./run.sh uv run pytest -q --no-cov tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_multiple_statements_before_execution tests/test_registry.py::test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_changed_captured_sources tests/test_registry.py::test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview tests/test_registry.py::test_duckdb_adapter_count_rows_normalizes_cancellation_and_close tests/test_registry.py::test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview tests/test_row_count_controller.py::test_row_count_worker_normalizes_raised_failure_and_closes_once tests/test_row_count_controller.py::test_row_count_controller_starts_one_worker_and_publishes_handle_before_count",
+        "exit_code": 0,
+        "output": "8 passed in 0.13s; each multi-statement, source-change, cancellation, and worker-failure case was followed immediately by a valid count."
+      },
+      {
+        "command": "scripts/orchestration/run-quality-gates",
+        "exit_code": 0,
+        "output": "ruff check and format passed; ty check src passed; 768 passed, 7 deselected in 23.14s; no review notes deleted."
+      },
+      {
+        "command": "scripts/orchestration/check-review-notes-committed count-all-rows",
+        "exit_code": 0,
+        "output": "all review notes for count-all-rows are committed"
+      }
+    ],
+    "design_decision": "When a distinct ordinary query result becomes a tab's current result, reset only that tab's transient row-count request ID, status, and message before storing the new request/result. A delayed old completion then lacks both the pending ID and current request match, so it cannot alter the newer preview."
+  }
 }

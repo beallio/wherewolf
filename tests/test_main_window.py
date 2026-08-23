@@ -4077,3 +4077,302 @@ def test_main_window_new_query_cancel_and_shutdown_include_active_row_count(
     assert submitted
     window.close()
     assert controller.shutdown_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("terminal_status", "expected_message"),
+    (
+        (ExecutionStatus.SUCCEEDED, "All rows counted."),
+        (ExecutionStatus.FAILED, "Count failed."),
+        (ExecutionStatus.CANCELLED, "Count cancelled; rerun the query"),
+    ),
+)
+def test_main_window_new_query_resets_terminal_row_count_state_and_ignores_old_completion(
+    qtbot, terminal_status: ExecutionStatus, expected_message: str
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    first_request = _row_count_request()
+    first_result = _truncated_result(first_request)
+    window._on_query_result_ready(first_result, first_request)
+    window.count_all_rows_button.click()
+
+    if terminal_status is ExecutionStatus.SUCCEEDED:
+        terminal_result = RowCountResult(
+            request_id=first_request.request_id,
+            status=terminal_status,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    elif terminal_status is ExecutionStatus.FAILED:
+        terminal_result = RowCountResult(
+            request_id=first_request.request_id,
+            status=terminal_status,
+            total_row_count=None,
+            completed_at=datetime.now(UTC),
+            error_type="RuntimeError",
+            error_message=expected_message,
+        )
+    else:
+        terminal_result = RowCountResult(
+            request_id=first_request.request_id,
+            status=terminal_status,
+            total_row_count=None,
+            completed_at=datetime.now(UTC),
+        )
+    controller.emit_result(terminal_result)
+
+    second_request = _row_count_request()
+    second_result = _truncated_result(second_request)
+    window._on_query_result_ready(second_result, second_request)
+
+    state = window._editor_states[window.editor]
+    assert state.last_request == second_request
+    assert state.last_result == second_result
+    assert state.last_result.total_row_count is None
+    assert state.row_count_request_id is None
+    assert state.row_count_status == "idle"
+    assert state.row_count_message is None
+    assert window.count_all_rows_button.isEnabled()
+    assert window.result_count_status_label.isHidden()
+
+    controller.emit_result(
+        RowCountResult(
+            request_id=first_request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=99,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    assert state.last_request == second_request
+    assert state.last_result == second_result
+    assert window.result_count_status_label.isHidden()
+
+
+@pytest.mark.parametrize(
+    ("count_result", "expected_message"),
+    (
+        (
+            lambda request: RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                total_row_count=None,
+                completed_at=datetime.now(UTC),
+                error_type="RuntimeError",
+                error_message="Count failed.",
+            ),
+            "Count failed.",
+        ),
+        (
+            lambda request: RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.CANCELLED,
+                total_row_count=None,
+                completed_at=datetime.now(UTC),
+            ),
+            "Count cancelled; rerun the query",
+        ),
+    ),
+)
+def test_main_window_count_terminal_failure_preserves_preview_and_renders_inline(
+    qtbot, count_result, expected_message: str
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    preview = _truncated_result(request)
+    window._on_query_result_ready(preview, request)
+    frame_before = window.result_table_view.frame()
+    summary_before = window.result_summary_label.text()
+    messages_before = tuple(
+        window.messages_panel.message_at(index)
+        for index in range(window.messages_panel.message_count())
+    )
+
+    window.count_all_rows_button.click()
+    controller.emit_result(count_result(request))
+
+    assert window._last_result == preview
+    assert window.result_table_view.frame() is frame_before
+    assert window.result_summary_label.text() == summary_before
+    assert window.result_count_status_label.text() == expected_message
+    assert not window.result_count_status_label.isHidden()
+    assert window.result_error_message.isHidden()
+    assert (
+        tuple(
+            window.messages_panel.message_at(index)
+            for index in range(window.messages_panel.message_count())
+        )
+        == messages_before
+    )
+
+
+def test_main_window_count_success_preserves_preview_interactions_and_export_state(
+    qtbot, tmp_path
+) -> None:
+    controller = _FakeRowCountController()
+    history = HistoryManager(tmp_path / "history.json")
+    window = MainWindow(row_count_controller=controller, history_manager=history)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    preview = replace(
+        _truncated_result(request),
+        frame=pl.DataFrame({"value": [2, 1], "name": ["two", "one"]}),
+    )
+    window._on_query_result_ready(preview, request)
+    grid = window.result_table_view
+    frame_before = grid.frame()
+    grid.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+    window.preview_filter_input.setText("one")
+    selection_model = grid.selectionModel()
+    assert selection_model is not None
+    selected_index = grid.proxy_model().index(0, 1)
+    selection_model.select(
+        QItemSelection(selected_index, selected_index),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+    interactions_before = {
+        "filter": window.preview_filter_input.text(),
+        "sort_column": grid.proxy_model().current_sort_column(),
+        "sort_order": grid.proxy_model().current_sort_order(),
+        "selection": grid.selection_for_export(),
+    }
+    history_before = history.get_all()
+    messages_before = tuple(
+        window.messages_panel.message_at(index)
+        for index in range(window.messages_panel.message_count())
+    )
+    export_enabled_before = (
+        window.export_button.isEnabled(),
+        window.desktop_actions.export_preview.isEnabled(),
+        window.desktop_actions.export_full.isEnabled(),
+    )
+
+    window.count_all_rows_button.click()
+    controller.emit_result(
+        RowCountResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=3,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    assert grid.frame() is frame_before
+    assert window.preview_filter_input.text() == interactions_before["filter"]
+    assert grid.proxy_model().current_sort_column() == interactions_before["sort_column"]
+    assert grid.proxy_model().current_sort_order() == interactions_before["sort_order"]
+    assert grid.selection_for_export() == interactions_before["selection"]
+    assert history.get_all() == history_before
+    assert (
+        tuple(
+            window.messages_panel.message_at(index)
+            for index in range(window.messages_panel.message_count())
+        )
+        == messages_before
+    )
+    assert (
+        window.export_button.isEnabled(),
+        window.desktop_actions.export_preview.isEnabled(),
+        window.desktop_actions.export_full.isEnabled(),
+    ) == export_enabled_before
+
+
+def test_main_window_ignores_count_completion_after_its_origin_tab_closes(qtbot) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    first_request = _row_count_request()
+    window._on_query_result_ready(_truncated_result(first_request), first_request)
+    window.count_all_rows_button.click()
+    first_editor = window.editor
+    second_editor = window._new_editor_tab()
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(first_editor))
+    window._close_current_editor_tab()
+
+    assert controller.cancel_calls == 1
+    assert window.current_editor is second_editor
+    controller.emit_result(
+        RowCountResult(
+            request_id=first_request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    current_state = window._current_editor_state()
+    assert current_state is not None
+    assert current_state.last_request is None
+    assert window._last_result is None
+
+
+def test_main_window_retains_background_tab_count_until_that_tab_is_revisited(qtbot) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    first_request = _row_count_request()
+    window._on_query_result_ready(_truncated_result(first_request), first_request)
+    window.count_all_rows_button.click()
+    first_editor = window.editor
+    window._new_editor_tab()
+
+    controller.emit_result(
+        RowCountResult(
+            request_id=first_request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    background_state = window._editor_states[first_editor]
+    assert background_state.last_result is not None
+    assert background_state.last_result.total_row_count == 5
+    assert window._last_result is None
+
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(first_editor))
+
+    assert window._last_result == background_state.last_result
+    assert "showing 2 of 5 rows" in window.result_summary_label.text()
+    assert not window.count_all_rows_button.isEnabled()
+    assert window.result_count_status_label.text() == "All rows counted."
+
+
+@pytest.mark.parametrize(
+    ("export_cancelled", "query_cancelled", "expected_calls"),
+    (
+        (True, True, ["export"]),
+        (False, True, ["export", "query"]),
+        (False, False, ["export", "query", "count"]),
+    ),
+)
+def test_main_window_cancel_prioritizes_export_then_query_then_row_count(
+    qtbot, monkeypatch, export_cancelled: bool, query_cancelled: bool, expected_calls: list[str]
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        window.export_controller,
+        "cancel",
+        lambda: calls.append("export") or export_cancelled,
+    )
+    monkeypatch.setattr(
+        window.query_controller,
+        "cancel",
+        lambda: calls.append("query") or query_cancelled,
+    )
+    monkeypatch.setattr(
+        controller,
+        "cancel",
+        lambda: calls.append("count") or True,
+    )
+
+    window._on_cancel_triggered()
+
+    assert calls == expected_calls

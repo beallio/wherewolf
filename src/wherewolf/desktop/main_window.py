@@ -965,6 +965,10 @@ class MainWindow(QMainWindow):
         state = self._editor_states.get(owner)
         if state is None:
             return
+        if state.last_request is None or state.last_request.request_id != request.request_id:
+            state.row_count_request_id = None
+            state.row_count_status = "idle"
+            state.row_count_message = None
         state.last_request, state.last_result = request, result
         state.result_origin = result_origin
         if owner is self.current_editor:
