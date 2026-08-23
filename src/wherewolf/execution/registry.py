@@ -34,6 +34,7 @@ from wherewolf.domain import (
     ProfileResult,
     QueryResult,
     SchemaResult,
+    SourceFormat,
 )
 from wherewolf.execution.base import CancellationHandle, ExecutionEngine
 from wherewolf.services.export_destination import ExportFormat, write_atomically
@@ -108,21 +109,23 @@ class _DuckDBAdapter(ExecutionEngine):
         self.interrupt()
 
     def _register_view(self, con, path_str: str, alias: str) -> None:
-        from pathlib import Path
-
         abs_path = Path(path_str).expanduser().resolve()
-        suffix = abs_path.suffix.lower()
-        if suffix == ".csv":
-            rel_source = con.from_csv_auto(str(abs_path))
-        elif suffix == ".parquet":
-            rel_source = con.from_parquet(str(abs_path))
-        elif suffix == ".json":
-            rel_source = con.sql("SELECT * FROM read_json_auto(?)", params=[str(abs_path)])
-        elif suffix in [".xlsx", ".xls"]:
-            con.execute("INSTALL excel; LOAD excel;")
-            rel_source = con.sql("SELECT * FROM read_xlsx(?)", params=[str(abs_path)])
-        else:
-            rel_source = con.from_csv_auto(str(abs_path))
+        source_format = SourceFormat.from_path(abs_path)
+        match source_format:
+            case SourceFormat.CSV:
+                rel_source = con.from_csv_auto(str(abs_path))
+            case SourceFormat.PARQUET:
+                rel_source = con.from_parquet(str(abs_path))
+            case SourceFormat.JSON:
+                rel_source = con.sql("SELECT * FROM read_json_auto(?)", params=[str(abs_path)])
+            case SourceFormat.JSON_LINES:
+                rel_source = con.sql(
+                    "SELECT * FROM read_json_auto(?, format='newline_delimited')",
+                    params=[str(abs_path)],
+                )
+            case SourceFormat.XLSX:
+                con.execute("INSTALL excel; LOAD excel;")
+                rel_source = con.sql("SELECT * FROM read_xlsx(?)", params=[str(abs_path)])
 
         rel_source.create_view(alias, replace=True)
 
