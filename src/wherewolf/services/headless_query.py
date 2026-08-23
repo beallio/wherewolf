@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Protocol, cast
 from uuid import UUID
 
+import duckdb
+
 from wherewolf.domain import EngineKind
 from wherewolf.execution.registry import EngineRegistry
 from wherewolf.services.catalog_service import CatalogService
@@ -34,6 +36,13 @@ class DatasetArgument:
     path: Path
 
 
+class HeadlessQueryError(ValueError):
+    """An expected validation, query, or export error safe to show at the CLI boundary."""
+
+    def __init__(self, error: str | BaseException) -> None:
+        super().__init__(_concise_error_message(error))
+
+
 class _ClosableAdapter(Protocol):
     def close(self) -> None: ...
 
@@ -58,25 +67,30 @@ class HeadlessQueryRunner:
 
     def run(self, options: HeadlessQueryOptions) -> Path:
         """Export one validated SQL statement and return its absolute destination."""
-        datasets = tuple(parse_dataset_argument(raw) for raw in options.datasets)
-        catalog = self._catalog_for(datasets)
-        destination = self._validated_destination(options, datasets)
-        sql = _normalise_single_statement(options.sql)
-        request = ExecutionRequestBuilder.build(
-            sql=sql,
-            source_dialect=EngineKind.DUCKDB.value,
-            engine=EngineKind.DUCKDB,
-            catalog_service=catalog,
-        )
-
-        adapter = self._engine_registry.create(EngineKind.DUCKDB, request.request_id)
         try:
-            export_full = getattr(adapter, "export_full", None)
-            if not callable(export_full):
-                raise TypeError("DuckDB adapter does not support full export")
-            export_full(request, destination, options.export_format.value)
-        finally:
-            adapter.close()
+            datasets = tuple(parse_dataset_argument(raw) for raw in options.datasets)
+            catalog = self._catalog_for(datasets)
+            destination = self._validated_destination(options, datasets)
+            sql = _normalise_single_statement(options.sql)
+            request = ExecutionRequestBuilder.build(
+                sql=sql,
+                source_dialect=EngineKind.DUCKDB.value,
+                engine=EngineKind.DUCKDB,
+                catalog_service=catalog,
+            )
+
+            adapter = self._engine_registry.create(EngineKind.DUCKDB, request.request_id)
+            try:
+                export_full = getattr(adapter, "export_full", None)
+                if not callable(export_full):
+                    raise TypeError("DuckDB adapter does not support full export")
+                export_full(request, destination, options.export_format.value)
+            finally:
+                adapter.close()
+        except HeadlessQueryError:
+            raise
+        except (ValueError, OSError, duckdb.Error) as exc:
+            raise HeadlessQueryError(exc) from exc
         return destination
 
     @staticmethod
@@ -121,18 +135,22 @@ def _normalise_single_statement(sql: str) -> str:
     if len(statements) != 1:
         raise ValueError("SQL must contain exactly one executable statement")
 
-    statement = statements[0]
-    semicolon_offset = statement.end_offset - 1
-    if sql[semicolon_offset : statement.end_offset] == ";":
-        sql = f"{sql[:semicolon_offset]}{sql[statement.end_offset :]}"
-    normalised = sql.strip()
+    normalised = statements[0].text
+    if normalised.endswith(";"):
+        normalised = normalised[:-1].rstrip()
     if not normalised:
         raise ValueError("SQL statement cannot be empty")
     return normalised
 
 
+def _concise_error_message(error: str | BaseException) -> str:
+    """Use the first non-empty exception line without leaking generated SQL or temp paths."""
+    return next((line.strip() for line in str(error).splitlines() if line.strip()), "Query failed")
+
+
 __all__ = [
     "DatasetArgument",
+    "HeadlessQueryError",
     "HeadlessQueryOptions",
     "HeadlessQueryRunner",
     "parse_dataset_argument",

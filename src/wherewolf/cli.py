@@ -8,7 +8,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from wherewolf.services.export_destination import ExportFormat
-from wherewolf.services.headless_query import HeadlessQueryOptions, HeadlessQueryRunner
+from wherewolf.services.headless_query import (
+    HeadlessQueryError,
+    HeadlessQueryOptions,
+    HeadlessQueryRunner,
+)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -67,7 +71,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _run_query(options: HeadlessQueryOptions) -> int:
     try:
         destination = HeadlessQueryRunner().run(options)
-    except Exception as exc:  # noqa: BLE001 - command boundary turns expected failures into one line.
+    except HeadlessQueryError as exc:
         print(f"wherewolf query: {exc}", file=sys.stderr)
         return 1
     print(f"Wrote {destination}")

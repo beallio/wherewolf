@@ -240,7 +240,7 @@ def test_empty_and_multi_statement_sql_fail_before_adapter_creation(
     ("sql", "expected"),
     (
         ("SELECT 1 AS value;", "SELECT 1 AS value"),
-        ("SELECT 1 AS value; -- trailing comment", "SELECT 1 AS value -- trailing comment"),
+        ("SELECT 1 AS value; -- trailing comment", "SELECT 1 AS value"),
         ("SELECT ';' AS value;", "SELECT ';' AS value"),
         (
             "SELECT 1 /* semicolon ; remains */ AS value;",
@@ -258,6 +258,26 @@ def test_single_statement_trailing_terminator_is_normalised_without_touching_lit
     )
 
     assert adapter.export_calls[0][0].executable_sql == expected
+
+
+@pytest.mark.parametrize("export_format", (ExportFormat.CSV, ExportFormat.XLSX))
+def test_real_export_accepts_a_trailing_line_comment_after_its_terminator(
+    tmp_path: Path, export_format: ExportFormat
+) -> None:
+    destination = tmp_path / f"trailing-comment.{export_format.value}"
+
+    HeadlessQueryRunner().run(
+        _options(
+            sql="SELECT 1 AS value; -- trailing comment",
+            export_format=export_format,
+            output=destination,
+        )
+    )
+
+    if export_format is ExportFormat.CSV:
+        assert destination.read_text() == "value\n1\n"
+    else:
+        assert destination.read_bytes().startswith(b"PK")
 
 
 def test_runner_closes_adapter_after_export_failure(tmp_path: Path) -> None:

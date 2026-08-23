@@ -11,7 +11,7 @@ import wherewolf.cli
 import wherewolf.desktop.application
 from wherewolf.desktop.application import main
 from wherewolf.services.export_destination import ExportFormat
-from wherewolf.services.headless_query import HeadlessQueryOptions
+from wherewolf.services.headless_query import HeadlessQueryError, HeadlessQueryOptions
 
 
 def _project_toml_path() -> str:
@@ -213,7 +213,7 @@ def test_query_failure_uses_the_stable_stderr_prefix(monkeypatch, tmp_path: Path
     monkeypatch.setattr(
         wherewolf.cli,
         "HeadlessQueryRunner",
-        lambda: _FakeQueryRunner(destination, ValueError("invalid dataset")),
+        lambda: _FakeQueryRunner(destination, HeadlessQueryError("invalid dataset")),
         raising=False,
     )
 
@@ -222,6 +222,47 @@ def test_query_failure_uses_the_stable_stderr_prefix(monkeypatch, tmp_path: Path
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err == "wherewolf query: invalid dataset\n"
+
+
+def test_query_unexpected_runner_error_is_not_presented_as_a_user_error(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    destination = tmp_path / "out.csv"
+    monkeypatch.setattr(
+        wherewolf.cli,
+        "HeadlessQueryRunner",
+        lambda: _FakeQueryRunner(destination, RuntimeError("programming error")),
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="programming error"):
+        wherewolf.cli.main(["query", "SELECT 1", "-o", str(destination)])
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_query_subprocess_reports_multiline_duckdb_errors_on_one_line(tmp_path: Path) -> None:
+    destination = tmp_path / "failure.csv"
+    code = (
+        "from wherewolf.cli import main\n"
+        f"raise SystemExit(main(['query', 'SELECT missing_column', '-o', {str(destination)!r}]))\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.startswith("wherewolf query: ")
+    assert result.stderr.count("\n") == 1
+    assert "COPY (" not in result.stderr
+    assert str(destination.parent) not in result.stderr
 
 
 @pytest.mark.parametrize(

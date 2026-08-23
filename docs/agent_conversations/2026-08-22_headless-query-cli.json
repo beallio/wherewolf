@@ -23,15 +23,15 @@
   "tests_added": [
     "Subprocess import guards prove registry, catalog, and headless query imports do not load PyQt6 or PySpark; SettingsService remains a lazy-compatible package export.",
     "Active DuckDB adapter JSON Lines registration produces separate typed columns and rejects unsupported suffixes instead of guessing CSV.",
-    "Headless runner covers parsed aliases, resolved input/output identity, duplicate safety, one-statement normalization, adapter lifecycle, output preservation, and a real CSV export.",
-    "CLI coverage verifies grammar, typed option construction, formats, outputs, exit codes, legacy dispatch, and a subprocess with unusable Qt configuration."
+    "Headless runner covers parsed aliases, resolved input/output identity, duplicate safety, one-statement normalization, adapter lifecycle, output preservation, and real CSV/XLSX exports with a trailing line comment after the final terminator.",
+    "CLI coverage verifies grammar, typed option construction, formats, outputs, exit codes, legacy dispatch, a subprocess with unusable Qt configuration, and one-line sanitization of a real multiline DuckDB failure."
   ],
   "design_decisions": [
     "Only SettingsService became lazy in wherewolf.services; every other existing package export remains eager and import-compatible.",
     "The headless runner builds a request-scoped EngineKind.DUCKDB request from CatalogService aliases and calls the existing adapter export_full path, preserving streaming CSV/Parquet export and atomic replacement.",
     "Dataset and destination paths are resolved before identity comparisons, so a symlink cannot turn an output into an input dataset under --force.",
-    "StatementService validates cardinality; the runner removes only the final separator at the validated statement span, retaining literal and comment semicolons.",
-    "The CLI catches expected query boundary errors without catching argparse SystemExit, retaining exit 2 for grammar errors."
+    "StatementService validates cardinality; the runner builds executable SQL from StatementSpan.text, removes only its final separator, excludes a trailing line comment outside that span, and retains literal and in-statement comment semicolons.",
+    "HeadlessQueryError converts only expected validation, filesystem, and DuckDB execution failures to their first non-empty line; the CLI catches that explicit boundary without catching argparse SystemExit or unexpected programming errors."
   ],
   "red_evidence": [
     {
@@ -114,6 +114,50 @@
       "output": "ruff check and format passed; ty check src passed; 724 passed, 7 deselected in 20.31s; no review notes deleted."
     }
   ],
+  "review_round_01": {
+    "review_note": "docs/review/headless-query-cli-review-01.md (STATUS: CHANGES_REQUESTED)",
+    "requested_changes": [
+      "Build executable SQL from StatementSpan.text so a trailing line comment after the final terminator is excluded before DuckDB COPY and XLSX count wrappers.",
+      "Use an explicit HeadlessQueryError boundary so expected validation/query/export failures produce one concise stderr line while unexpected programming errors remain distinguishable.",
+      "Record real trailing-comment exports, one-line DuckDB failure output, post-failure valid queries, and quality-gate results."
+    ],
+    "red_evidence": [
+      {
+        "command": "./run.sh uv run pytest tests/test_headless_query.py tests/test_cli.py -q --no-cov",
+        "exit_code": 1,
+        "output": "1 collection error in 0.19s; HeadlessQueryError was not yet exported by wherewolf.services.headless_query."
+      }
+    ],
+    "failure_recovery": [
+      {
+        "command": "./run.sh uv run python /tmp/wherewolf/headless-query-cli/verify_cli_acceptance.py",
+        "exit_code": 1,
+        "output": "Existing acceptance output made the happy-path destination fail closed; the temporary acceptance root now includes a UUID so every run uses fresh destinations."
+      }
+    ],
+    "verification": [
+      {
+        "command": "./run.sh uv run pytest tests/test_headless_query.py tests/test_cli.py -q --no-cov",
+        "exit_code": 0,
+        "output": "45 passed in 1.03s"
+      },
+      {
+        "command": "./run.sh uv run pytest tests/test_cli.py tests/test_version_reporting.py tests/test_import_boundaries.py tests/test_headless_query.py tests/test_registry.py tests/test_full_export.py -q",
+        "exit_code": 0,
+        "output": "89 passed in 4.74s"
+      },
+      {
+        "command": "./run.sh uv run python /tmp/wherewolf/headless-query-cli/verify_cli_acceptance.py",
+        "exit_code": 0,
+        "output": "headless CLI acceptance passed; verified real CSV COPY and XLSX exports with a trailing line comment, exact one-line multiline-DuckDB failure output without COPY/temp-path leakage, every required negative case, and post-failure constant/CSV queries."
+      },
+      {
+        "command": "scripts/orchestration/run-quality-gates",
+        "exit_code": 0,
+        "output": "ruff check --fix passed; ruff format passed; ty check src passed; 728 passed, 7 deselected in 20.99s; no review notes deleted."
+      }
+    ]
+  },
   "commits": [
     "docs(plan): add headless-query-cli implementation plan",
     "refactor(services): keep headless imports free of Qt",
