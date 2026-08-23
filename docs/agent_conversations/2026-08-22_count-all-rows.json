@@ -1,0 +1,83 @@
+{
+  "date": "2026-08-22",
+  "task_objective": "Implement docs/plans/2026-08-22_count-all-rows.md: on-demand, isolated DuckDB counts for truncated query previews.",
+  "baseline": {
+    "command": "./run.sh uv run pytest -q",
+    "exit_code": 0,
+    "output": "728 passed, 7 deselected in 20.53s"
+  },
+  "files_modified": [
+    "src/wherewolf/domain/models.py",
+    "src/wherewolf/domain/__init__.py",
+    "src/wherewolf/execution/registry.py",
+    "src/wherewolf/desktop/row_count_controller.py",
+    "src/wherewolf/desktop/main_window.py",
+    "tests/test_models.py",
+    "tests/test_registry.py",
+    "tests/test_row_count_controller.py",
+    "tests/test_main_window.py",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/agent_conversations/2026-08-22_count-all-rows.json"
+  ],
+  "tests_added": [
+    "DuckDB count capability coverage for filtered and parameterized requests, statement wrapping, exact totals, source snapshot rejection, and cancellation.",
+    "RowCountResult terminal-status invariants.",
+    "Independent worker/controller handle publication, cancellation races, stale signals, close, and QThread shutdown.",
+    "MainWindow eligibility, captured-request routing, summary-only updates, stale/inconsistent-result rejection, and new-query/shutdown cancellation."
+  ],
+  "red_evidence": [
+    {
+      "command": "./run.sh uv run pytest tests/test_registry.py -q --no-cov -k count_rows",
+      "exit_code": 1,
+      "output": "13 failed, 24 deselected in 0.30s because _DuckDBAdapter.count_rows did not exist."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_models.py -q --no-cov -k row_count",
+      "exit_code": 1,
+      "output": "1 failed, 11 deselected in 0.09s because RowCountResult did not exist."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_row_count_controller.py -q --no-cov",
+      "exit_code": 2,
+      "output": "Collection failed because wherewolf.desktop.row_count_controller did not exist."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'count_all_rows or row_count'",
+      "exit_code": 1,
+      "output": "8 failed because MainWindow did not accept a row_count_controller injection."
+    }
+  ],
+  "failure_recovery": [
+    "The plan-required pull needed host access because the sandbox could not read the system SSH proxy configuration; it then reported the branch was already up to date.",
+    "The first feature commit exposed test calls through the intentionally narrow ExecutionEngine protocol. Tests now declare and cast only the optional count capability, leaving the shared protocol unchanged.",
+    "The combined suite exposed pre-existing test_models import-order coupling; it now imports wherewolf.execution.models explicitly. The new summary assertion compares scalar fields and frame identity instead of asking Polars DataFrames for boolean equality."
+  ],
+  "verification": [
+    {
+      "command": "./run.sh uv run pytest tests/test_models.py tests/test_registry.py tests/test_row_count_controller.py tests/test_main_window.py tests/test_export_controller.py tests/test_query_controller.py -q --no-cov",
+      "exit_code": 0,
+      "output": "216 passed in 6.32s"
+    },
+    {
+      "command": "mutation: remove the MainWindow row-count request-ID checks, then run test_main_window_count_rejects_stale_and_inconsistent_results_without_changing_preview",
+      "exit_code": 1,
+      "output": "The stale result replaced the visible preview total and the regression test failed. The guard was restored from /tmp/wherewolf/count-all-rows/request-id-matching.restore.patch; stale and summary-only tests then passed 2 passed, 148 deselected in 0.25s."
+    },
+    {
+      "command": "scripts/orchestration/run-quality-gates && scripts/orchestration/check-review-notes-not-deleted",
+      "exit_code": 0,
+      "output": "ruff check and format passed; ty check src passed; 757 passed, 7 deselected in 22.69s; no review notes deleted."
+    }
+  ],
+  "design_decisions": [
+    "Row counting is an optional DuckDB adapter capability, not an ExecutionEngine protocol expansion; Spark therefore cannot accidentally advertise it.",
+    "The adapter checks captured source snapshots before opening a connection, parses exactly one executable StatementSpan, strips only its final terminator, and uses the captured positional parameters in the outer count wrapper.",
+    "RowCountController owns one independent QThread and publishes its cancellation handle before count work begins; MainWindow does not share QueryController state.",
+    "Each editor tab holds transient count state. A completion must match both the captured request and the tab's pending count ID before it can replace only total_row_count; current-tab success updates the summary and controls without rendering the grid or recording history."
+  ],
+  "deferred_and_unverified": [
+    "Manual desktop interaction and multi-gigabyte performance measurement remain unverified in this headless environment.",
+    "Spark counting, network filesystems, pagination coexistence, and automatic or cached counts remain intentionally out of scope."
+  ]
+}
