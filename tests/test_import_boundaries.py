@@ -47,6 +47,21 @@ def test_catalog_service_import_is_free_of_qt_and_pyspark() -> None:
     )
 
 
+def test_headless_query_service_import_is_free_of_qt_and_pyspark() -> None:
+    _run_import_probe(
+        """
+        import sys
+        import wherewolf.services.headless_query
+
+        forbidden = [
+            name for name in sys.modules if name.startswith(("PyQt6", "pyspark"))
+        ]
+        if forbidden:
+            raise SystemExit("forbidden modules loaded: " + ", ".join(forbidden))
+        """
+    )
+
+
 def test_settings_service_export_is_lazy_but_preserves_the_existing_class() -> None:
     _run_import_probe(
         """
