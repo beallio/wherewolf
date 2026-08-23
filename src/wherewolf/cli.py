@@ -1,37 +1,82 @@
-"""Console entry point for the native desktop application."""
+"""Console entry point for Wherewolf's desktop and headless workflows."""
 
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Sequence
+from pathlib import Path
+
+from wherewolf.services.export_destination import ExportFormat
+from wherewolf.services.headless_query import HeadlessQueryOptions, HeadlessQueryRunner
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    """Launch the native Qt application for the ``wherewolf`` console script.
-
-    ``--version`` and the desktop-entry commands are answered before Qt is touched, so it works over SSH and on a box
-    with no display — which is where you most need to ask which build is installed.
-    """
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="wherewolf",
         description="Wherewolf — a local SQL workbench.",
-    )
-    parser.add_argument(
-        "command",
-        nargs="?",
-        choices=("install-desktop-entry", "remove-desktop-entry"),
-        help=(
-            "install-desktop-entry writes the XDG desktop entry and themed icons that "
-            "Wayland needs to show the application icon; remove-desktop-entry deletes them. "
-            "With no command, the desktop application starts."
-        ),
     )
     parser.add_argument(
         "--version",
         action="store_true",
         help="print the version and build commit, then exit",
     )
-    args = parser.parse_args(argv)
+    commands = parser.add_subparsers(dest="command")
+    commands.add_parser(
+        "install-desktop-entry",
+        help="install the XDG desktop entry and themed application icons",
+    )
+    commands.add_parser(
+        "remove-desktop-entry",
+        help="remove the installed XDG desktop entry and application icons",
+    )
+    query = commands.add_parser(
+        "query",
+        help="run one DuckDB SQL query and export every result row to a file",
+    )
+    query.add_argument("sql", help="one SQL statement to execute")
+    query.add_argument(
+        "--dataset",
+        action="append",
+        default=[],
+        metavar="ALIAS=PATH",
+        help="bind a local dataset file to a SQL alias; repeat for multiple datasets",
+    )
+    query.add_argument(
+        "--format",
+        type=ExportFormat,
+        choices=tuple(ExportFormat),
+        default=ExportFormat.CSV,
+        help="output format (default: csv)",
+    )
+    query.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        required=True,
+        help="exact destination path for the export",
+    )
+    query.add_argument(
+        "--force",
+        action="store_true",
+        help="allow replacement of an existing output file",
+    )
+    return parser
+
+
+def _run_query(options: HeadlessQueryOptions) -> int:
+    try:
+        destination = HeadlessQueryRunner().run(options)
+    except Exception as exc:  # noqa: BLE001 - command boundary turns expected failures into one line.
+        print(f"wherewolf query: {exc}", file=sys.stderr)
+        return 1
+    print(f"Wrote {destination}")
+    return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """Dispatch desktop management, headless exports, or the native Qt application."""
+    args = _build_parser().parse_args(argv)
 
     if args.version:
         from wherewolf import build_identifier
@@ -39,8 +84,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(build_identifier())
         return 0
 
-    # Imported lazily for the same reason as the desktop entry point below: managing the
-    # desktop entry is a headless operation and must not require a display.
+    if args.command == "query":
+        return _run_query(
+            HeadlessQueryOptions(
+                sql=args.sql,
+                datasets=tuple(args.dataset),
+                export_format=args.format,
+                output=args.output,
+                force=args.force,
+            )
+        )
+
+    # Imported lazily because managing a desktop entry remains a headless operation.
     if args.command == "install-desktop-entry":
         from wherewolf.services import desktop_entry
 
@@ -60,7 +115,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Removed {path}")
         return 0
 
-    # Imported here, not at module scope: --version must not pay for Qt.
+    # No subcommand preserves the desktop application's original entry point.
     from wherewolf.desktop.application import main as desktop_main
 
     return desktop_main()
