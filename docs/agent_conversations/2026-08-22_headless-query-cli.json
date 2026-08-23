@@ -1,0 +1,133 @@
+{
+  "date": "2026-08-22",
+  "task_objective": "Implement docs/plans/2026-08-22_headless-query-cli.md: a GUI-free DuckDB query-to-file CLI with source/output safety checks.",
+  "baseline": {
+    "command": "./run.sh uv run pytest -q",
+    "exit_code": 0,
+    "output": "682 passed, 7 deselected in 19.13s"
+  },
+  "files_modified": [
+    "src/wherewolf/services/__init__.py",
+    "src/wherewolf/execution/registry.py",
+    "src/wherewolf/services/headless_query.py",
+    "src/wherewolf/cli.py",
+    "tests/test_import_boundaries.py",
+    "tests/test_registry.py",
+    "tests/test_headless_query.py",
+    "tests/test_cli.py",
+    "tests/test_version_reporting.py",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/agent_conversations/2026-08-22_headless-query-cli.json"
+  ],
+  "tests_added": [
+    "Subprocess import guards prove registry, catalog, and headless query imports do not load PyQt6 or PySpark; SettingsService remains a lazy-compatible package export.",
+    "Active DuckDB adapter JSON Lines registration produces separate typed columns and rejects unsupported suffixes instead of guessing CSV.",
+    "Headless runner covers parsed aliases, resolved input/output identity, duplicate safety, one-statement normalization, adapter lifecycle, output preservation, and a real CSV export.",
+    "CLI coverage verifies grammar, typed option construction, formats, outputs, exit codes, legacy dispatch, and a subprocess with unusable Qt configuration."
+  ],
+  "design_decisions": [
+    "Only SettingsService became lazy in wherewolf.services; every other existing package export remains eager and import-compatible.",
+    "The headless runner builds a request-scoped EngineKind.DUCKDB request from CatalogService aliases and calls the existing adapter export_full path, preserving streaming CSV/Parquet export and atomic replacement.",
+    "Dataset and destination paths are resolved before identity comparisons, so a symlink cannot turn an output into an input dataset under --force.",
+    "StatementService validates cardinality; the runner removes only the final separator at the validated statement span, retaining literal and comment semicolons.",
+    "The CLI catches expected query boundary errors without catching argparse SystemExit, retaining exit 2 for grammar errors."
+  ],
+  "red_evidence": [
+    {
+      "command": "./run.sh uv run pytest tests/test_import_boundaries.py -q --no-cov",
+      "exit_code": 1,
+      "output": "2 failed, 2 passed in 0.91s; registry/catalog import loaded PyQt6 through wherewolf.services.__init__."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_registry.py -q --no-cov -k 'jsonl or unsupported_suffix'",
+      "exit_code": 1,
+      "output": "2 failed, 22 deselected in 0.17s; .jsonl execution failed and an unsupported suffix reached the CSV fallback."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_headless_query.py -q --no-cov",
+      "exit_code": 1,
+      "output": "1 collection error; wherewolf.services.headless_query did not exist."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_cli.py tests/test_version_reporting.py -q --no-cov -k 'query or version'",
+      "exit_code": 1,
+      "output": "7 failed, 10 passed, 7 deselected in 1.75s; query was not an argparse command."
+    }
+  ],
+  "failure_recovery": [
+    {
+      "command": "git pull --ff-only origin dev",
+      "exit_code": 128,
+      "output": "Sandbox SSH rejected /etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf permissions; the host-access retry exited 0 and reported Already up to date."
+    },
+    {
+      "command": "commit-hook ty check .",
+      "exit_code": 1,
+      "output": "Test-double annotations initially treated captured requests as object; explicit ExecutionRequest and UUID annotations resolved all diagnostics."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_cli.py tests/test_version_reporting.py -q --no-cov",
+      "exit_code": 134,
+      "output": "Legacy desktop icon test aborted without a QApplication when run alone; adding its existing qapp fixture made the prescribed focused suite executable without changing any runtime assertion."
+    }
+  ],
+  "verification": [
+    {
+      "command": "./run.sh uv run pytest tests/test_registry.py -q --no-cov -k 'jsonl or unsupported_suffix'",
+      "exit_code": 0,
+      "output": "2 passed, 22 deselected in 0.13s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_headless_query.py tests/test_import_boundaries.py -q --no-cov",
+      "exit_code": 0,
+      "output": "29 passed in 1.21s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_cli.py tests/test_version_reporting.py tests/test_headless_query.py tests/test_registry.py -q --no-cov",
+      "exit_code": 0,
+      "output": "72 passed in 2.15s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_cli.py tests/test_version_reporting.py tests/test_import_boundaries.py tests/test_headless_query.py tests/test_registry.py tests/test_full_export.py -q",
+      "exit_code": 0,
+      "output": "85 passed in 4.30s"
+    },
+    {
+      "command": "./run.sh uv run python /tmp/wherewolf/headless-query-cli/verify_cli_acceptance.py",
+      "exit_code": 0,
+      "output": "headless CLI acceptance passed; verified an unusable Qt platform, happy export, invalid alias, missing/unsupported input, multi-statement, DDL, bad SQL, missing -o, input/symlink output, output directory, existing destination, and post-failure valid queries."
+    },
+    {
+      "command": "mutation: remove the HeadlessQueryRunner destination.exists guard, then run test_existing_destination_fails_closed",
+      "exit_code": 1,
+      "output": "1 failed, 23 deselected in 0.10s; the test reported DID NOT RAISE ValueError after the sentinel destination was overwritten."
+    },
+    {
+      "command": "git apply /tmp/wherewolf/headless-query-cli/destination-exists-guard.patch && ./run.sh uv run pytest tests/test_headless_query.py -q --no-cov -k existing_destination_fails_closed",
+      "exit_code": 0,
+      "output": "1 passed, 23 deselected in 0.08s; the exact guard patch restored the committed source."
+    },
+    {
+      "command": "scripts/orchestration/run-quality-gates && scripts/orchestration/check-review-notes-not-deleted",
+      "exit_code": 0,
+      "output": "ruff check and format passed; ty check src passed; 724 passed, 7 deselected in 20.31s; no review notes deleted."
+    }
+  ],
+  "commits": [
+    "docs(plan): add headless-query-cli implementation plan",
+    "refactor(services): keep headless imports free of Qt",
+    "fix(execution): register JSON Lines in the active DuckDB adapter",
+    "feat(cli): add GUI-free DuckDB query runner",
+    "feat(cli): expose headless query-to-file command",
+    "docs(cli): document headless query mode"
+  ],
+  "deferred_validation": [
+    "Manual cron/systemd integration.",
+    "Windows path quoting.",
+    "Spark execution.",
+    "Stdout result streaming.",
+    "Stdin and SQL-file input.",
+    "Saved-query lookup and named parameters."
+  ]
+}

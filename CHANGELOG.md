@@ -4,6 +4,11 @@
 
 ### Added
 
+- **Headless DuckDB query exports are available from the command line.** `wherewolf query` runs
+  one checked SQL statement over explicitly aliased local datasets and writes full CSV, Parquet,
+  or XLSX results without loading Qt or PySpark. It fails closed around output replacement and
+  source-file identity, making it suitable for SSH, CI, cron, and Makefiles.
+
 - **DuckDB errors can now jump straight to the failing SQL token.** When Wherewolf executes one
   unchanged, parameter-free DuckDB statement from an editor and DuckDB provides an exact
   `LINE`/caret excerpt, activate its Messages entry to return to the originating tab, reveal the

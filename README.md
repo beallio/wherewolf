@@ -76,6 +76,46 @@ cd wherewolf
 For the optional Spark engine from a source checkout, run `./run.sh uv sync --extra spark` after
 installing Java.
 
+### Headless DuckDB queries
+
+For SSH sessions, cron jobs, CI, and Makefiles, `wherewolf query` runs one DuckDB SQL statement
+without loading Qt or PySpark and exports every result row to a local file:
+
+```text
+wherewolf query SQL [--dataset ALIAS=PATH ...] --format {csv,parquet,xlsx} -o PATH [--force]
+```
+
+`--dataset` is repeatable and optional, so a constant query needs no source file:
+
+```bash
+wherewolf query 'SELECT 1 AS answer' -o /tmp/answer.csv
+```
+
+Bind each source file to the alias used by the SQL. The alias must be a SQL identifier; JSON,
+JSON Lines, CSV, Parquet, and XLSX inputs use the same format support as the desktop catalog.
+
+```bash
+wherewolf query 'SELECT region, sum(amount) AS total FROM sales GROUP BY region' \
+  --dataset sales=/srv/imports/sales.csv \
+  --format parquet \
+  --output /srv/reports/sales-by-region.data
+```
+
+`csv` is the default format. CSV, Parquet, and XLSX are supported; like desktop full export,
+XLSX is limited to 100,000 rows. The output argument is honored exactly — choosing CSV does not
+rename `sales-by-region.data` to a `.csv` suffix. A destination that already exists is rejected
+unless `--force` is given. A directory is never an output, and an output that resolves to an input
+dataset is always rejected, including through a symlink, even with `--force`.
+
+On success the command writes exactly `Wrote <absolute-path>` to standard output and exits 0.
+Dataset, SQL, and export failures write one `wherewolf query: ...` line to standard error, leave
+standard output empty, and exit 1. Argument syntax errors retain argparse's exit code 2.
+
+This v1 command accepts SQL only as one command-line argument and writes results only to a file.
+SQL files, stdin, named parameters, saved queries, stdout result streaming, Spark execution,
+progress reporting, cancellation, and workspace/catalog persistence are intentionally not part of
+this mode.
+
 ## Desktop workflow
 
 1. Choose **Add Datasets…** or drag supported local files into the Dataset Catalog. The command
