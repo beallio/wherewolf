@@ -2451,9 +2451,9 @@ class MainWindow(QMainWindow):
         assert state.last_request is not None
         assert state.last_result is not None
         total = state.last_result.total_row_count
-        if total is not None:
-            return (state.page_index + 1) * state.last_request.preview_limit < total
-        return state.page_has_next
+        if not state.page_has_next:
+            return False
+        return total is None or (state.page_index + 1) * state.last_request.preview_limit < total
 
     def _update_page_controls(self) -> None:
         state = self._current_editor_state()

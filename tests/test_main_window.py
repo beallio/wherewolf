@@ -4426,18 +4426,25 @@ def test_main_window_retains_background_tab_count_until_that_tab_is_revisited(qt
 
 
 @pytest.mark.parametrize(
-    ("export_cancelled", "query_cancelled", "expected_calls"),
+    ("export_cancelled", "query_cancelled", "page_cancelled", "expected_calls"),
     (
-        (True, True, ["export"]),
-        (False, True, ["export", "query"]),
-        (False, False, ["export", "query", "count"]),
+        (True, True, True, ["export"]),
+        (False, True, True, ["export", "query"]),
+        (False, False, True, ["export", "query", "page"]),
+        (False, False, False, ["export", "query", "page", "count"]),
     ),
 )
-def test_main_window_cancel_prioritizes_export_then_query_then_row_count(
-    qtbot, monkeypatch, export_cancelled: bool, query_cancelled: bool, expected_calls: list[str]
+def test_main_window_cancel_prioritizes_export_then_query_then_page_then_row_count(
+    qtbot,
+    monkeypatch,
+    export_cancelled: bool,
+    query_cancelled: bool,
+    page_cancelled: bool,
+    expected_calls: list[str],
 ) -> None:
     controller = _FakeRowCountController()
-    window = MainWindow(row_count_controller=controller)
+    page_controller = _FakePageController()
+    window = MainWindow(row_count_controller=controller, page_controller=page_controller)
     qtbot.addWidget(window)
     calls: list[str] = []
     monkeypatch.setattr(
@@ -4449,6 +4456,11 @@ def test_main_window_cancel_prioritizes_export_then_query_then_row_count(
         window.query_controller,
         "cancel",
         lambda: calls.append("query") or query_cancelled,
+    )
+    monkeypatch.setattr(
+        page_controller,
+        "cancel",
+        lambda: calls.append("page") or page_cancelled,
     )
     monkeypatch.setattr(
         controller,
@@ -4707,6 +4719,108 @@ def test_main_window_pagination_empty_next_page_keeps_current_page_and_disables_
     assert not state.page_has_next
     assert not window.next_page_button.isEnabled()
     assert "empty" in window.page_status_label.text().lower()
+
+
+def test_main_window_pagination_empty_probe_overrides_a_larger_known_total(qtbot) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(
+        _truncated_result(request),
+        frame=pl.DataFrame({"id": [1, 2]}),
+        total_row_count=5,
+    )
+    window._on_query_result_ready(preview, request)
+
+    window.next_page_button.click()
+    controller.emit_result(
+        _page_result(request, offset=2, frame=pl.DataFrame({"id": []}, schema={"id": pl.Int64}))
+    )
+
+    state = window._editor_states[window.editor]
+    assert state.last_result is preview
+    assert state.last_result.total_row_count == 5
+    assert state.page_index == 0
+    assert not state.page_has_next
+    assert not window.next_page_button.isEnabled()
+    assert window.page_status_label.text() == (
+        "rows 1-2 of 5 · Page 1 · The next page was empty; no further rows are available."
+    )
+    window.next_page_button.click()
+    assert controller.fetches == [(request, 1)]
+
+
+def test_main_window_pagination_probe_exhaustion_overrides_a_larger_known_total(qtbot) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(
+        _truncated_result(request),
+        frame=pl.DataFrame({"id": [1, 2]}),
+        total_row_count=5,
+    )
+    window._on_query_result_ready(preview, request)
+
+    window.next_page_button.click()
+    page_frame = pl.DataFrame({"id": [3, 4]})
+    controller.emit_result(_page_result(request, offset=2, frame=page_frame, has_next=False))
+
+    state = window._editor_states[window.editor]
+    assert state.last_result is not None
+    assert state.last_result.frame is page_frame
+    assert state.last_result.total_row_count == 5
+    assert state.page_index == 1
+    assert not state.page_has_next
+    assert not window.next_page_button.isEnabled()
+    assert window.page_status_label.text() == "rows 3-4 of 5 · Page 2"
+    window.next_page_button.click()
+    assert controller.fetches == [(request, 1)]
+
+
+def test_main_window_pagination_coexists_with_row_count_without_invoking_or_losing_it(
+    qtbot,
+) -> None:
+    row_count_controller = _FakeRowCountController()
+    page_controller = _FakePageController()
+    window = MainWindow(
+        row_count_controller=row_count_controller,
+        page_controller=page_controller,
+    )
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(_truncated_result(request), frame=pl.DataFrame({"id": [1, 2]}))
+    window._on_query_result_ready(preview, request)
+
+    window.next_page_button.click()
+    assert page_controller.fetches == [(request, 1)]
+    assert row_count_controller.requests == []
+
+    window.count_all_rows_button.click()
+    assert row_count_controller.requests == [request]
+    row_count_controller.emit_result(
+        RowCountResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+    page_frame = pl.DataFrame({"id": [3, 4]})
+    page_controller.emit_result(_page_result(request, offset=2, frame=page_frame, has_next=False))
+
+    state = window._editor_states[window.editor]
+    assert state.last_request is request
+    assert state.last_result is not None
+    assert state.last_result.frame is page_frame
+    assert state.last_result.total_row_count == 5
+    assert state.page_index == 1
+    assert not window.next_page_button.isEnabled()
+
+    window.close()
+    assert page_controller.shutdown_calls == 1
+    assert row_count_controller.shutdown_calls == 1
 
 
 def test_main_window_pagination_ignores_stale_results_and_preserves_background_tab_pages(

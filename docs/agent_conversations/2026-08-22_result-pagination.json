@@ -27,7 +27,9 @@
     "PageResult terminal-status, frame/error, offset, and page-size invariants.",
     "DuckDB captured-page probes, parameter order, source mutation checks, cancellation, connection closure, invalid bounds, and multi-statement rejection.",
     "Independent page-worker publication barrier, cancellation race, stale completion rejection, capability failure, controller reuse, and bounded shutdown.",
-    "Per-tab controls, captured-request routing, page ranges, export source behavior, order warnings, failure preservation, empty next pages, background tabs, closed tabs, and page-local interaction reset."
+    "Per-tab controls, captured-request routing, page ranges, export source behavior, order warnings, failure preservation, empty next pages, background tabs, closed tabs, and page-local interaction reset.",
+    "Review-round contradictory-total regressions: empty and non-empty page probes override a larger known total for navigation while preserving that total for range display.",
+    "Count All Rows coexistence: pagination does not invoke or require the row-count controller, preserves a total delivered during a page fetch, maintains export -> query -> page -> row-count cancellation order, and shuts down both auxiliary controllers."
   ],
   "red_evidence": [
     {
@@ -65,7 +67,8 @@
     "The plan-required pull needed host SSH access because the sandbox could not read the system SSH proxy configuration; host Git reported dev was already up to date.",
     "The page-fetch commit hook caught an optional test-wrapper parameter that could be None. The wrapper now records only non-None page SQL parameters; focused tests and ty then passed.",
     "The initial page-control rendering omitted the required empty-next-page explanation because the control predicate hid page 1 once has_next became false. Page errors now retain the disabled controls and inline explanation.",
-    "The ordering warning now says that membership is not stable, matching the documented user-visible guarantee."
+    "The ordering warning now says that membership is not stable, matching the documented user-visible guarantee.",
+    "Review round 01 found that a known total could re-enable Next after an exhausted page probe. Navigation now requires both an available probe result and, when present, a non-exhausted known-total bound; the probe is authoritative when the two disagree."
   ],
   "verification": [
     {
@@ -97,6 +100,27 @@
       "command": "mutation: force DuckDB page offset to zero, then run fetch_page_returns_bounded_ordered_windows",
       "exit_code": 1,
       "output": "The three-page regression failed because the third page reported has_next=True instead of False after fetching the first page again. Raw output: /tmp/wherewolf/result-pagination/mutation-offset-zero.log. Restored from /tmp/wherewolf/result-pagination/restore-page-offset.patch; the same test then passed 1 passed, 49 deselected in 0.15s."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'empty_probe or probe_exhaustion or coexists_with_row_count or cancel_prioritizes'",
+      "exit_code": 1,
+      "output": "3 failed, 4 passed, 172 deselected in 0.93s. Each failure reproduced Next remaining enabled after an exhausted page probe conflicted with a known total of five.",
+      "raw_output": "/tmp/wherewolf/result-pagination/red-review-round-01.log"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'empty_probe or probe_exhaustion or coexists_with_row_count or cancel_prioritizes'",
+      "exit_code": 0,
+      "output": "7 passed, 172 deselected in 0.42s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_models.py tests/test_result_pagination.py tests/test_registry.py tests/test_page_controller.py tests/test_main_window.py tests/test_export_integrity.py -q --no-cov",
+      "exit_code": 0,
+      "output": "270 passed in 7.31s"
+    },
+    {
+      "command": "scripts/orchestration/run-quality-gates && scripts/orchestration/check-review-notes-not-deleted",
+      "exit_code": 0,
+      "output": "Ruff check and format verification passed; ty check src/ passed; 825 passed, 7 deselected in 24.83s; no deleted review notes."
     }
   ],
   "design_decisions": [
@@ -104,10 +128,10 @@
     "Pagination is an optional DuckDB adapter capability, leaving ExecutionEngine unchanged so Spark cannot advertise support accidentally.",
     "PageController owns an independent QThread and cancellation-handle publication barrier; it never routes through QueryController or records history/messages.",
     "Every editor tab keeps its own page state. A page result must match the base request, requested offset, captured page size, and a pending tab operation before it can replace the displayed frame.",
-    "Known totals only constrain navigation; no count is initiated. Preview and selection export use the displayed page, while full export receives the original captured request."
+    "Known totals impose an additional upper bound but never initiate a count. A page probe is the authoritative availability signal, so it can disable Next when a stale or contradictory total says otherwise. Preview and selection export use the displayed page, while full export receives the original captured request."
   ],
   "deferred_and_unverified": [
     "Manual desktop interaction with a disposable seven-row CSV, source mutation, and preview/full file inspection remains unverified because this implementation session has no interactive graphical display.",
-    "Very large offsets, Spark pagination, keyset pagination, restart persistence, and future Count All Rows interaction remain intentionally out of scope."
+    "Very large offsets, Spark pagination, keyset pagination, and restart persistence remain intentionally out of scope. Count All Rows coexistence is implemented and covered by this review round."
   ]
 }
