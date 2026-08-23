@@ -95,6 +95,7 @@ class SqlEditor(QsciScintilla):
         self._refresh_line_margin()
         self.textChanged.connect(self._refresh_line_margin)
         self.textChanged.connect(self._on_text_changed_completion)
+        self.textChanged.connect(self.clear_diagnostics)
         if show_completion_action is None or self._bind_shared_actions:
             self._show_completion_action.triggered.connect(
                 lambda: self.request_completion(forced=True)
@@ -408,10 +409,10 @@ class SqlEditor(QsciScintilla):
         horizontal = horizontal_bar.value() if horizontal_bar is not None else 0
 
         result = self._formatting_service.format_sql(text, dialect="duckdb")
-        self._clear_diagnostic_indicator()
+        self.clear_diagnostics()
 
         if result.diagnostics:
-            self._show_parse_diagnostic(result.diagnostics[0])
+            self.show_diagnostic(result.diagnostics[0], move_cursor=False)
             self._update_status(result.diagnostics[0].message)
             return
 
@@ -432,27 +433,44 @@ class SqlEditor(QsciScintilla):
         finally:
             self.endUndoAction()
 
-    def _show_parse_diagnostic(self, diagnostic: SqlDiagnostic) -> None:
+    def show_diagnostic(self, diagnostic: SqlDiagnostic, *, move_cursor: bool = True) -> None:
+        """Mark a diagnostic and, by default, move the user to its source position."""
+        self.clear_diagnostics()
         line = max(diagnostic.start_line - 1, 0)
         line_count = max(self.lines(), 1)
         if line >= line_count:
             line = line_count - 1
 
-        line_text = self.text(line)
-        start_column = max(diagnostic.start_column - 1, 0)
-        end_column = max(min(start_column + 1, max(len(line_text), 1)), 1)
+        line_text = self.text(line).rstrip("\r\n")
+        requested_column = max(diagnostic.start_column - 1, 0)
+        cursor_column = min(requested_column, len(line_text))
+        if not line_text or not line_text[:cursor_column].isascii():
+            return
+
+        marker_start = min(cursor_column, len(line_text) - 1)
+        marker_end = marker_start + 1
+        if diagnostic.end_line == line + 1 and diagnostic.end_column is not None:
+            requested_end = max(diagnostic.end_column - 1, 0)
+            marker_end = max(marker_end, min(requested_end, len(line_text)))
+
         try:
             self.fillIndicatorRange(
                 line,
-                min(start_column, len(line_text)),
+                marker_start,
                 line,
-                min(end_column, max(len(line_text), 1)),
+                marker_end,
                 self._diagnostic_indicator,
             )
         except Exception:  # noqa: BLE001
             return
 
-    def _clear_diagnostic_indicator(self) -> None:
+        if move_cursor:
+            self.setCursorPosition(line, cursor_column)
+            self.ensureLineVisible(line)
+            self.setFocus()
+
+    def clear_diagnostics(self) -> None:
+        """Remove all transient diagnostic indicators from the editor."""
         line_count = max(self.lines(), 1)
         try:
             self.clearIndicatorRange(
