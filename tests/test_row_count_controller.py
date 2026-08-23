@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from threading import Event
 from uuid import uuid4
 
+import pytest
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from wherewolf.desktop.row_count_controller import RowCountController
@@ -101,6 +102,14 @@ class _Registry:
         return self.adapter
 
 
+class _SequenceRegistry:
+    def __init__(self, *adapters: _Adapter) -> None:
+        self._adapters = iter(adapters)
+
+    def create(self, _engine, _request_id) -> _Adapter:
+        return next(self._adapters)
+
+
 class _ScriptedWorker(QThread):
     handle_published = pyqtSignal(object)
     result_ready = pyqtSignal(object)
@@ -190,6 +199,49 @@ def test_row_count_worker_normalizes_raised_failure_and_closes_once(qtbot) -> No
     assert result.status is ExecutionStatus.FAILED
     assert result.error_message == "disk unavailable"
     assert adapter.closed == 1
+    assert controller.shutdown() is True
+
+
+@pytest.mark.parametrize("first_terminal", (ExecutionStatus.FAILED, ExecutionStatus.CANCELLED))
+def test_row_count_controller_reuses_one_controller_after_terminal_result(
+    qtbot, first_terminal: ExecutionStatus
+) -> None:
+    first_request = _request()
+    second_request = _request()
+    first_adapter: _Adapter
+    if first_terminal is ExecutionStatus.FAILED:
+        first_adapter = _Adapter(first_request, failure=RuntimeError("disk unavailable"))
+    else:
+        first_adapter = _BlockingAdapter(first_request)
+    second_adapter = _Adapter(second_request)
+    controller = RowCountController(
+        engine_registry=_SequenceRegistry(first_adapter, second_adapter)
+    )
+    results: list[RowCountResult] = []
+    controller.result_ready.connect(results.append)
+
+    with qtbot.waitSignal(controller.result_ready, timeout=3000) as first_completion:
+        assert controller.count(first_request)
+        if first_terminal is ExecutionStatus.CANCELLED:
+            qtbot.waitUntil(first_adapter.count_started.is_set, timeout=3000)
+            assert controller.cancel() is True
+
+    assert first_completion.args[0].request_id == first_request.request_id
+    assert first_completion.args[0].status is first_terminal
+    assert first_adapter.closed == 1
+    qtbot.waitUntil(lambda: not controller.counting, timeout=3000)
+
+    with qtbot.waitSignal(controller.result_ready, timeout=3000) as second_completion:
+        assert controller.count(second_request)
+
+    assert second_completion.args[0].request_id == second_request.request_id
+    assert second_completion.args[0].status is ExecutionStatus.SUCCEEDED
+    assert second_adapter.closed == 1
+    qtbot.waitUntil(lambda: not controller.counting, timeout=3000)
+    assert [result.request_id for result in results] == [
+        first_request.request_id,
+        second_request.request_id,
+    ]
     assert controller.shutdown() is True
 
 

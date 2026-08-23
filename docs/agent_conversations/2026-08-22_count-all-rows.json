@@ -25,7 +25,8 @@
     "RowCountResult terminal-status invariants.",
     "Independent worker/controller handle publication, cancellation races, stale signals, close, and QThread shutdown.",
     "MainWindow eligibility, captured-request routing, summary-only updates, stale/inconsistent-result rejection, and new-query/shutdown cancellation.",
-    "Review-round MainWindow coverage for terminal count-state reset, inline count failures and cancellation, closed and background tabs, interaction/export preservation, and cancellation priority."
+    "Review-round MainWindow coverage for terminal count-state reset, inline count failures and cancellation, closed and background tabs, interaction/export preservation, and cancellation priority.",
+    "Review-round controller reuse coverage for failure-to-success and cancellation-to-success on one controller instance, including request-ID routing, one close per adapter, and clearing the counting state before reuse."
   ],
   "red_evidence": [
     {
@@ -117,5 +118,31 @@
       }
     ],
     "design_decision": "When a distinct ordinary query result becomes a tab's current result, reset only that tab's transient row-count request ID, status, and message before storing the new request/result. A delayed old completion then lacks both the pending ID and current request match, so it cannot alter the newer preview."
+  },
+  "review_round_02": {
+    "review_note": "docs/review/count-all-rows-review-02.md (STATUS: CHANGES_REQUESTED)",
+    "test_correction": "Added one parametrized same-controller regression for a normalized adapter failure followed by success and cancellation followed by success. The new tests were green on their first run because RowCountController already cleared its worker after the terminal QThread finished; no production behavior change was required.",
+    "verification": [
+      {
+        "command": "./run.sh uv run pytest tests/test_row_count_controller.py -q --no-cov -k reuses_one_controller",
+        "exit_code": 0,
+        "output": "2 passed, 5 deselected in 0.20s"
+      },
+      {
+        "command": "./run.sh uv run pytest -q --no-cov 'tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_multiple_statements_before_execution' 'tests/test_main_window.py::test_main_window_only_offers_count_all_rows_for_truncated_one_statement_duckdb_results[spark-SELECT * FROM rows-succeeded-True-False]' 'tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_changed_captured_sources[changed]' 'tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_changed_captured_sources[missing]' 'tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_changed_captured_sources[different_size]' 'tests/test_row_count_controller.py::test_row_count_controller_reuses_one_controller_after_terminal_result[failed]' 'tests/test_row_count_controller.py::test_row_count_controller_reuses_one_controller_after_terminal_result[cancelled]' 'tests/test_main_window.py::test_main_window_new_query_resets_terminal_row_count_state_and_ignores_old_completion[succeeded-All rows counted.]' 'tests/test_main_window.py::test_main_window_new_query_resets_terminal_row_count_state_and_ignores_old_completion[failed-Count failed.]' 'tests/test_main_window.py::test_main_window_new_query_resets_terminal_row_count_state_and_ignores_old_completion[cancelled-Count cancelled; rerun the query]' 'tests/test_main_window.py::test_main_window_ignores_count_completion_after_its_origin_tab_closes' 'tests/test_registry.py::test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview' 'tests/test_main_window.py::test_main_window_count_success_updates_only_own_tab_summary_without_history_or_frame'",
+        "exit_code": 0,
+        "output": "13 passed in 0.41s; multi-statement, Spark, changed/missing/differently sized sources, adapter failure, cancellation, superseded requests, and closed tabs each ran before valid truncated DuckDB count and its exact UI summary assertion."
+      },
+      {
+        "command": "./run.sh uv run pytest tests/test_models.py tests/test_registry.py tests/test_row_count_controller.py tests/test_main_window.py tests/test_export_controller.py tests/test_query_controller.py -q --no-cov",
+        "exit_code": 0,
+        "output": "229 passed in 6.28s"
+      },
+      {
+        "command": "scripts/orchestration/run-quality-gates && scripts/orchestration/check-review-notes-not-deleted",
+        "exit_code": 0,
+        "output": "ruff check and format passed; ty check src passed; 770 passed, 7 deselected in 22.09s; no review notes deleted."
+      }
+    ]
   }
 }
