@@ -54,6 +54,7 @@ from wherewolf.constants import DIALECT_MAPPING
 from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.export_controller import ExportController, ExportResult
+from wherewolf.desktop.page_controller import PageController
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.row_count_controller import RowCountController
 from wherewolf.desktop.theming import PROGRAM_THEME_NAMES, apply_program_theme
@@ -71,6 +72,7 @@ from wherewolf.domain import (
     EngineKind,
     ExecutionRequest,
     ExecutionStatus,
+    PageResult,
     ProfileResult,
     QueryResult,
     RowCountResult,
@@ -100,6 +102,7 @@ from wherewolf.services.query_parameters import (
     contains_dataset_token,
     extract_parameters,
 )
+from wherewolf.services.result_pagination import has_top_level_order_by
 from wherewolf.storage.catalog import CatalogStore
 from wherewolf.storage.history import HistoryManager
 from wherewolf.storage.saved_queries import SavedQuery, SavedQueryStore
@@ -127,6 +130,12 @@ class _EditorTabState:
     row_count_request_id: UUID | None = None
     row_count_status: str = "idle"
     row_count_message: str | None = None
+    page_index: int = 0
+    page_has_next: bool = False
+    page_loading: bool = False
+    page_error: str | None = None
+    page_has_stable_order: bool = False
+    page_pending_index: int | None = None
     navigation_id: UUID = field(default_factory=uuid4)
 
 
@@ -137,6 +146,19 @@ class _RowCountController(Protocol):
     def counting(self) -> bool: ...
 
     def count(self, request: ExecutionRequest) -> bool: ...
+
+    def cancel(self) -> bool: ...
+
+    def shutdown(self) -> bool: ...
+
+
+class _PageController(Protocol):
+    result_ready: Any
+
+    @property
+    def fetching(self) -> bool: ...
+
+    def fetch(self, request: ExecutionRequest, page_index: int) -> bool: ...
 
     def cancel(self) -> bool: ...
 
@@ -317,6 +339,7 @@ class MainWindow(QMainWindow):
         query_controller: QueryController | None = None,
         export_controller: ExportController | None = None,
         row_count_controller: _RowCountController | None = None,
+        page_controller: _PageController | None = None,
         history_manager: HistoryManager | None = None,
         catalog_store: CatalogStore | None = None,
         saved_query_store: SavedQueryStore | None = None,
@@ -344,6 +367,9 @@ class MainWindow(QMainWindow):
             self._engine_registry, parent=self
         )
         self.row_count_controller: _RowCountController = row_count_controller or RowCountController(
+            self._engine_registry, parent=self
+        )
+        self.page_controller: _PageController = page_controller or PageController(
             self._engine_registry, parent=self
         )
         self._last_request: ExecutionRequest | None = None
@@ -674,6 +700,7 @@ class MainWindow(QMainWindow):
         self.export_controller.started.connect(self._on_export_started)
         self.export_controller.result_ready.connect(self._on_export_result)
         self.row_count_controller.result_ready.connect(self._on_row_count_result_ready)
+        self.page_controller.result_ready.connect(self._on_page_result_ready)
 
     def _on_run_triggered(self) -> None:
         editor = self.current_editor
@@ -738,6 +765,7 @@ class MainWindow(QMainWindow):
             return
 
         self._invalidate_active_row_count()
+        self._invalidate_active_page_fetch()
         if self.query_controller.execute(request):
             result_origin = "saved-query" if direct_saved_query else "editor"
             state = self._editor_states.get(owner)
@@ -859,6 +887,8 @@ class MainWindow(QMainWindow):
             return
         if self.query_controller.cancel():
             return
+        if self.page_controller.cancel():
+            return
         self.row_count_controller.cancel()
 
     def _count_all_rows(self) -> None:
@@ -883,6 +913,108 @@ class MainWindow(QMainWindow):
                 state.row_count_status = "idle"
                 state.row_count_message = None
         self._update_row_count_controls()
+
+    def _invalidate_active_page_fetch(self) -> None:
+        if not self.page_controller.fetching:
+            return
+        self.page_controller.cancel()
+        for state in self._editor_states.values():
+            if state.page_loading:
+                state.page_loading = False
+                state.page_pending_index = None
+        self._update_page_controls()
+
+    def _reset_page_state(
+        self, state: _EditorTabState, result: QueryResult, request: ExecutionRequest
+    ) -> None:
+        state.page_index = 0
+        state.page_has_next = result.status is ExecutionStatus.SUCCEEDED and result.truncated
+        state.page_loading = False
+        state.page_error = None
+        state.page_pending_index = None
+        state.page_has_stable_order = has_top_level_order_by(request.executable_sql)
+
+    def _fetch_page(self, page_index: int) -> None:
+        state = self._current_editor_state()
+        if state is None or state.last_request is None or not self._can_page_results(state):
+            return
+        if state.page_loading or page_index < 0:
+            return
+        if page_index > state.page_index and not self._has_next_page(state):
+            return
+        request = state.last_request
+        if self.page_controller.fetch(request, page_index):
+            state.page_loading = True
+            state.page_pending_index = page_index
+            state.page_error = None
+            self._update_page_controls()
+
+    def _fetch_previous_page(self) -> None:
+        state = self._current_editor_state()
+        if state is not None:
+            self._fetch_page(state.page_index - 1)
+
+    def _fetch_next_page(self) -> None:
+        state = self._current_editor_state()
+        if state is not None:
+            self._fetch_page(state.page_index + 1)
+
+    def _on_page_result_ready(self, result: object) -> None:
+        if not isinstance(result, PageResult):
+            return
+        for editor, state in self._editor_states.items():
+            request = state.last_request
+            preview = state.last_result
+            pending_index = state.page_pending_index
+            if (
+                request is None
+                or preview is None
+                or not state.page_loading
+                or pending_index is None
+                or request.request_id != result.request_id
+                or result.offset != pending_index * request.preview_limit
+                or result.page_size != request.preview_limit
+            ):
+                continue
+
+            state.page_loading = False
+            state.page_pending_index = None
+            if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
+                if result.frame.height == 0 and pending_index > state.page_index:
+                    state.page_has_next = False
+                    state.page_error = "The next page was empty; no further rows are available."
+                else:
+                    state.page_index = pending_index
+                    state.page_has_next = result.has_next
+                    state.page_error = None
+                    state.last_result = replace(
+                        preview,
+                        frame=result.frame,
+                        execution_seconds=result.execution_seconds,
+                        preview_row_count=result.frame.height,
+                        total_row_count=preview.total_row_count,
+                        truncated=result.has_next,
+                        completed_at=result.completed_at,
+                    )
+                    if editor is self.current_editor:
+                        self._clear_page_local_interactions()
+                        self._render_query_result(state.last_result, request, show_message=False)
+                        return
+            elif result.status is ExecutionStatus.CANCELLED:
+                state.page_error = "Page fetch cancelled; current page remains visible."
+            else:
+                state.page_error = result.error_message or "Could not load page; rerun the query."
+
+            if editor is self.current_editor:
+                self._update_page_controls()
+            return
+
+    def _clear_page_local_interactions(self) -> None:
+        self.preview_filter_input.clear()
+        selection_model = self.result_table_view.selectionModel()
+        if selection_model is not None:
+            selection_model.clearSelection()
+        self._set_local_sort_notice_visible(False)
 
     def _on_row_count_result_ready(self, result: object) -> None:
         if not isinstance(result, RowCountResult):
@@ -925,6 +1057,7 @@ class MainWindow(QMainWindow):
                     self._last_result = updated_result
                     self._set_result_summary_for(updated_result, request)
                 self._update_row_count_controls()
+                self._update_page_controls()
             return
 
     def _on_query_status_changed(self, status: ExecutionStatus) -> None:
@@ -971,6 +1104,7 @@ class MainWindow(QMainWindow):
             state.row_count_message = None
         state.last_request, state.last_result = request, result
         state.result_origin = result_origin
+        self._reset_page_state(state, result, request)
         if owner is self.current_editor:
             self._render_query_result(
                 result,
@@ -1117,6 +1251,7 @@ class MainWindow(QMainWindow):
             result.status is ExecutionStatus.SUCCEEDED and result.truncated
         )
         self._update_row_count_controls()
+        self._update_page_controls()
 
         if show_message:
             self.messages_panel.show_query_result(result, navigation_target=navigation_target)
@@ -1163,6 +1298,7 @@ class MainWindow(QMainWindow):
             self.result_truncation_notice.setVisible(False)
             self._set_result_summary("")
             self._update_row_count_controls()
+            self._update_page_controls()
             return
         self._render_query_result(state.last_result, state.last_request, show_message=False)
 
@@ -1554,6 +1690,8 @@ class MainWindow(QMainWindow):
         state = self._editor_states.get(editor)
         if state is not None and state.row_count_request_id is not None:
             self.row_count_controller.cancel()
+        if state is not None and state.page_loading:
+            self.page_controller.cancel()
         self.editor_tabs.removeTab(index)
         self._editor_states.pop(editor, None)
         editor.deleteLater()
@@ -1653,6 +1791,28 @@ class MainWindow(QMainWindow):
         truncation_controls.addWidget(self.result_count_status_label)
         truncation_controls.addStretch()
         results_layout.addLayout(truncation_controls)
+        page_controls = QHBoxLayout()
+        self.previous_page_button = QPushButton("Previous", results_page)
+        self.previous_page_button.setObjectName("previous_page_button")
+        self.previous_page_button.setVisible(False)
+        self.previous_page_button.clicked.connect(self._fetch_previous_page)
+        page_controls.addWidget(self.previous_page_button)
+        self.page_position_label = QLabel(results_page)
+        self.page_position_label.setObjectName("page_position_label")
+        self.page_position_label.setVisible(False)
+        page_controls.addWidget(self.page_position_label)
+        self.next_page_button = QPushButton("Next", results_page)
+        self.next_page_button.setObjectName("next_page_button")
+        self.next_page_button.setVisible(False)
+        self.next_page_button.clicked.connect(self._fetch_next_page)
+        page_controls.addWidget(self.next_page_button)
+        self.page_status_label = QLabel(results_page)
+        self.page_status_label.setObjectName("page_status_label")
+        self.page_status_label.setWordWrap(True)
+        self.page_status_label.setVisible(False)
+        page_controls.addWidget(self.page_status_label)
+        page_controls.addStretch()
+        results_layout.addLayout(page_controls)
         self.result_error_message = QLabel(results_page)
         self.result_error_message.setObjectName("result_error_message")
         self.result_error_message.setWordWrap(True)
@@ -2158,6 +2318,7 @@ class MainWindow(QMainWindow):
         self.query_controller.cancel()
         self.export_controller.cancel()
         self.row_count_controller.cancel()
+        self.page_controller.cancel()
         self._elapsed_timer.stop()
         self._query_started_at = None
         for window in list(self._value_counts_windows):
@@ -2181,6 +2342,7 @@ class MainWindow(QMainWindow):
         self.query_controller.shutdown()
         self.export_controller.shutdown()
         self.row_count_controller.shutdown()
+        self.page_controller.shutdown()
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())
@@ -2271,6 +2433,65 @@ class MainWindow(QMainWindow):
             message = "Counting..."
         self.result_count_status_label.setText(message or "")
         self.result_count_status_label.setVisible(bool(message))
+
+    def _can_page_results(self, state: _EditorTabState | None) -> bool:
+        if state is None or state.last_request is None or state.last_result is None:
+            return False
+        request = state.last_request
+        result = state.last_result
+        return (
+            request.engine is EngineKind.DUCKDB
+            and result.status is ExecutionStatus.SUCCEEDED
+            and len(StatementService().split_statements(request.executable_sql)) == 1
+            and (state.page_index > 0 or self._has_next_page(state) or state.page_error is not None)
+        )
+
+    @staticmethod
+    def _has_next_page(state: _EditorTabState) -> bool:
+        assert state.last_request is not None
+        assert state.last_result is not None
+        total = state.last_result.total_row_count
+        if total is not None:
+            return (state.page_index + 1) * state.last_request.preview_limit < total
+        return state.page_has_next
+
+    def _update_page_controls(self) -> None:
+        state = self._current_editor_state()
+        if not self._can_page_results(state):
+            self.previous_page_button.setVisible(False)
+            self.previous_page_button.setEnabled(False)
+            self.next_page_button.setVisible(False)
+            self.next_page_button.setEnabled(False)
+            self.page_position_label.clear()
+            self.page_position_label.setVisible(False)
+            self.page_status_label.clear()
+            self.page_status_label.setVisible(False)
+            return
+        assert state is not None
+        assert state.last_request is not None
+        assert state.last_result is not None
+        request = state.last_request
+        result = state.last_result
+        page_number = state.page_index + 1
+        start = state.page_index * request.preview_limit + 1
+        end = start + result.preview_row_count - 1
+        range_text = f"rows {start:,}-{end:,}"
+        if result.total_row_count is not None:
+            range_text += f" of {result.total_row_count:,}"
+        status_parts = [f"{range_text} · Page {page_number}"]
+        if not state.page_has_stable_order:
+            status_parts.append("Page membership is not stable without a top-level ORDER BY.")
+        if state.page_error:
+            status_parts.append(state.page_error)
+
+        self.previous_page_button.setVisible(True)
+        self.previous_page_button.setEnabled(state.page_index > 0 and not state.page_loading)
+        self.next_page_button.setVisible(True)
+        self.next_page_button.setEnabled(self._has_next_page(state) and not state.page_loading)
+        self.page_position_label.setText(f"Page {page_number}")
+        self.page_position_label.setVisible(True)
+        self.page_status_label.setText(" · ".join(status_parts))
+        self.page_status_label.setVisible(True)
 
     def _set_result_selection_statistics(self, statistics: SelectionStatistics | None) -> None:
         if statistics is None:
