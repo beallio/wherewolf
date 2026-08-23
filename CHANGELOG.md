@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Truncated DuckDB previews can now count all matching rows without replacing the grid.** The
+  count runs against the captured query and its bound parameters in a separate cancellable task;
+  local filters, sorting, selection, exports, and history remain unchanged. If an input source has
+  changed or disappeared since the preview ran, the count fails closed and asks you to rerun the
+  query. Spark and multi-statement previews are intentionally excluded.
+
 - **Headless DuckDB query exports are available from the command line.** `wherewolf query` runs
   one checked SQL statement over explicitly aliased local datasets and writes full CSV, Parquet,
   or XLSX results without loading Qt or PySpark. It fails closed around output replacement and

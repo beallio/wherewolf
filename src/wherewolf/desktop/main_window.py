@@ -7,7 +7,7 @@ import webbrowser
 from dataclasses import dataclass, field, replace
 from importlib.metadata import version
 from pathlib import Path
-from typing import Final, cast
+from typing import Any, Final, Protocol, cast
 from uuid import UUID, uuid4
 
 from PyQt6.QtCore import QByteArray, Qt, QTimer
@@ -55,6 +55,7 @@ from wherewolf.desktop.actions import DesktopActions, build_actions
 from wherewolf.desktop.dialogs import FileDialogService, QtFileDialogService
 from wherewolf.desktop.export_controller import ExportController, ExportResult
 from wherewolf.desktop.query_controller import QueryController
+from wherewolf.desktop.row_count_controller import RowCountController
 from wherewolf.desktop.theming import PROGRAM_THEME_NAMES, apply_program_theme
 from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SavedQueriesDock, SqlEditor
 from wherewolf.desktop.widgets.cell_inspector_window import CellInspectorWindow
@@ -72,6 +73,7 @@ from wherewolf.domain import (
     ExecutionStatus,
     ProfileResult,
     QueryResult,
+    RowCountResult,
     SchemaResult,
     SelectionStatistics,
     SqlDiagnostic,
@@ -122,7 +124,23 @@ class _EditorTabState:
     last_request: ExecutionRequest | None = None
     last_result: QueryResult | None = None
     result_origin: str | None = None
+    row_count_request_id: UUID | None = None
+    row_count_status: str = "idle"
+    row_count_message: str | None = None
     navigation_id: UUID = field(default_factory=uuid4)
+
+
+class _RowCountController(Protocol):
+    result_ready: Any
+
+    @property
+    def counting(self) -> bool: ...
+
+    def count(self, request: ExecutionRequest) -> bool: ...
+
+    def cancel(self) -> bool: ...
+
+    def shutdown(self) -> bool: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,6 +316,7 @@ class MainWindow(QMainWindow):
         engine_registry: EngineRegistry | None = None,
         query_controller: QueryController | None = None,
         export_controller: ExportController | None = None,
+        row_count_controller: _RowCountController | None = None,
         history_manager: HistoryManager | None = None,
         catalog_store: CatalogStore | None = None,
         saved_query_store: SavedQueryStore | None = None,
@@ -322,6 +341,9 @@ class MainWindow(QMainWindow):
             engine_registry=self._engine_registry, parent=self
         )
         self.export_controller = export_controller or ExportController(
+            self._engine_registry, parent=self
+        )
+        self.row_count_controller: _RowCountController = row_count_controller or RowCountController(
             self._engine_registry, parent=self
         )
         self._last_request: ExecutionRequest | None = None
@@ -651,6 +673,7 @@ class MainWindow(QMainWindow):
         self.query_controller.result_ready.connect(self._on_query_result_ready)
         self.export_controller.started.connect(self._on_export_started)
         self.export_controller.result_ready.connect(self._on_export_result)
+        self.row_count_controller.result_ready.connect(self._on_row_count_result_ready)
 
     def _on_run_triggered(self) -> None:
         editor = self.current_editor
@@ -714,6 +737,7 @@ class MainWindow(QMainWindow):
             self._show_status(f"Failed to prepare query: {exc}", 5000)
             return
 
+        self._invalidate_active_row_count()
         if self.query_controller.execute(request):
             result_origin = "saved-query" if direct_saved_query else "editor"
             state = self._editor_states.get(owner)
@@ -831,8 +855,77 @@ class MainWindow(QMainWindow):
             editor.request_completion(forced=True)
 
     def _on_cancel_triggered(self) -> None:
-        if not self.export_controller.cancel():
-            self.query_controller.cancel()
+        if self.export_controller.cancel():
+            return
+        if self.query_controller.cancel():
+            return
+        self.row_count_controller.cancel()
+
+    def _count_all_rows(self) -> None:
+        state = self._current_editor_state()
+        if not self._can_count_all_rows(state):
+            return
+        assert state is not None
+        assert state.last_request is not None
+        if self.row_count_controller.count(state.last_request):
+            state.row_count_request_id = state.last_request.request_id
+            state.row_count_status = "counting"
+            state.row_count_message = None
+            self._update_row_count_controls()
+
+    def _invalidate_active_row_count(self) -> None:
+        if not self.row_count_controller.counting:
+            return
+        self.row_count_controller.cancel()
+        for state in self._editor_states.values():
+            if state.row_count_request_id is not None:
+                state.row_count_request_id = None
+                state.row_count_status = "idle"
+                state.row_count_message = None
+        self._update_row_count_controls()
+
+    def _on_row_count_result_ready(self, result: object) -> None:
+        if not isinstance(result, RowCountResult):
+            return
+        for editor, state in self._editor_states.items():
+            request = state.last_request
+            preview = state.last_result
+            if (
+                request is None
+                or preview is None
+                or state.row_count_request_id != result.request_id
+                or request.request_id != result.request_id
+            ):
+                continue
+            state.row_count_request_id = None
+            updated_result: QueryResult | None = None
+            if result.status is ExecutionStatus.SUCCEEDED:
+                if (
+                    result.total_row_count is None
+                    or result.total_row_count < preview.preview_row_count
+                ):
+                    state.row_count_status = "failed"
+                    state.row_count_message = "Count result was inconsistent; rerun the query"
+                else:
+                    updated_result = replace(preview, total_row_count=result.total_row_count)
+                    state.last_result = updated_result
+                    state.row_count_status = "complete"
+                    state.row_count_message = "All rows counted."
+            elif result.status is ExecutionStatus.CANCELLED:
+                state.row_count_status = "cancelled"
+                state.row_count_message = "Count cancelled; rerun the query"
+            else:
+                state.row_count_status = "failed"
+                state.row_count_message = (
+                    result.error_message or "Could not count rows; rerun the query"
+                )
+            if editor is self.current_editor:
+                if updated_result is not None:
+                    self._last_request = request
+                    self._last_result = updated_result
+                    self._set_result_summary_for(updated_result, request)
+                self._update_row_count_controls()
+            return
 
     def _on_query_status_changed(self, status: ExecutionStatus) -> None:
         self._query_status = status
@@ -872,6 +965,10 @@ class MainWindow(QMainWindow):
         state = self._editor_states.get(owner)
         if state is None:
             return
+        if state.last_request is None or state.last_request.request_id != request.request_id:
+            state.row_count_request_id = None
+            state.row_count_status = "idle"
+            state.row_count_message = None
         state.last_request, state.last_result = request, result
         state.result_origin = result_origin
         if owner is self.current_editor:
@@ -1019,6 +1116,7 @@ class MainWindow(QMainWindow):
         self.result_truncation_notice.setVisible(
             result.status is ExecutionStatus.SUCCEEDED and result.truncated
         )
+        self._update_row_count_controls()
 
         if show_message:
             self.messages_panel.show_query_result(result, navigation_target=navigation_target)
@@ -1027,16 +1125,7 @@ class MainWindow(QMainWindow):
             "DuckDB" if request.engine is EngineKind.DUCKDB else request.engine.value.title()
         )
         if result.status is ExecutionStatus.SUCCEEDED:
-            row_text = f"{result.preview_row_count} rows"
-            if (
-                result.total_row_count is not None
-                and result.total_row_count != result.preview_row_count
-            ):
-                row_text = f"showing {result.preview_row_count} of {result.total_row_count} rows"
-            summary = f"{engine_name} · {row_text} · {result.execution_seconds:.2f}s"
-            if result.truncated:
-                summary += f" · truncated at {result.preview_row_count} preview rows"
-            self._set_result_summary(summary)
+            self._set_result_summary_for(result, request)
 
             trunc_str = " (truncated)" if result.truncated else ""
             msg = (
@@ -1045,17 +1134,13 @@ class MainWindow(QMainWindow):
             )
             self._show_status(msg, 10000)
         elif result.status is ExecutionStatus.FAILED:
-            self._set_result_summary(
-                f"{engine_name} · failed after {result.execution_seconds:.2f}s"
-            )
+            self._set_result_summary_for(result, request)
             self._show_status(
                 f"Engine: {engine_name} | State: Failed | Elapsed: {result.execution_seconds:.2f}s | Error: {result.error_message}",
                 10000,
             )
         elif result.status is ExecutionStatus.CANCELLED:
-            self._set_result_summary(
-                f"{engine_name} · cancelled after {result.execution_seconds:.2f}s"
-            )
+            self._set_result_summary_for(result, request)
             self._show_status(
                 f"Engine: {engine_name} | State: Cancelled | Elapsed: {result.execution_seconds:.2f}s | Cancellation completed",
                 10000,
@@ -1077,6 +1162,7 @@ class MainWindow(QMainWindow):
             self.result_error_message.setVisible(False)
             self.result_truncation_notice.setVisible(False)
             self._set_result_summary("")
+            self._update_row_count_controls()
             return
         self._render_query_result(state.last_result, state.last_request, show_message=False)
 
@@ -1465,6 +1551,9 @@ class MainWindow(QMainWindow):
         editor = self.editor_tabs.widget(index)
         if not isinstance(editor, SqlEditor):
             return
+        state = self._editor_states.get(editor)
+        if state is not None and state.row_count_request_id is not None:
+            self.row_count_controller.cancel()
         self.editor_tabs.removeTab(index)
         self._editor_states.pop(editor, None)
         editor.deleteLater()
@@ -1551,7 +1640,19 @@ class MainWindow(QMainWindow):
         )
         self.result_truncation_notice.setObjectName("result_truncation_notice")
         self.result_truncation_notice.setVisible(False)
-        results_layout.addWidget(self.result_truncation_notice)
+        truncation_controls = QHBoxLayout()
+        truncation_controls.addWidget(self.result_truncation_notice)
+        self.count_all_rows_button = QPushButton("Count all rows", results_page)
+        self.count_all_rows_button.setObjectName("count_all_rows_button")
+        self.count_all_rows_button.setVisible(False)
+        self.count_all_rows_button.clicked.connect(self._count_all_rows)
+        truncation_controls.addWidget(self.count_all_rows_button)
+        self.result_count_status_label = QLabel(results_page)
+        self.result_count_status_label.setObjectName("result_count_status_label")
+        self.result_count_status_label.setVisible(False)
+        truncation_controls.addWidget(self.result_count_status_label)
+        truncation_controls.addStretch()
+        results_layout.addLayout(truncation_controls)
         self.result_error_message = QLabel(results_page)
         self.result_error_message.setObjectName("result_error_message")
         self.result_error_message.setWordWrap(True)
@@ -2056,6 +2157,7 @@ class MainWindow(QMainWindow):
             del self._catalog_persistence_listener
         self.query_controller.cancel()
         self.export_controller.cancel()
+        self.row_count_controller.cancel()
         self._elapsed_timer.stop()
         self._query_started_at = None
         for window in list(self._value_counts_windows):
@@ -2078,6 +2180,7 @@ class MainWindow(QMainWindow):
 
         self.query_controller.shutdown()
         self.export_controller.shutdown()
+        self.row_count_controller.shutdown()
         self._settings_service.save_window_geometry(self.saveGeometry().data())
         self._settings_service.save_window_state(self.saveState().data())
         self._settings_service.save_splitter_sizes(self._central_splitter.sizes())
@@ -2112,6 +2215,62 @@ class MainWindow(QMainWindow):
     def _set_result_summary(self, text: str) -> None:
         self.result_summary_label.setText(text)
         self.result_summary_label.setVisible(bool(text))
+
+    def _set_result_summary_for(self, result: QueryResult, request: ExecutionRequest) -> None:
+        engine_name = (
+            "DuckDB" if request.engine is EngineKind.DUCKDB else request.engine.value.title()
+        )
+        if result.status is ExecutionStatus.SUCCEEDED:
+            row_text = f"{result.preview_row_count} rows"
+            if (
+                result.total_row_count is not None
+                and result.total_row_count != result.preview_row_count
+            ):
+                row_text = f"showing {result.preview_row_count} of {result.total_row_count} rows"
+            summary = f"{engine_name} · {row_text} · {result.execution_seconds:.2f}s"
+            if result.truncated:
+                summary += f" · truncated at {result.preview_row_count} preview rows"
+            self._set_result_summary(summary)
+        elif result.status is ExecutionStatus.FAILED:
+            self._set_result_summary(
+                f"{engine_name} · failed after {result.execution_seconds:.2f}s"
+            )
+        elif result.status is ExecutionStatus.CANCELLED:
+            self._set_result_summary(
+                f"{engine_name} · cancelled after {result.execution_seconds:.2f}s"
+            )
+
+    def _can_count_all_rows(self, state: _EditorTabState | None) -> bool:
+        if state is None or state.last_request is None or state.last_result is None:
+            return False
+        request = state.last_request
+        result = state.last_result
+        return (
+            request.engine is EngineKind.DUCKDB
+            and result.status is ExecutionStatus.SUCCEEDED
+            and result.truncated
+            and len(StatementService().split_statements(request.executable_sql)) == 1
+        )
+
+    def _update_row_count_controls(self) -> None:
+        state = self._current_editor_state()
+        if not self._can_count_all_rows(state):
+            self.count_all_rows_button.setVisible(False)
+            self.count_all_rows_button.setEnabled(False)
+            self.result_count_status_label.clear()
+            self.result_count_status_label.setVisible(False)
+            return
+        assert state is not None
+        assert state.last_result is not None
+        self.count_all_rows_button.setVisible(True)
+        self.count_all_rows_button.setEnabled(
+            state.row_count_status == "idle" and state.last_result.total_row_count is None
+        )
+        message = state.row_count_message
+        if state.row_count_status == "counting":
+            message = "Counting..."
+        self.result_count_status_label.setText(message or "")
+        self.result_count_status_label.setVisible(bool(message))
 
     def _set_result_selection_statistics(self, statistics: SelectionStatistics | None) -> None:
         if statistics is None:

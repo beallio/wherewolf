@@ -154,6 +154,12 @@ filtering, column reordering, hiding, auto-sizing, and reset. Column headers car
 badge such as `age [INT]` or `when [DATE]`, with the exact type in the tooltip. Right-click a
 header to copy or insert its name, adjust columns, or choose an ordering action.
 
+When a DuckDB preview is truncated, choose **Count all rows** beside the truncation notice to count
+the captured query without replacing the preview. The count runs separately, so current filters,
+local sorting, selection, exports, and query history stay intact. If a captured source changed or
+disappeared after the preview, Wherewolf asks you to rerun the query instead of showing a count for
+different data. Spark and multi-statement previews do not offer this control.
+
 Selecting multiple result cells shows their cell, distinct-value, and null counts above the grid.
 For selections made entirely from numeric columns, it also shows the sum, mean, minimum, and
 maximum. To read a long value or nested JSON without grid truncation, right-click the cell and

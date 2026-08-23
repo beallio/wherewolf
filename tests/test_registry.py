@@ -1,7 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 from uuid import uuid4
 
 import polars as pl
@@ -11,11 +11,185 @@ from wherewolf.desktop.workers.value_counts_worker import ValueCountsAdapter
 from wherewolf.domain import (
     CatalogEntry,
     EngineKind,
+    ExecutionRequest,
+    RowCountResult,
     SourceFormat,
 )
 from wherewolf.domain.errors import EngineUnavailableError
 from wherewolf.execution.base import ExecutionEngine
 from wherewolf.execution.registry import EngineRegistry
+
+
+class _RowCountAdapter(Protocol):
+    def count_rows(self, request: ExecutionRequest) -> RowCountResult: ...
+
+    def close(self) -> None: ...
+
+    def cancellation_handle(self): ...
+
+
+def _count_request(
+    tmp_path: Path,
+    *,
+    sql: str = "SELECT * FROM rows",
+    rows: str = "id,value\n1,10\n2,20\n3,30\n4,40\n5,50\n",
+    preview_limit: int = 2,
+    parameters: tuple[object, ...] = (),
+):
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    source = tmp_path / "rows.csv"
+    source.write_text(rows)
+    catalog = CatalogService()
+    catalog.add_paths((source,))
+    request = ExecutionRequestBuilder.build(
+        sql=sql,
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog,
+        preview_limit=preview_limit,
+        parameters=parameters,
+    )
+    return request, source
+
+
+def _count_rows(request):
+    adapter = cast(_RowCountAdapter, EngineRegistry().create(EngineKind.DUCKDB, request.request_id))
+    try:
+        return adapter.count_rows(request)
+    finally:
+        adapter.close()
+
+
+def test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview(
+    tmp_path: Path,
+) -> None:
+    request, _source = _count_request(tmp_path)
+    preview = (
+        EngineRegistry().create(EngineKind.DUCKDB, request.request_id).execute_preview(request)
+    )
+
+    result = _count_rows(request)
+
+    assert preview.preview_row_count == 2
+    assert preview.truncated is True
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 5
+
+
+def test_duckdb_adapter_count_rows_retains_filtered_query_semantics(tmp_path: Path) -> None:
+    request, _source = _count_request(tmp_path, sql="SELECT * FROM rows WHERE value >= 30")
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 3
+
+
+def test_duckdb_adapter_count_rows_preserves_repeated_bound_parameter_order(tmp_path: Path) -> None:
+    request, _source = _count_request(
+        tmp_path,
+        sql="SELECT * FROM rows WHERE value >= ? AND value <= ? AND value <> ?",
+        parameters=(20, 50, 40),
+    )
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 3
+
+
+@pytest.mark.parametrize(
+    "sql",
+    (
+        "SELECT id, 'literal;value' AS marker FROM rows WHERE id > 0;",
+        "SELECT id, 'literal;value' AS marker FROM rows /* comment;value */ WHERE id > 0; -- trailing comment",
+    ),
+)
+def test_duckdb_adapter_count_rows_safely_wraps_one_terminated_statement(
+    tmp_path: Path, sql: str
+) -> None:
+    request, _source = _count_request(tmp_path, sql=sql)
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 5
+
+
+def test_duckdb_adapter_count_rows_keeps_order_by_and_limit_semantics(tmp_path: Path) -> None:
+    request, _source = _count_request(
+        tmp_path, sql="SELECT * FROM rows ORDER BY value DESC LIMIT 3"
+    )
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 3
+
+
+@pytest.mark.parametrize(
+    ("sql", "preview_limit", "expected_total"),
+    (
+        ("SELECT * FROM rows WHERE id < 0", 2, 0),
+        ("SELECT * FROM rows", 5, 5),
+    ),
+)
+def test_duckdb_adapter_count_rows_reports_exact_totals_without_preview_truncation(
+    tmp_path: Path, sql: str, preview_limit: int, expected_total: int
+) -> None:
+    request, _source = _count_request(tmp_path, sql=sql, preview_limit=preview_limit)
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == expected_total
+
+
+def test_duckdb_adapter_count_rows_rejects_multiple_statements_before_execution(
+    tmp_path: Path,
+) -> None:
+    request, _source = _count_request(tmp_path, sql="SELECT 1; SELECT 2")
+
+    result = _count_rows(request)
+
+    assert result.status.name == "FAILED"
+    assert result.total_row_count is None
+    assert result.error_message == "Count all rows requires exactly one executable statement"
+
+
+@pytest.mark.parametrize("mutation", ("changed", "missing", "different_size"))
+def test_duckdb_adapter_count_rows_rejects_changed_captured_sources(
+    tmp_path: Path, mutation: str
+) -> None:
+    request, source = _count_request(tmp_path)
+    if mutation == "changed":
+        source.write_text("id,value\n9,90\n8,80\n7,70\n6,60\n5,50\n")
+    elif mutation == "missing":
+        source.unlink()
+    else:
+        source.write_text("id,value\n1,10\n")
+
+    result = _count_rows(request)
+
+    assert result.status.name == "FAILED"
+    assert result.total_row_count is None
+    assert result.error_message == "Source changed since query ran; rerun the query"
+
+
+def test_duckdb_adapter_count_rows_normalizes_cancellation_and_close(tmp_path: Path) -> None:
+    request, _source = _count_request(tmp_path)
+    adapter = cast(_RowCountAdapter, EngineRegistry().create(EngineKind.DUCKDB, request.request_id))
+
+    handle = adapter.cancellation_handle()
+    assert handle.request_id == request.request_id
+    assert handle.cancel() is True
+    result = adapter.count_rows(request)
+    adapter.close()
+
+    assert result.status.name == "CANCELLED"
+    assert result.total_row_count is None
 
 
 def test_registry_always_includes_duckdb() -> None:

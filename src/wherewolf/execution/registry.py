@@ -33,12 +33,14 @@ from wherewolf.domain import (
     ExecutionStatus,
     ProfileResult,
     QueryResult,
+    RowCountResult,
     SchemaResult,
     SourceFormat,
 )
 from wherewolf.execution.base import CancellationHandle, ExecutionEngine
 from wherewolf.services.export_destination import ExportFormat, write_atomically
 from wherewolf.services.identifier_quoting import quote_identifier
+from wherewolf.services.statement_service import StatementService
 
 FULL_XLSX_ROW_LIMIT = 100_000
 
@@ -217,6 +219,98 @@ class _DuckDBAdapter(ExecutionEngine):
                 completed_at=datetime.now(UTC),
                 error_type=type(e).__name__,
                 error_message=str(e),
+            )
+        finally:
+            self._con = None
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001, S110  # Cleanup boundary: ignore errors during connection closure
+                pass
+
+    def count_rows(self, request: ExecutionRequest) -> RowCountResult:
+        """Count one captured DuckDB request without changing its preview result."""
+        import duckdb
+
+        if self._cancelled:
+            return RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.CANCELLED,
+                total_row_count=None,
+                completed_at=datetime.now(UTC),
+            )
+
+        if _source_warnings(request):
+            return RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                total_row_count=None,
+                completed_at=datetime.now(UTC),
+                error_type="SourceChangedError",
+                error_message="Source changed since query ran; rerun the query",
+            )
+
+        statements = StatementService().split_statements(request.executable_sql)
+        if len(statements) != 1:
+            return RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                total_row_count=None,
+                completed_at=datetime.now(UTC),
+                error_type="StatementCountError",
+                error_message="Count all rows requires exactly one executable statement",
+            )
+        captured_sql = statements[0].text
+        if captured_sql.endswith(";"):
+            captured_sql = captured_sql[:-1].rstrip()
+
+        con = duckdb.connect(database=":memory:")
+        self._con = con
+        try:
+            if self._cancelled:
+                con.interrupt()
+            for binding in request.catalog:
+                self._register_view(con, str(binding.path), binding.alias)
+            row = con.execute(
+                f"SELECT count(*) FROM ({captured_sql}) AS _wherewolf_count",
+                list(request.parameters),
+            ).fetchone()
+            if row is None or len(row) != 1:
+                raise RuntimeError("DuckDB returned no row count")
+            total_row_count = int(row[0])
+            if total_row_count < 0:
+                raise RuntimeError("DuckDB returned a negative row count")
+            if self._cancelled:
+                return RowCountResult(
+                    request_id=request.request_id,
+                    status=ExecutionStatus.CANCELLED,
+                    total_row_count=None,
+                    completed_at=datetime.now(UTC),
+                )
+            return RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.SUCCEEDED,
+                total_row_count=total_row_count,
+                completed_at=datetime.now(UTC),
+            )
+        except Exception as error:  # noqa: BLE001  # Count boundary normalizes expected DuckDB errors.
+            if (
+                self._cancelled
+                or isinstance(error, duckdb.InterruptException)
+                or "interrupt" in str(error).lower()
+            ):
+                return RowCountResult(
+                    request_id=request.request_id,
+                    status=ExecutionStatus.CANCELLED,
+                    total_row_count=None,
+                    completed_at=datetime.now(UTC),
+                )
+            return RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                total_row_count=None,
+                completed_at=datetime.now(UTC),
+                error_type=type(error).__name__,
+                error_message=str(error),
             )
         finally:
             self._con = None
