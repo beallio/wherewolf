@@ -154,6 +154,52 @@ class RowCountResult:
 
 
 @dataclass(frozen=True, slots=True)
+class PageResult:
+    """Terminal outcome of fetching one bounded page of a captured query."""
+
+    request_id: UUID
+    status: ExecutionStatus
+    frame: pl.DataFrame | None
+    offset: int
+    page_size: int
+    has_next: bool
+    execution_seconds: float
+    completed_at: datetime
+    error_type: str | None = None
+    error_message: str | None = None
+    error_detail: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.offset < 0:
+            raise ValueError("PageResult offset must be non-negative")
+        if self.page_size <= 0:
+            raise ValueError("PageResult page_size must be positive")
+
+        if self.status is ExecutionStatus.SUCCEEDED:
+            if self.frame is None:
+                raise ValueError("successful PageResult requires a frame")
+            if any((self.error_type, self.error_message, self.error_detail)):
+                raise ValueError("successful PageResult must not include an error")
+            return
+
+        if self.status is ExecutionStatus.FAILED:
+            if self.frame is not None:
+                raise ValueError("failed PageResult must not include a frame")
+            if self.error_type is None or self.error_message is None:
+                raise ValueError("failed PageResult requires error_type and error_message")
+            return
+
+        if self.status is ExecutionStatus.CANCELLED:
+            if self.frame is not None:
+                raise ValueError("cancelled PageResult must not include a frame")
+            if any((self.error_type, self.error_message, self.error_detail)):
+                raise ValueError("cancelled PageResult must not include an error")
+            return
+
+        raise ValueError("PageResult requires a terminal status")
+
+
+@dataclass(frozen=True, slots=True)
 class NumericSelectionStatistics:
     """Aggregates for a selection made entirely from numeric columns."""
 
