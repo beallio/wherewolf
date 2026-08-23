@@ -1,5 +1,6 @@
 import json
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -12,11 +13,13 @@ from PyQt6.QtCore import (
     QItemSelection,
     QItemSelectionModel,
     QMimeData,
+    QObject,
     QPointF,
     QSettings,
     Qt,
     QThread,
     QUrl,
+    pyqtSignal,
 )
 from PyQt6.QtGui import QDropEvent, QFontMetrics, QKeySequence, QStandardItemModel
 from PyQt6.QtTest import QTest
@@ -50,8 +53,10 @@ from wherewolf.domain import (
     EngineKind,
     ExecutionRequest,
     ExecutionStatus,
+    PageResult,
     ProfileResult,
     QueryResult,
+    RowCountResult,
     SchemaResult,
     SourceFormat,
 )
@@ -78,6 +83,151 @@ class _ProfileAdapter:
 
     def close(self) -> None:
         pass
+
+
+class _FakeRowCountController(QObject):
+    started = pyqtSignal()
+    result_ready = pyqtSignal(object)
+    handle_published = pyqtSignal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.counting = False
+        self.requests: list[ExecutionRequest] = []
+        self.cancel_calls = 0
+        self.shutdown_calls = 0
+
+    def count(self, request: ExecutionRequest) -> bool:
+        if self.counting:
+            return False
+        self.counting = True
+        self.requests.append(request)
+        self.started.emit()
+        return True
+
+    def cancel(self) -> bool:
+        if not self.counting:
+            return False
+        self.cancel_calls += 1
+        self.counting = False
+        return True
+
+    def shutdown(self) -> bool:
+        self.shutdown_calls += 1
+        self.counting = False
+        return True
+
+    def emit_result(self, result: RowCountResult) -> None:
+        self.counting = False
+        self.result_ready.emit(result)
+
+
+class _FakePageController(QObject):
+    started = pyqtSignal()
+    result_ready = pyqtSignal(object)
+    handle_published = pyqtSignal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fetching = False
+        self.fetches: list[tuple[ExecutionRequest, int]] = []
+        self.cancel_calls = 0
+        self.shutdown_calls = 0
+
+    def fetch(self, request: ExecutionRequest, page_index: int) -> bool:
+        if self.fetching:
+            return False
+        self.fetching = True
+        self.fetches.append((request, page_index))
+        self.started.emit()
+        return True
+
+    def cancel(self) -> bool:
+        if not self.fetching:
+            return False
+        self.cancel_calls += 1
+        self.fetching = False
+        return True
+
+    def shutdown(self) -> bool:
+        self.shutdown_calls += 1
+        self.fetching = False
+        return True
+
+    def emit_result(self, result: PageResult) -> None:
+        self.fetching = False
+        self.result_ready.emit(result)
+
+
+def _row_count_request(*, engine: EngineKind = EngineKind.DUCKDB, sql: str = "SELECT * FROM rows"):
+    return ExecutionRequest(
+        request_id=uuid4(),
+        engine=engine,
+        source_dialect="duckdb",
+        original_sql=sql,
+        executable_sql=sql,
+        catalog=(),
+        preview_limit=2,
+        submitted_at=datetime.now(UTC),
+    )
+
+
+def _truncated_result(request: ExecutionRequest) -> QueryResult:
+    return QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"value": [1, 2]}),
+        execution_seconds=0.25,
+        preview_row_count=2,
+        total_row_count=None,
+        truncated=True,
+        completed_at=datetime.now(UTC),
+    )
+
+
+def _page_result(
+    request: ExecutionRequest,
+    *,
+    offset: int,
+    frame: pl.DataFrame | None = None,
+    has_next: bool = False,
+    status: ExecutionStatus = ExecutionStatus.SUCCEEDED,
+    error_message: str = "page failed",
+) -> PageResult:
+    if status is ExecutionStatus.SUCCEEDED:
+        return PageResult(
+            request_id=request.request_id,
+            status=status,
+            frame=frame if frame is not None else pl.DataFrame({"id": [3, 4]}),
+            offset=offset,
+            page_size=request.preview_limit,
+            has_next=has_next,
+            execution_seconds=0.5,
+            completed_at=datetime.now(UTC),
+        )
+    if status is ExecutionStatus.CANCELLED:
+        return PageResult(
+            request_id=request.request_id,
+            status=status,
+            frame=None,
+            offset=offset,
+            page_size=request.preview_limit,
+            has_next=False,
+            execution_seconds=0.5,
+            completed_at=datetime.now(UTC),
+        )
+    return PageResult(
+        request_id=request.request_id,
+        status=status,
+        frame=None,
+        offset=offset,
+        page_size=request.preview_limit,
+        has_next=False,
+        execution_seconds=0.5,
+        completed_at=datetime.now(UTC),
+        error_type="RuntimeError",
+        error_message=error_message,
+    )
 
 
 class _ProfileRegistry:
@@ -1282,7 +1432,7 @@ def test_main_window_export_button_writes_selected_parquet_scope(
         truncated=False,
         completed_at=datetime.now(UTC),
     )
-    window._on_query_result_ready(result, request)
+    window._on_query_result_ready(replace(result, request_id=request.request_id), request)
 
     def accept_parquet_preview(dialog: main_window.ExportOptionsDialog) -> int:
         dialog.format_selector.setCurrentIndex(
@@ -1670,6 +1820,353 @@ def test_main_window_routes_editor_diagnostic_to_messages_tab(qtbot) -> None:
     text, severity = window.messages_panel.message_at(0)
     assert "bad SQL" in text
     assert severity == "info"
+
+
+def test_main_window_navigation_activates_exact_duckdb_error_location_in_originating_selection(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    origin = window.editor
+    origin.setText("SELECT 1;\n  SELECT\n    missing_column\n  FROM range(3)")
+    origin.setSelection(1, 2, 3, len("  FROM range(3)"))
+
+    window._on_run_triggered()
+    request = submitted.pop()
+    assert request.executable_sql == "SELECT\n    missing_column\n  FROM range(3)"
+    result = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="BinderException",
+        error_message=(
+            'Binder Error: Referenced column "missing_column" not found!\n\n'
+            "LINE 2:     missing_column\n"
+            "            ^"
+        ),
+    )
+    window._on_query_result_ready(result, request)
+    other = window._new_editor_tab()
+    other.setText("SELECT unrelated")
+    before_activation = other.getCursorPosition()
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert window.current_editor is origin
+    assert origin.getCursorPosition() == (2, 4)
+    assert other.getCursorPosition() == before_activation
+
+
+def test_main_window_navigation_converts_selected_scintilla_bytes_to_codepoints(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    origin = window.editor
+    origin.setText("é\nAAAAA")
+    origin.setSelection(1, 0, 1, 4)
+
+    window._on_run_triggered()
+
+    request = submitted.pop()
+    assert request.executable_sql == "AAAA"
+    window._on_query_result_ready(
+        QueryResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.FAILED,
+            frame=None,
+            execution_seconds=0.01,
+            preview_row_count=0,
+            total_row_count=None,
+            truncated=False,
+            completed_at=datetime.now(UTC),
+            error_type="ParserException",
+            error_message="Parser Error\n\nLINE 1: AAAA\n        ^",
+        ),
+        request,
+    )
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert origin.getCursorPosition() == (1, 0)
+
+
+def _failed_result_for_navigation(
+    request: ExecutionRequest,
+    message: str = "Binder Error\n\nLINE 1: SELECT missing_column\n               ^",
+) -> QueryResult:
+    return QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="BinderException",
+        error_message=message,
+    )
+
+
+def _assert_message_activation_leaves_editor_unchanged(
+    window: MainWindow, editor: SqlEditor
+) -> None:
+    tab_before = window.editor_tabs.currentIndex()
+    cursor_before = editor.getCursorPosition()
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert window.editor_tabs.currentIndex() == tab_before
+    assert editor.getCursorPosition() == cursor_before
+
+
+def test_main_window_withholds_navigation_for_translated_parameterized_and_multi_statement_queries(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    editor = window.editor
+
+    editor.setText("SELECT missing_column")
+    window.input_dialect_selector.setCurrentIndex(
+        window.input_dialect_selector.findData("postgres")
+    )
+    window._on_run_triggered()
+    translated_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(translated_request), translated_request
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    window.input_dialect_selector.setCurrentIndex(window.input_dialect_selector.findData("duckdb"))
+    editor.setText("SELECT ?")
+    window._execute_sql(
+        "SELECT ?",
+        original_sql="SELECT :value",
+        parameters=("value",),
+        editor=editor,
+        fragment_start_offset=0,
+    )
+    parameterized_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(
+            parameterized_request,
+            "Binder Error\n\nLINE 1: SELECT ?\n        ^",
+        ),
+        parameterized_request,
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    editor.setText("SELECT 1; SELECT missing_column")
+    window._execute_sql(
+        editor.text(),
+        editor=editor,
+        fragment_start_offset=0,
+    )
+    multi_statement_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(
+            multi_statement_request,
+            "Binder Error\n\nLINE 1: SELECT 1; SELECT missing_column\n        ^",
+        ),
+        multi_statement_request,
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+
+def test_main_window_withholds_navigation_for_saved_spark_and_ambiguous_error_sources(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    saved_query = store.save_query(name="Direct", description="", sql="SELECT missing_column")
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    editor = window.editor
+    editor.setText("SELECT missing_column")
+
+    window._run_saved_query(saved_query)
+    saved_request = submitted.pop()
+    window._on_query_result_ready(_failed_result_for_navigation(saved_request), saved_request)
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    window.engine_selector.setCurrentIndex(window.engine_selector.findData(EngineKind.SPARK))
+    window.input_dialect_selector.setCurrentIndex(window.input_dialect_selector.findData("spark"))
+    window._on_run_triggered()
+    spark_request = submitted.pop()
+    assert spark_request.engine is EngineKind.SPARK
+    window._on_query_result_ready(_failed_result_for_navigation(spark_request), spark_request)
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    window.engine_selector.setCurrentIndex(window.engine_selector.findData(EngineKind.DUCKDB))
+    window.input_dialect_selector.setCurrentIndex(window.input_dialect_selector.findData("duckdb"))
+    editor.setText("\tSELECT missing_column")
+    window._on_run_triggered()
+    tab_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(
+            tab_request,
+            "Binder Error\n\nLINE 1: \tSELECT missing_column\n        ^",
+        ),
+        tab_request,
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    editor.setText("SELECT émissing_column")
+    window._on_run_triggered()
+    unicode_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(
+            unicode_request,
+            "Binder Error\n\nLINE 1: SELECT émissing_column\n                 ^",
+        ),
+        unicode_request,
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+
+def test_main_window_withholds_navigation_after_the_originating_tab_closes(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    origin = window.editor
+    origin.setText("SELECT missing_column")
+    window._on_run_triggered()
+    request = submitted.pop()
+    window._on_query_result_ready(_failed_result_for_navigation(request), request)
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    other = window._new_editor_tab()
+    other.setText("SELECT unrelated")
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(origin))
+    window._close_current_editor_tab()
+    other.setCursorPosition(0, 0)
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert window.current_editor is other
+    assert other.getCursorPosition() == (0, 0)
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "Parser Error: syntax error at end of input",
+        "Binder Error\n\nLINE 1: SELECT different_column\n        ^",
+    ),
+)
+def test_main_window_withholds_navigation_when_error_location_is_not_exact(
+    qtbot, monkeypatch, message: str
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    window.editor.setText("SELECT missing_column")
+    window._on_run_triggered()
+    request = submitted.pop()
+    cursor_before = window.editor.getCursorPosition()
+    window._on_query_result_ready(
+        QueryResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.FAILED,
+            frame=None,
+            execution_seconds=0.01,
+            preview_row_count=0,
+            total_row_count=None,
+            truncated=False,
+            completed_at=datetime.now(UTC),
+            error_type="BinderException",
+            error_message=message,
+        ),
+        request,
+    )
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert window.editor.getCursorPosition() == cursor_before
+
+
+def test_main_window_rejects_navigation_when_editor_changes_before_result_or_activation(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    editor = window.editor
+    editor.setText("SELECT missing_column")
+    window._on_run_triggered()
+    request = submitted.pop()
+    result = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="BinderException",
+        error_message="Binder Error\n\nLINE 1: SELECT missing_column\n               ^",
+    )
+    editor.setText("SELECT changed_before_result")
+    cursor_before_result = editor.getCursorPosition()
+    window._on_query_result_ready(result, request)
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+    window.messages_panel._list_widget.itemActivated.emit(item)
+    assert editor.getCursorPosition() == cursor_before_result
+
+    editor.setText("SELECT missing_column")
+    window._on_run_triggered()
+    request = submitted.pop()
+    window._on_query_result_ready(replace(result, request_id=request.request_id), request)
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+    editor.setText("SELECT changed_before_activation")
+    editor.setCursorPosition(0, 0)
+    window.messages_panel._list_widget.itemActivated.emit(item)
+    assert editor.getCursorPosition() == (0, 0)
 
 
 def test_main_window_raises_messages_tab_only_for_failed_query_results(qtbot) -> None:
@@ -3501,3 +3998,896 @@ def test_main_window_shows_and_clears_result_selection_statistics(qtbot) -> None
     selection_model.clearSelection()
 
     assert window.result_selection_stats_label.isHidden()
+
+
+@pytest.mark.parametrize(
+    ("engine", "sql", "status", "truncated", "visible"),
+    (
+        (EngineKind.DUCKDB, "SELECT * FROM rows", ExecutionStatus.SUCCEEDED, True, True),
+        (EngineKind.SPARK, "SELECT * FROM rows", ExecutionStatus.SUCCEEDED, True, False),
+        (EngineKind.DUCKDB, "SELECT 1; SELECT 2", ExecutionStatus.SUCCEEDED, True, False),
+        (EngineKind.DUCKDB, "SELECT * FROM rows", ExecutionStatus.SUCCEEDED, False, False),
+        (EngineKind.DUCKDB, "SELECT * FROM rows", ExecutionStatus.FAILED, False, False),
+        (EngineKind.DUCKDB, "SELECT * FROM rows", ExecutionStatus.CANCELLED, False, False),
+    ),
+)
+def test_main_window_only_offers_count_all_rows_for_truncated_one_statement_duckdb_results(
+    qtbot, engine, sql, status, truncated, visible
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(engine=engine, sql=sql)
+    if status is ExecutionStatus.SUCCEEDED:
+        result = replace(_truncated_result(request), truncated=truncated)
+    else:
+        result = QueryResult(
+            request_id=request.request_id,
+            status=status,
+            frame=None,
+            execution_seconds=0.25,
+            preview_row_count=0,
+            total_row_count=None,
+            truncated=truncated,
+            completed_at=datetime.now(UTC),
+            error_type="RuntimeError" if status is ExecutionStatus.FAILED else None,
+            error_message="failed" if status is ExecutionStatus.FAILED else None,
+        )
+
+    window._on_query_result_ready(result, request)
+
+    assert window.count_all_rows_button.isHidden() is not visible
+    assert window.count_all_rows_button.isEnabled() is visible
+
+
+def test_main_window_count_all_rows_preserves_grid_and_routes_only_the_captured_request(
+    qtbot, monkeypatch
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    window._on_query_result_ready(_truncated_result(request), request)
+    frame_before = window.result_table_view.frame()
+    assert frame_before is not None
+    set_frame_calls: list[object] = []
+    monkeypatch.setattr(window.result_table_view, "set_frame", set_frame_calls.append)
+    query_calls: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", query_calls.append)
+
+    window.count_all_rows_button.click()
+
+    assert controller.requests == [request]
+    assert query_calls == []
+    assert window.result_count_status_label.text() == "Counting..."
+    assert not window.count_all_rows_button.isEnabled()
+    assert window.result_table_view.frame() is frame_before
+    assert set_frame_calls == []
+
+
+def test_main_window_count_success_updates_only_own_tab_summary_without_history_or_frame(
+    qtbot, monkeypatch
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    result = _truncated_result(request)
+    history_calls: list[tuple[QueryResult, ExecutionRequest]] = []
+    monkeypatch.setattr(
+        window,
+        "_record_query_history",
+        lambda item, item_request: history_calls.append((item, item_request)),
+    )
+    window._on_query_result_ready(result, request)
+    frame_before = window.result_table_view.frame()
+    set_frame_calls: list[object] = []
+    monkeypatch.setattr(window.result_table_view, "set_frame", set_frame_calls.append)
+
+    window.count_all_rows_button.click()
+    controller.emit_result(
+        RowCountResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    assert window._last_result is not None
+    assert window._last_result.total_row_count == 5
+    assert window._last_result.frame is result.frame
+    assert (
+        window.result_summary_label.text()
+        == "DuckDB · showing 2 of 5 rows · 0.25s · truncated at 2 preview rows"
+    )
+    assert window.result_table_view.frame() is frame_before
+    assert set_frame_calls == []
+    assert history_calls == [(result, request)]
+    assert not window.count_all_rows_button.isEnabled()
+
+
+def test_main_window_count_rejects_stale_and_inconsistent_results_without_changing_preview(
+    qtbot,
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    result = _truncated_result(request)
+    window._on_query_result_ready(result, request)
+    frame_before = window.result_table_view.frame()
+    window.count_all_rows_button.click()
+    controller.emit_result(
+        RowCountResult(
+            request_id=uuid4(),
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+    assert window._last_result == result
+    controller.emit_result(
+        RowCountResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=1,
+            completed_at=datetime.now(UTC),
+        )
+    )
+    assert window._last_result == result
+    assert "rerun" in window.result_count_status_label.text().lower()
+    assert window.result_table_view.frame() is frame_before
+
+
+def test_main_window_new_query_cancel_and_shutdown_include_active_row_count(
+    qtbot, monkeypatch
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    window._on_query_result_ready(_truncated_result(request), request)
+    window.count_all_rows_button.click()
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda item: submitted.append(item) or True
+    )
+    window.editor.setText("SELECT 1")
+    window._on_run_triggered()
+
+    assert controller.cancel_calls == 1
+    assert submitted
+    window.close()
+    assert controller.shutdown_calls == 1
+
+
+@pytest.mark.parametrize(
+    ("terminal_status", "expected_message"),
+    (
+        (ExecutionStatus.SUCCEEDED, "All rows counted."),
+        (ExecutionStatus.FAILED, "Count failed."),
+        (ExecutionStatus.CANCELLED, "Count cancelled; rerun the query"),
+    ),
+)
+def test_main_window_new_query_resets_terminal_row_count_state_and_ignores_old_completion(
+    qtbot, terminal_status: ExecutionStatus, expected_message: str
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    first_request = _row_count_request()
+    first_result = _truncated_result(first_request)
+    window._on_query_result_ready(first_result, first_request)
+    window.count_all_rows_button.click()
+
+    if terminal_status is ExecutionStatus.SUCCEEDED:
+        terminal_result = RowCountResult(
+            request_id=first_request.request_id,
+            status=terminal_status,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    elif terminal_status is ExecutionStatus.FAILED:
+        terminal_result = RowCountResult(
+            request_id=first_request.request_id,
+            status=terminal_status,
+            total_row_count=None,
+            completed_at=datetime.now(UTC),
+            error_type="RuntimeError",
+            error_message=expected_message,
+        )
+    else:
+        terminal_result = RowCountResult(
+            request_id=first_request.request_id,
+            status=terminal_status,
+            total_row_count=None,
+            completed_at=datetime.now(UTC),
+        )
+    controller.emit_result(terminal_result)
+
+    second_request = _row_count_request()
+    second_result = _truncated_result(second_request)
+    window._on_query_result_ready(second_result, second_request)
+
+    state = window._editor_states[window.editor]
+    assert state.last_request == second_request
+    assert state.last_result == second_result
+    assert state.last_result.total_row_count is None
+    assert state.row_count_request_id is None
+    assert state.row_count_status == "idle"
+    assert state.row_count_message is None
+    assert window.count_all_rows_button.isEnabled()
+    assert window.result_count_status_label.isHidden()
+
+    controller.emit_result(
+        RowCountResult(
+            request_id=first_request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=99,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    assert state.last_request == second_request
+    assert state.last_result == second_result
+    assert window.result_count_status_label.isHidden()
+
+
+@pytest.mark.parametrize(
+    ("count_result", "expected_message"),
+    (
+        (
+            lambda request: RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                total_row_count=None,
+                completed_at=datetime.now(UTC),
+                error_type="RuntimeError",
+                error_message="Count failed.",
+            ),
+            "Count failed.",
+        ),
+        (
+            lambda request: RowCountResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.CANCELLED,
+                total_row_count=None,
+                completed_at=datetime.now(UTC),
+            ),
+            "Count cancelled; rerun the query",
+        ),
+    ),
+)
+def test_main_window_count_terminal_failure_preserves_preview_and_renders_inline(
+    qtbot, count_result, expected_message: str
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    preview = _truncated_result(request)
+    window._on_query_result_ready(preview, request)
+    frame_before = window.result_table_view.frame()
+    summary_before = window.result_summary_label.text()
+    messages_before = tuple(
+        window.messages_panel.message_at(index)
+        for index in range(window.messages_panel.message_count())
+    )
+
+    window.count_all_rows_button.click()
+    controller.emit_result(count_result(request))
+
+    assert window._last_result == preview
+    assert window.result_table_view.frame() is frame_before
+    assert window.result_summary_label.text() == summary_before
+    assert window.result_count_status_label.text() == expected_message
+    assert not window.result_count_status_label.isHidden()
+    assert window.result_error_message.isHidden()
+    assert (
+        tuple(
+            window.messages_panel.message_at(index)
+            for index in range(window.messages_panel.message_count())
+        )
+        == messages_before
+    )
+
+
+def test_main_window_count_success_preserves_preview_interactions_and_export_state(
+    qtbot, tmp_path
+) -> None:
+    controller = _FakeRowCountController()
+    history = HistoryManager(tmp_path / "history.json")
+    window = MainWindow(row_count_controller=controller, history_manager=history)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    preview = replace(
+        _truncated_result(request),
+        frame=pl.DataFrame({"value": [2, 1], "name": ["two", "one"]}),
+    )
+    window._on_query_result_ready(preview, request)
+    grid = window.result_table_view
+    frame_before = grid.frame()
+    grid.sortByColumn(0, Qt.SortOrder.AscendingOrder)
+    window.preview_filter_input.setText("one")
+    selection_model = grid.selectionModel()
+    assert selection_model is not None
+    selected_index = grid.proxy_model().index(0, 1)
+    selection_model.select(
+        QItemSelection(selected_index, selected_index),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+    interactions_before = {
+        "filter": window.preview_filter_input.text(),
+        "sort_column": grid.proxy_model().current_sort_column(),
+        "sort_order": grid.proxy_model().current_sort_order(),
+        "selection": grid.selection_for_export(),
+    }
+    history_before = history.get_all()
+    messages_before = tuple(
+        window.messages_panel.message_at(index)
+        for index in range(window.messages_panel.message_count())
+    )
+    export_enabled_before = (
+        window.export_button.isEnabled(),
+        window.desktop_actions.export_preview.isEnabled(),
+        window.desktop_actions.export_full.isEnabled(),
+    )
+
+    window.count_all_rows_button.click()
+    controller.emit_result(
+        RowCountResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=3,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    assert grid.frame() is frame_before
+    assert window.preview_filter_input.text() == interactions_before["filter"]
+    assert grid.proxy_model().current_sort_column() == interactions_before["sort_column"]
+    assert grid.proxy_model().current_sort_order() == interactions_before["sort_order"]
+    assert grid.selection_for_export() == interactions_before["selection"]
+    assert history.get_all() == history_before
+    assert (
+        tuple(
+            window.messages_panel.message_at(index)
+            for index in range(window.messages_panel.message_count())
+        )
+        == messages_before
+    )
+    assert (
+        window.export_button.isEnabled(),
+        window.desktop_actions.export_preview.isEnabled(),
+        window.desktop_actions.export_full.isEnabled(),
+    ) == export_enabled_before
+
+
+def test_main_window_ignores_count_completion_after_its_origin_tab_closes(qtbot) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    first_request = _row_count_request()
+    window._on_query_result_ready(_truncated_result(first_request), first_request)
+    window.count_all_rows_button.click()
+    first_editor = window.editor
+    second_editor = window._new_editor_tab()
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(first_editor))
+    window._close_current_editor_tab()
+
+    assert controller.cancel_calls == 1
+    assert window.current_editor is second_editor
+    controller.emit_result(
+        RowCountResult(
+            request_id=first_request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    current_state = window._current_editor_state()
+    assert current_state is not None
+    assert current_state.last_request is None
+    assert window._last_result is None
+
+
+def test_main_window_retains_background_tab_count_until_that_tab_is_revisited(qtbot) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    first_request = _row_count_request()
+    window._on_query_result_ready(_truncated_result(first_request), first_request)
+    window.count_all_rows_button.click()
+    first_editor = window.editor
+    window._new_editor_tab()
+
+    controller.emit_result(
+        RowCountResult(
+            request_id=first_request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    background_state = window._editor_states[first_editor]
+    assert background_state.last_result is not None
+    assert background_state.last_result.total_row_count == 5
+    assert window._last_result is None
+
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(first_editor))
+
+    assert window._last_result == background_state.last_result
+    assert "showing 2 of 5 rows" in window.result_summary_label.text()
+    assert not window.count_all_rows_button.isEnabled()
+    assert window.result_count_status_label.text() == "All rows counted."
+
+
+@pytest.mark.parametrize(
+    ("export_cancelled", "query_cancelled", "page_cancelled", "expected_calls"),
+    (
+        (True, True, True, ["export"]),
+        (False, True, True, ["export", "query"]),
+        (False, False, True, ["export", "query", "page"]),
+        (False, False, False, ["export", "query", "page", "count"]),
+    ),
+)
+def test_main_window_cancel_prioritizes_export_then_query_then_page_then_row_count(
+    qtbot,
+    monkeypatch,
+    export_cancelled: bool,
+    query_cancelled: bool,
+    page_cancelled: bool,
+    expected_calls: list[str],
+) -> None:
+    controller = _FakeRowCountController()
+    page_controller = _FakePageController()
+    window = MainWindow(row_count_controller=controller, page_controller=page_controller)
+    qtbot.addWidget(window)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        window.export_controller,
+        "cancel",
+        lambda: calls.append("export") or export_cancelled,
+    )
+    monkeypatch.setattr(
+        window.query_controller,
+        "cancel",
+        lambda: calls.append("query") or query_cancelled,
+    )
+    monkeypatch.setattr(
+        page_controller,
+        "cancel",
+        lambda: calls.append("page") or page_cancelled,
+    )
+    monkeypatch.setattr(
+        controller,
+        "cancel",
+        lambda: calls.append("count") or True,
+    )
+
+    window._on_cancel_triggered()
+
+    assert calls == expected_calls
+
+
+@pytest.mark.parametrize(
+    ("engine", "sql", "status", "truncated", "visible"),
+    (
+        (
+            EngineKind.DUCKDB,
+            "SELECT * FROM rows ORDER BY id",
+            ExecutionStatus.SUCCEEDED,
+            True,
+            True,
+        ),
+        (
+            EngineKind.SPARK,
+            "SELECT * FROM rows ORDER BY id",
+            ExecutionStatus.SUCCEEDED,
+            True,
+            False,
+        ),
+        (EngineKind.DUCKDB, "SELECT * FROM rows ORDER BY id", ExecutionStatus.FAILED, True, False),
+        (
+            EngineKind.DUCKDB,
+            "SELECT * FROM rows ORDER BY id",
+            ExecutionStatus.CANCELLED,
+            True,
+            False,
+        ),
+        (
+            EngineKind.DUCKDB,
+            "SELECT * FROM rows ORDER BY id",
+            ExecutionStatus.SUCCEEDED,
+            False,
+            False,
+        ),
+        (EngineKind.DUCKDB, "SELECT 1; SELECT 2", ExecutionStatus.SUCCEEDED, True, False),
+    ),
+)
+def test_main_window_pagination_only_offers_page_controls_for_eligible_truncated_duckdb_results(
+    qtbot, engine, sql, status, truncated, visible
+) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(engine=engine, sql=sql)
+    if status is ExecutionStatus.SUCCEEDED:
+        result = replace(_truncated_result(request), truncated=truncated)
+    else:
+        result = QueryResult(
+            request_id=request.request_id,
+            status=status,
+            frame=None,
+            execution_seconds=0.25,
+            preview_row_count=0,
+            total_row_count=None,
+            truncated=truncated,
+            completed_at=datetime.now(UTC),
+            error_type="RuntimeError" if status is ExecutionStatus.FAILED else None,
+            error_message="failed" if status is ExecutionStatus.FAILED else None,
+        )
+
+    window._on_query_result_ready(result, request)
+
+    assert window.previous_page_button.isHidden() is not visible
+    assert window.next_page_button.isHidden() is not visible
+    assert window.page_position_label.isHidden() is not visible
+    if visible:
+        assert window.page_position_label.text() == "Page 1"
+        assert not window.previous_page_button.isEnabled()
+        assert window.next_page_button.isEnabled()
+
+
+def test_main_window_pagination_next_page_uses_captured_request_without_query_history_or_messages(
+    qtbot, monkeypatch
+) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(_truncated_result(request), frame=pl.DataFrame({"id": [1, 2]}))
+    window._on_query_result_ready(preview, request)
+    query_calls: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", query_calls.append)
+    history_before = window.history_manager.get_all()
+    messages_before = window.messages_panel.message_count()
+
+    window.next_page_button.click()
+
+    state = window._editor_states[window.editor]
+    assert controller.fetches == [(request, 1)]
+    assert query_calls == []
+    assert state.last_request is request
+    assert state.last_result is preview
+    assert state.page_loading is True
+    assert not window.previous_page_button.isEnabled()
+    assert not window.next_page_button.isEnabled()
+    assert window.history_manager.get_all() == history_before
+    assert window.messages_panel.message_count() == messages_before
+
+
+def test_main_window_pagination_success_updates_page_frame_labels_and_export_sources(
+    qtbot, monkeypatch, tmp_path
+) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(
+        _truncated_result(request),
+        frame=pl.DataFrame({"id": [1, 2], "name": ["one", "two"]}),
+        total_row_count=5,
+    )
+    window._on_query_result_ready(preview, request)
+    grid = window.result_table_view
+    grid.sortByColumn(0, Qt.SortOrder.DescendingOrder)
+    window.preview_filter_input.setText("one")
+    selection_model = grid.selectionModel()
+    assert selection_model is not None
+    selected_index = grid.proxy_model().index(0, 1)
+    selection_model.select(
+        QItemSelection(selected_index, selected_index),
+        QItemSelectionModel.SelectionFlag.ClearAndSelect,
+    )
+
+    window.next_page_button.click()
+    page_frame = pl.DataFrame({"id": [3, 4], "name": ["three", "four"]})
+    controller.emit_result(_page_result(request, offset=2, frame=page_frame, has_next=True))
+
+    state = window._editor_states[window.editor]
+    assert state.last_request is request
+    assert state.last_result is not None
+    assert state.last_result.frame is page_frame
+    assert state.last_result.preview_row_count == 2
+    assert state.last_result.total_row_count == 5
+    assert state.last_result.truncated is True
+    assert state.page_index == 1
+    assert window.result_table_view.frame() is page_frame
+    assert window.page_position_label.text() == "Page 2"
+    assert window.page_status_label.text() == "rows 3-4 of 5 · Page 2"
+    assert window.previous_page_button.isEnabled()
+    assert window.next_page_button.isEnabled()
+    assert window.preview_filter_input.text() == ""
+    assert grid.proxy_model().current_sort_column() == -1
+    assert grid.selection_for_export()[0] == []
+    assert window.result_sort_notice.isHidden()
+
+    exports: list[tuple[ExecutionRequest, pl.DataFrame, bool]] = []
+    monkeypatch.setattr(
+        window._file_dialog_service, "choose_export_path", lambda *_args: tmp_path / "out.csv"
+    )
+    monkeypatch.setattr(
+        window.export_controller,
+        "export",
+        lambda export_request, frame, _destination, _format, full: exports.append(
+            (export_request, frame, full)
+        ),
+    )
+    window._start_export(False, ExportFormat.CSV)
+    window._start_export(True, ExportFormat.CSV)
+
+    assert exports == [(request, page_frame, False), (request, page_frame, True)]
+
+
+def test_main_window_pagination_page_navigation_uses_probe_has_next_without_a_total_and_shows_order_warning(
+    qtbot,
+) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    unordered_request = _row_count_request(sql="SELECT * FROM rows")
+    unordered_preview = replace(
+        _truncated_result(unordered_request), frame=pl.DataFrame({"id": [1, 2]})
+    )
+    window._on_query_result_ready(unordered_preview, unordered_request)
+
+    assert "not stable" in window.page_status_label.text().lower()
+    window.next_page_button.click()
+    controller.emit_result(
+        _page_result(unordered_request, offset=2, frame=pl.DataFrame({"id": [3, 4]}))
+    )
+
+    assert window.page_status_label.text().startswith("rows 3-4 · Page 2")
+    assert not window.next_page_button.isEnabled()
+    assert window.previous_page_button.isEnabled()
+
+    ordered_request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    window._on_query_result_ready(
+        replace(_truncated_result(ordered_request), frame=pl.DataFrame({"id": [1, 2]})),
+        ordered_request,
+    )
+
+    assert "not stable" not in window.page_status_label.text().lower()
+
+
+@pytest.mark.parametrize(
+    "result",
+    (
+        lambda request: _page_result(
+            request,
+            offset=2,
+            status=ExecutionStatus.FAILED,
+            error_message="Source changed since query ran; rerun the query",
+        ),
+        lambda request: _page_result(request, offset=2, status=ExecutionStatus.CANCELLED),
+    ),
+)
+def test_main_window_pagination_failures_and_cancellation_keep_the_current_page_visible(
+    qtbot, result
+) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(_truncated_result(request), frame=pl.DataFrame({"id": [1, 2]}))
+    window._on_query_result_ready(preview, request)
+    window.next_page_button.click()
+
+    controller.emit_result(result(request))
+
+    state = window._editor_states[window.editor]
+    assert state.last_result is preview
+    assert window.result_table_view.frame() is preview.frame
+    assert window.page_position_label.text() == "Page 1"
+    assert not state.page_loading
+    assert (
+        "rerun" in window.page_status_label.text().lower()
+        or "cancel" in window.page_status_label.text().lower()
+    )
+
+
+def test_main_window_pagination_empty_next_page_keeps_current_page_and_disables_next(qtbot) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(_truncated_result(request), frame=pl.DataFrame({"id": [1, 2]}))
+    window._on_query_result_ready(preview, request)
+    window.next_page_button.click()
+
+    controller.emit_result(
+        _page_result(request, offset=2, frame=pl.DataFrame({"id": []}, schema={"id": pl.Int64}))
+    )
+
+    state = window._editor_states[window.editor]
+    assert state.last_result is preview
+    assert state.page_index == 0
+    assert not state.page_has_next
+    assert not window.next_page_button.isEnabled()
+    assert "empty" in window.page_status_label.text().lower()
+
+
+def test_main_window_pagination_empty_probe_overrides_a_larger_known_total(qtbot) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(
+        _truncated_result(request),
+        frame=pl.DataFrame({"id": [1, 2]}),
+        total_row_count=5,
+    )
+    window._on_query_result_ready(preview, request)
+
+    window.next_page_button.click()
+    controller.emit_result(
+        _page_result(request, offset=2, frame=pl.DataFrame({"id": []}, schema={"id": pl.Int64}))
+    )
+
+    state = window._editor_states[window.editor]
+    assert state.last_result is preview
+    assert state.last_result.total_row_count == 5
+    assert state.page_index == 0
+    assert not state.page_has_next
+    assert not window.next_page_button.isEnabled()
+    assert window.page_status_label.text() == (
+        "rows 1-2 of 5 · Page 1 · The next page was empty; no further rows are available."
+    )
+    window.next_page_button.click()
+    assert controller.fetches == [(request, 1)]
+
+
+def test_main_window_pagination_probe_exhaustion_overrides_a_larger_known_total(qtbot) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(
+        _truncated_result(request),
+        frame=pl.DataFrame({"id": [1, 2]}),
+        total_row_count=5,
+    )
+    window._on_query_result_ready(preview, request)
+
+    window.next_page_button.click()
+    page_frame = pl.DataFrame({"id": [3, 4]})
+    controller.emit_result(_page_result(request, offset=2, frame=page_frame, has_next=False))
+
+    state = window._editor_states[window.editor]
+    assert state.last_result is not None
+    assert state.last_result.frame is page_frame
+    assert state.last_result.total_row_count == 5
+    assert state.page_index == 1
+    assert not state.page_has_next
+    assert not window.next_page_button.isEnabled()
+    assert window.page_status_label.text() == "rows 3-4 of 5 · Page 2"
+    window.next_page_button.click()
+    assert controller.fetches == [(request, 1)]
+
+
+def test_main_window_pagination_coexists_with_row_count_without_invoking_or_losing_it(
+    qtbot,
+) -> None:
+    row_count_controller = _FakeRowCountController()
+    page_controller = _FakePageController()
+    window = MainWindow(
+        row_count_controller=row_count_controller,
+        page_controller=page_controller,
+    )
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    preview = replace(_truncated_result(request), frame=pl.DataFrame({"id": [1, 2]}))
+    window._on_query_result_ready(preview, request)
+
+    window.next_page_button.click()
+    assert page_controller.fetches == [(request, 1)]
+    assert row_count_controller.requests == []
+
+    window.count_all_rows_button.click()
+    assert row_count_controller.requests == [request]
+    row_count_controller.emit_result(
+        RowCountResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+    page_frame = pl.DataFrame({"id": [3, 4]})
+    page_controller.emit_result(_page_result(request, offset=2, frame=page_frame, has_next=False))
+
+    state = window._editor_states[window.editor]
+    assert state.last_request is request
+    assert state.last_result is not None
+    assert state.last_result.frame is page_frame
+    assert state.last_result.total_row_count == 5
+    assert state.page_index == 1
+    assert not window.next_page_button.isEnabled()
+
+    window.close()
+    assert page_controller.shutdown_calls == 1
+    assert row_count_controller.shutdown_calls == 1
+
+
+def test_main_window_pagination_ignores_stale_results_and_preserves_background_tab_pages(
+    qtbot,
+) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    first_request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    first_preview = replace(_truncated_result(first_request), frame=pl.DataFrame({"id": [1, 2]}))
+    window._on_query_result_ready(first_preview, first_request)
+    window.next_page_button.click()
+    controller.emit_result(_page_result(_row_count_request(), offset=2))
+    assert window._last_result is first_preview
+
+    first_editor = window.editor
+    window.next_page_button.click()
+    window._new_editor_tab()
+    page_frame = pl.DataFrame({"id": [3, 4]})
+    controller.emit_result(_page_result(first_request, offset=2, frame=page_frame))
+
+    background_state = window._editor_states[first_editor]
+    assert background_state.last_result is not None
+    assert background_state.last_result.frame is page_frame
+    assert window._last_result is None
+
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(first_editor))
+    assert window.result_table_view.frame() is page_frame
+    assert window.page_position_label.text() == "Page 2"
+
+
+def test_main_window_pagination_closed_tab_and_new_query_invalidate_active_operations(
+    qtbot, monkeypatch
+) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    first_request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    window._on_query_result_ready(_truncated_result(first_request), first_request)
+    first_editor = window.editor
+    window.next_page_button.click()
+    second_editor = window._new_editor_tab()
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(first_editor))
+    window._close_current_editor_tab()
+
+    assert controller.cancel_calls == 1
+    controller.emit_result(_page_result(first_request, offset=2))
+    assert window.current_editor is second_editor
+    assert window._last_result is None
+
+    window._on_query_result_ready(_truncated_result(first_request), first_request)
+    window.next_page_button.click()
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda item: submitted.append(item) or True
+    )
+    window.editor.setText("SELECT 2")
+    window._on_run_triggered()
+
+    assert controller.cancel_calls == 2
+    assert submitted
+    second_request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    second_preview = _truncated_result(second_request)
+    window._on_query_result_ready(second_preview, second_request)
+    state = window._editor_states[window.editor]
+    assert state.page_index == 0
+    assert state.page_has_next is True
+    assert not state.page_loading
+    controller.emit_result(_page_result(first_request, offset=2))
+    assert state.last_result is second_preview

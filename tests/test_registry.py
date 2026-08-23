@@ -1,7 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
 from uuid import uuid4
 
 import polars as pl
@@ -11,11 +11,365 @@ from wherewolf.desktop.workers.value_counts_worker import ValueCountsAdapter
 from wherewolf.domain import (
     CatalogEntry,
     EngineKind,
+    ExecutionRequest,
+    ExecutionStatus,
+    PageResult,
+    RowCountResult,
     SourceFormat,
 )
 from wherewolf.domain.errors import EngineUnavailableError
 from wherewolf.execution.base import ExecutionEngine
 from wherewolf.execution.registry import EngineRegistry
+
+
+class _RowCountAdapter(Protocol):
+    def count_rows(self, request: ExecutionRequest) -> RowCountResult: ...
+
+    def close(self) -> None: ...
+
+    def cancellation_handle(self): ...
+
+
+class _PageAdapter(Protocol):
+    def fetch_page(self, request: ExecutionRequest, offset: int, page_size: int) -> PageResult: ...
+
+    def close(self) -> None: ...
+
+    def cancellation_handle(self): ...
+
+
+def _count_request(
+    tmp_path: Path,
+    *,
+    sql: str = "SELECT * FROM rows",
+    rows: str = "id,value\n1,10\n2,20\n3,30\n4,40\n5,50\n",
+    preview_limit: int = 2,
+    parameters: tuple[object, ...] = (),
+):
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    source = tmp_path / "rows.csv"
+    source.write_text(rows)
+    catalog = CatalogService()
+    catalog.add_paths((source,))
+    request = ExecutionRequestBuilder.build(
+        sql=sql,
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog,
+        preview_limit=preview_limit,
+        parameters=parameters,
+    )
+    return request, source
+
+
+def _count_rows(request):
+    adapter = cast(_RowCountAdapter, EngineRegistry().create(EngineKind.DUCKDB, request.request_id))
+    try:
+        return adapter.count_rows(request)
+    finally:
+        adapter.close()
+
+
+def _fetch_page(request: ExecutionRequest, offset: int, page_size: int) -> PageResult:
+    adapter = cast(_PageAdapter, EngineRegistry().create(EngineKind.DUCKDB, request.request_id))
+    try:
+        return adapter.fetch_page(request, offset, page_size)
+    finally:
+        adapter.close()
+
+
+def test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview(
+    tmp_path: Path,
+) -> None:
+    request, _source = _count_request(tmp_path)
+    preview = (
+        EngineRegistry().create(EngineKind.DUCKDB, request.request_id).execute_preview(request)
+    )
+
+    result = _count_rows(request)
+
+    assert preview.preview_row_count == 2
+    assert preview.truncated is True
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 5
+
+
+def test_duckdb_adapter_count_rows_retains_filtered_query_semantics(tmp_path: Path) -> None:
+    request, _source = _count_request(tmp_path, sql="SELECT * FROM rows WHERE value >= 30")
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 3
+
+
+def test_duckdb_adapter_count_rows_preserves_repeated_bound_parameter_order(tmp_path: Path) -> None:
+    request, _source = _count_request(
+        tmp_path,
+        sql="SELECT * FROM rows WHERE value >= ? AND value <= ? AND value <> ?",
+        parameters=(20, 50, 40),
+    )
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 3
+
+
+@pytest.mark.parametrize(
+    "sql",
+    (
+        "SELECT id, 'literal;value' AS marker FROM rows WHERE id > 0;",
+        "SELECT id, 'literal;value' AS marker FROM rows /* comment;value */ WHERE id > 0; -- trailing comment",
+    ),
+)
+def test_duckdb_adapter_count_rows_safely_wraps_one_terminated_statement(
+    tmp_path: Path, sql: str
+) -> None:
+    request, _source = _count_request(tmp_path, sql=sql)
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 5
+
+
+def test_duckdb_adapter_count_rows_keeps_order_by_and_limit_semantics(tmp_path: Path) -> None:
+    request, _source = _count_request(
+        tmp_path, sql="SELECT * FROM rows ORDER BY value DESC LIMIT 3"
+    )
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == 3
+
+
+@pytest.mark.parametrize(
+    ("sql", "preview_limit", "expected_total"),
+    (
+        ("SELECT * FROM rows WHERE id < 0", 2, 0),
+        ("SELECT * FROM rows", 5, 5),
+    ),
+)
+def test_duckdb_adapter_count_rows_reports_exact_totals_without_preview_truncation(
+    tmp_path: Path, sql: str, preview_limit: int, expected_total: int
+) -> None:
+    request, _source = _count_request(tmp_path, sql=sql, preview_limit=preview_limit)
+
+    result = _count_rows(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.total_row_count == expected_total
+
+
+def test_duckdb_adapter_count_rows_rejects_multiple_statements_before_execution(
+    tmp_path: Path,
+) -> None:
+    request, _source = _count_request(tmp_path, sql="SELECT 1; SELECT 2")
+
+    result = _count_rows(request)
+
+    assert result.status.name == "FAILED"
+    assert result.total_row_count is None
+    assert result.error_message == "Count all rows requires exactly one executable statement"
+
+
+@pytest.mark.parametrize("mutation", ("changed", "missing", "different_size"))
+def test_duckdb_adapter_count_rows_rejects_changed_captured_sources(
+    tmp_path: Path, mutation: str
+) -> None:
+    request, source = _count_request(tmp_path)
+    if mutation == "changed":
+        source.write_text("id,value\n9,90\n8,80\n7,70\n6,60\n5,50\n")
+    elif mutation == "missing":
+        source.unlink()
+    else:
+        source.write_text("id,value\n1,10\n")
+
+    result = _count_rows(request)
+
+    assert result.status.name == "FAILED"
+    assert result.total_row_count is None
+    assert result.error_message == "Source changed since query ran; rerun the query"
+
+
+def test_duckdb_adapter_count_rows_normalizes_cancellation_and_close(tmp_path: Path) -> None:
+    request, _source = _count_request(tmp_path)
+    adapter = cast(_RowCountAdapter, EngineRegistry().create(EngineKind.DUCKDB, request.request_id))
+
+    handle = adapter.cancellation_handle()
+    assert handle.request_id == request.request_id
+    assert handle.cancel() is True
+    result = adapter.count_rows(request)
+    adapter.close()
+
+    assert result.status.name == "CANCELLED"
+    assert result.total_row_count is None
+
+
+def test_duckdb_adapter_fetch_page_returns_bounded_ordered_windows(tmp_path: Path) -> None:
+    request, _source = _count_request(tmp_path, sql="SELECT * FROM rows ORDER BY id")
+
+    first = _fetch_page(request, offset=0, page_size=2)
+    second = _fetch_page(request, offset=2, page_size=2)
+    third = _fetch_page(request, offset=4, page_size=2)
+
+    assert [(result.offset, result.has_next) for result in (first, second, third)] == [
+        (0, True),
+        (2, True),
+        (4, False),
+    ]
+    assert first.frame is not None
+    assert second.frame is not None
+    assert third.frame is not None
+    assert first.frame["id"].to_list() == [1, 2]
+    assert second.frame["id"].to_list() == [3, 4]
+    assert third.frame["id"].to_list() == [5]
+
+
+def test_duckdb_adapter_fetch_page_appends_probe_parameters_after_captured_parameters(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import duckdb
+
+    request, _source = _count_request(
+        tmp_path,
+        sql="SELECT * FROM rows WHERE value >= ? AND value <= ? AND value <> ? ORDER BY id",
+        parameters=(20, 50, 40),
+    )
+    captured_params: list[object] = []
+    original_connect = duckdb.connect
+
+    class _TrackedConnection:
+        def __init__(self, connection) -> None:
+            self._connection = connection
+            self.closed = False
+
+        def sql(self, query, params=None):
+            if "LIMIT ? OFFSET ?" in query and params is not None:
+                captured_params.extend(params)
+            return self._connection.sql(query, params=params)
+
+        def close(self) -> None:
+            self.closed = True
+            self._connection.close()
+
+        def __getattr__(self, name):
+            return getattr(self._connection, name)
+
+    connections: list[_TrackedConnection] = []
+
+    def tracked_connect(*args, **kwargs):
+        connection = _TrackedConnection(original_connect(*args, **kwargs))
+        connections.append(connection)
+        return connection
+
+    monkeypatch.setattr(duckdb, "connect", tracked_connect)
+
+    result = _fetch_page(request, offset=0, page_size=2)
+
+    assert result.status is ExecutionStatus.SUCCEEDED
+    assert result.frame is not None
+    assert result.frame["id"].to_list() == [2, 3]
+    assert captured_params == [20, 50, 40, 3, 0]
+    assert connections and all(connection.closed for connection in connections)
+
+
+@pytest.mark.parametrize(("offset", "page_size"), ((-1, 2), (0, 0), (0, -1)))
+def test_duckdb_adapter_fetch_page_rejects_invalid_offset_or_page_size(
+    tmp_path: Path, offset: int, page_size: int
+) -> None:
+    request, _source = _count_request(tmp_path)
+
+    with pytest.raises(ValueError):
+        _fetch_page(request, offset=offset, page_size=page_size)
+
+
+@pytest.mark.parametrize(
+    ("sql", "rows", "offset", "page_size", "expected_ids", "expected_has_next"),
+    (
+        ("SELECT * FROM rows ORDER BY id;", "id,value\n1,10\n2,20\n3,30\n", 0, 2, [1, 2], True),
+        (
+            "SELECT * FROM rows ORDER BY id LIMIT 3",
+            "id,value\n1,10\n2,20\n3,30\n4,40\n",
+            2,
+            2,
+            [3],
+            False,
+        ),
+        (
+            "SELECT * FROM rows ORDER BY id",
+            "id,a,b,c\n1,x,y,z\n2,w,v,u\n3,q,r,s\n",
+            0,
+            2,
+            [1, 2],
+            True,
+        ),
+        ("SELECT * FROM rows WHERE id < 0", "id,value\n1,10\n", 0, 2, [], False),
+    ),
+)
+def test_duckdb_adapter_fetch_page_retains_captured_query_semantics(
+    tmp_path: Path,
+    sql: str,
+    rows: str,
+    offset: int,
+    page_size: int,
+    expected_ids: list[int],
+    expected_has_next: bool,
+) -> None:
+    request, _source = _count_request(tmp_path, sql=sql, rows=rows)
+
+    result = _fetch_page(request, offset=offset, page_size=page_size)
+
+    assert result.status is ExecutionStatus.SUCCEEDED
+    assert result.frame is not None
+    assert result.frame["id"].to_list() == expected_ids
+    assert result.has_next is expected_has_next
+    assert result.frame.width == len(rows.splitlines()[0].split(","))
+
+
+@pytest.mark.parametrize("mutation", ("changed", "missing"))
+def test_duckdb_adapter_fetch_page_rejects_changed_or_missing_captured_sources(
+    tmp_path: Path, mutation: str
+) -> None:
+    request, source = _count_request(tmp_path)
+    if mutation == "changed":
+        source.write_text("id,value\n9,90\n")
+    else:
+        source.unlink()
+
+    result = _fetch_page(request, offset=0, page_size=2)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_type == "SourceChangedError"
+    assert result.error_message == "Source changed since query ran; rerun the query"
+
+
+def test_duckdb_adapter_fetch_page_normalizes_cancellation(tmp_path: Path) -> None:
+    request, _source = _count_request(tmp_path)
+    adapter = cast(_PageAdapter, EngineRegistry().create(EngineKind.DUCKDB, request.request_id))
+    adapter.cancellation_handle().cancel()
+
+    result = adapter.fetch_page(request, offset=0, page_size=2)
+    adapter.close()
+
+    assert result.status is ExecutionStatus.CANCELLED
+    assert result.frame is None
+
+
+def test_duckdb_adapter_fetch_page_rejects_multiple_statements_before_execution(
+    tmp_path: Path,
+) -> None:
+    request, _source = _count_request(tmp_path, sql="SELECT 1; SELECT 2")
+
+    result = _fetch_page(request, offset=0, page_size=2)
+
+    assert result.status is ExecutionStatus.FAILED
+    assert result.error_type == "ValueError"
+    assert result.error_message == "Pagination requires exactly one executable statement"
 
 
 def test_registry_always_includes_duckdb() -> None:
@@ -68,6 +422,63 @@ def test_registry_create_returns_execution_engine() -> None:
     engine = reg.create(EngineKind.DUCKDB, uuid4())
 
     assert isinstance(engine, ExecutionEngine)
+
+
+def test_duckdb_adapter_registers_jsonl_with_typed_columns(tmp_path: Path) -> None:
+    json_lines_file = tmp_path / "events.jsonl"
+    json_lines_file.write_text('{"id": 1, "payload": "alpha"}\n{"id": 2, "payload": "beta"}\n')
+
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    catalog = CatalogService()
+    catalog.add_paths((json_lines_file,))
+    request = ExecutionRequestBuilder.build(
+        sql="SELECT id, payload FROM events ORDER BY id",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog,
+    )
+    adapter = EngineRegistry().create(EngineKind.DUCKDB, uuid4())
+
+    result = adapter.execute_preview(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.frame is not None
+    assert result.frame.columns == ["id", "payload"]
+    assert result.frame.schema == {"id": pl.Int64, "payload": pl.String}
+    assert result.frame.rows() == [(1, "alpha"), (2, "beta")]
+
+
+def test_duckdb_adapter_rejects_unsupported_suffix(tmp_path: Path) -> None:
+    unsupported_file = tmp_path / "events.unsupported"
+    unsupported_file.write_text("id,payload\n1,alpha\n")
+
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    catalog = CatalogService(
+        initial_entries=(
+            CatalogEntry(
+                id=uuid4(),
+                alias="events",
+                path=unsupported_file,
+                source_format=SourceFormat.CSV,
+            ),
+        )
+    )
+    request = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM events",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog,
+    )
+
+    result = EngineRegistry().create(EngineKind.DUCKDB, uuid4()).execute_preview(request)
+
+    assert result.status.name == "FAILED"
+    assert result.error_type == "UnsupportedFormatError"
+    assert result.error_message == "Unsupported source format: .unsupported"
 
 
 def test_registry_create_spark_unavailable_raises(monkeypatch) -> None:

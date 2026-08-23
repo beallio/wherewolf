@@ -1,0 +1,148 @@
+{
+  "date": "2026-08-22",
+  "task_objective": "Implement docs/plans/2026-08-22_count-all-rows.md: on-demand, isolated DuckDB counts for truncated query previews.",
+  "baseline": {
+    "command": "./run.sh uv run pytest -q",
+    "exit_code": 0,
+    "output": "728 passed, 7 deselected in 20.53s"
+  },
+  "files_modified": [
+    "src/wherewolf/domain/models.py",
+    "src/wherewolf/domain/__init__.py",
+    "src/wherewolf/execution/registry.py",
+    "src/wherewolf/desktop/row_count_controller.py",
+    "src/wherewolf/desktop/main_window.py",
+    "tests/test_models.py",
+    "tests/test_registry.py",
+    "tests/test_row_count_controller.py",
+    "tests/test_main_window.py",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/agent_conversations/2026-08-22_count-all-rows.json"
+  ],
+  "tests_added": [
+    "DuckDB count capability coverage for filtered and parameterized requests, statement wrapping, exact totals, source snapshot rejection, and cancellation.",
+    "RowCountResult terminal-status invariants.",
+    "Independent worker/controller handle publication, cancellation races, stale signals, close, and QThread shutdown.",
+    "MainWindow eligibility, captured-request routing, summary-only updates, stale/inconsistent-result rejection, and new-query/shutdown cancellation.",
+    "Review-round MainWindow coverage for terminal count-state reset, inline count failures and cancellation, closed and background tabs, interaction/export preservation, and cancellation priority.",
+    "Review-round controller reuse coverage for failure-to-success and cancellation-to-success on one controller instance, including request-ID routing, one close per adapter, and clearing the counting state before reuse."
+  ],
+  "red_evidence": [
+    {
+      "command": "./run.sh uv run pytest tests/test_registry.py -q --no-cov -k count_rows",
+      "exit_code": 1,
+      "output": "13 failed, 24 deselected in 0.30s because _DuckDBAdapter.count_rows did not exist."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_models.py -q --no-cov -k row_count",
+      "exit_code": 1,
+      "output": "1 failed, 11 deselected in 0.09s because RowCountResult did not exist."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_row_count_controller.py -q --no-cov",
+      "exit_code": 2,
+      "output": "Collection failed because wherewolf.desktop.row_count_controller did not exist."
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'count_all_rows or row_count'",
+      "exit_code": 1,
+      "output": "8 failed because MainWindow did not accept a row_count_controller injection."
+    }
+  ],
+  "failure_recovery": [
+    "The plan-required pull needed host access because the sandbox could not read the system SSH proxy configuration; it then reported the branch was already up to date.",
+    "The first feature commit exposed test calls through the intentionally narrow ExecutionEngine protocol. Tests now declare and cast only the optional count capability, leaving the shared protocol unchanged.",
+    "The combined suite exposed pre-existing test_models import-order coupling; it now imports wherewolf.execution.models explicitly. The new summary assertion compares scalar fields and frame identity instead of asking Polars DataFrames for boolean equality.",
+    "The review-round commit hook reported a test-only optional-state type error. The closed-tab regression now narrows the current editor state once before reading last_request; rerunning ty check and the focused suite passed."
+  ],
+  "verification": [
+    {
+      "command": "./run.sh uv run pytest tests/test_models.py tests/test_registry.py tests/test_row_count_controller.py tests/test_main_window.py tests/test_export_controller.py tests/test_query_controller.py -q --no-cov",
+      "exit_code": 0,
+      "output": "216 passed in 6.32s"
+    },
+    {
+      "command": "mutation: remove the MainWindow row-count request-ID checks, then run test_main_window_count_rejects_stale_and_inconsistent_results_without_changing_preview",
+      "exit_code": 1,
+      "output": "The stale result replaced the visible preview total and the regression test failed. The guard was restored from /tmp/wherewolf/count-all-rows/request-id-matching.restore.patch; stale and summary-only tests then passed 2 passed, 148 deselected in 0.25s."
+    },
+    {
+      "command": "scripts/orchestration/run-quality-gates && scripts/orchestration/check-review-notes-not-deleted",
+      "exit_code": 0,
+      "output": "ruff check and format passed; ty check src passed; 757 passed, 7 deselected in 22.69s; no review notes deleted."
+    }
+  ],
+  "design_decisions": [
+    "Row counting is an optional DuckDB adapter capability, not an ExecutionEngine protocol expansion; Spark therefore cannot accidentally advertise it.",
+    "The adapter checks captured source snapshots before opening a connection, parses exactly one executable StatementSpan, strips only its final terminator, and uses the captured positional parameters in the outer count wrapper.",
+    "RowCountController owns one independent QThread and publishes its cancellation handle before count work begins; MainWindow does not share QueryController state.",
+    "Each editor tab holds transient count state. A completion must match both the captured request and the tab's pending count ID before it can replace only total_row_count; current-tab success updates the summary and controls without rendering the grid or recording history."
+  ],
+  "deferred_and_unverified": [
+    "Manual desktop interaction and multi-gigabyte performance measurement remain unverified in this headless environment.",
+    "Spark counting, network filesystems, pagination coexistence, and automatic or cached counts remain intentionally out of scope."
+  ],
+  "review_round_01": {
+    "review_note": "docs/review/count-all-rows-review-01.md (STATUS: CHANGES_REQUESTED)",
+    "red_evidence": {
+      "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'new_query_resets_terminal or count_terminal_failure or count_success_preserves_preview_interactions or ignores_count_completion or retains_background_tab or cancel_prioritizes'",
+      "exit_code": 1,
+      "output": "3 failed, 8 passed, 150 deselected in 0.61s; completed, failed, and cancelled counts each left terminal state on the next ordinary result. Raw output: /tmp/wherewolf/count-all-rows/red-main-window.log"
+    },
+    "verification": [
+      {
+        "command": "./run.sh uv run pytest tests/test_main_window.py -q --no-cov -k 'new_query_resets_terminal or count_terminal_failure or count_success_preserves_preview_interactions or ignores_count_completion or retains_background_tab or cancel_prioritizes'",
+        "exit_code": 0,
+        "output": "11 passed, 150 deselected in 0.50s"
+      },
+      {
+        "command": "./run.sh uv run pytest tests/test_models.py tests/test_registry.py tests/test_row_count_controller.py tests/test_main_window.py tests/test_export_controller.py tests/test_query_controller.py -q --no-cov",
+        "exit_code": 0,
+        "output": "227 passed in 6.38s"
+      },
+      {
+        "command": "./run.sh uv run pytest -q --no-cov tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_multiple_statements_before_execution tests/test_registry.py::test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_changed_captured_sources tests/test_registry.py::test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview tests/test_registry.py::test_duckdb_adapter_count_rows_normalizes_cancellation_and_close tests/test_registry.py::test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview tests/test_row_count_controller.py::test_row_count_worker_normalizes_raised_failure_and_closes_once tests/test_row_count_controller.py::test_row_count_controller_starts_one_worker_and_publishes_handle_before_count",
+        "exit_code": 0,
+        "output": "8 passed in 0.13s; each multi-statement, source-change, cancellation, and worker-failure case was followed immediately by a valid count."
+      },
+      {
+        "command": "scripts/orchestration/run-quality-gates",
+        "exit_code": 0,
+        "output": "ruff check and format passed; ty check src passed; 768 passed, 7 deselected in 23.14s; no review notes deleted."
+      },
+      {
+        "command": "scripts/orchestration/check-review-notes-committed count-all-rows",
+        "exit_code": 0,
+        "output": "all review notes for count-all-rows are committed"
+      }
+    ],
+    "design_decision": "When a distinct ordinary query result becomes a tab's current result, reset only that tab's transient row-count request ID, status, and message before storing the new request/result. A delayed old completion then lacks both the pending ID and current request match, so it cannot alter the newer preview."
+  },
+  "review_round_02": {
+    "review_note": "docs/review/count-all-rows-review-02.md (STATUS: CHANGES_REQUESTED)",
+    "test_correction": "Added one parametrized same-controller regression for a normalized adapter failure followed by success and cancellation followed by success. The new tests were green on their first run because RowCountController already cleared its worker after the terminal QThread finished; no production behavior change was required.",
+    "verification": [
+      {
+        "command": "./run.sh uv run pytest tests/test_row_count_controller.py -q --no-cov -k reuses_one_controller",
+        "exit_code": 0,
+        "output": "2 passed, 5 deselected in 0.20s"
+      },
+      {
+        "command": "./run.sh uv run pytest -q --no-cov 'tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_multiple_statements_before_execution' 'tests/test_main_window.py::test_main_window_only_offers_count_all_rows_for_truncated_one_statement_duckdb_results[spark-SELECT * FROM rows-succeeded-True-False]' 'tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_changed_captured_sources[changed]' 'tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_changed_captured_sources[missing]' 'tests/test_registry.py::test_duckdb_adapter_count_rows_rejects_changed_captured_sources[different_size]' 'tests/test_row_count_controller.py::test_row_count_controller_reuses_one_controller_after_terminal_result[failed]' 'tests/test_row_count_controller.py::test_row_count_controller_reuses_one_controller_after_terminal_result[cancelled]' 'tests/test_main_window.py::test_main_window_new_query_resets_terminal_row_count_state_and_ignores_old_completion[succeeded-All rows counted.]' 'tests/test_main_window.py::test_main_window_new_query_resets_terminal_row_count_state_and_ignores_old_completion[failed-Count failed.]' 'tests/test_main_window.py::test_main_window_new_query_resets_terminal_row_count_state_and_ignores_old_completion[cancelled-Count cancelled; rerun the query]' 'tests/test_main_window.py::test_main_window_ignores_count_completion_after_its_origin_tab_closes' 'tests/test_registry.py::test_duckdb_adapter_count_rows_returns_full_total_for_a_truncated_preview' 'tests/test_main_window.py::test_main_window_count_success_updates_only_own_tab_summary_without_history_or_frame'",
+        "exit_code": 0,
+        "output": "13 passed in 0.41s; multi-statement, Spark, changed/missing/differently sized sources, adapter failure, cancellation, superseded requests, and closed tabs each ran before valid truncated DuckDB count and its exact UI summary assertion."
+      },
+      {
+        "command": "./run.sh uv run pytest tests/test_models.py tests/test_registry.py tests/test_row_count_controller.py tests/test_main_window.py tests/test_export_controller.py tests/test_query_controller.py -q --no-cov",
+        "exit_code": 0,
+        "output": "229 passed in 6.28s"
+      },
+      {
+        "command": "scripts/orchestration/run-quality-gates && scripts/orchestration/check-review-notes-not-deleted",
+        "exit_code": 0,
+        "output": "ruff check and format passed; ty check src passed; 770 passed, 7 deselected in 22.09s; no review notes deleted."
+      }
+    ]
+  }
+}

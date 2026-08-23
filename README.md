@@ -1,16 +1,16 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=34" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=35" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=34)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=34)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=34)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=35)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=35)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=35)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 Wherewolf is a local SQL workbench for CSV, Parquet, JSON, JSON Lines, and XLSX files. It opens
 a native PyQt6 desktop window and runs queries with DuckDB by default. There is no browser UI and
 no local web server.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=34)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=35)
 
 ## Install
 
@@ -76,6 +76,46 @@ cd wherewolf
 For the optional Spark engine from a source checkout, run `./run.sh uv sync --extra spark` after
 installing Java.
 
+### Headless DuckDB queries
+
+For SSH sessions, cron jobs, CI, and Makefiles, `wherewolf query` runs one DuckDB SQL statement
+without loading Qt or PySpark and exports every result row to a local file:
+
+```text
+wherewolf query SQL [--dataset ALIAS=PATH ...] --format {csv,parquet,xlsx} -o PATH [--force]
+```
+
+`--dataset` is repeatable and optional, so a constant query needs no source file:
+
+```bash
+wherewolf query 'SELECT 1 AS answer' -o /tmp/answer.csv
+```
+
+Bind each source file to the alias used by the SQL. The alias must be a SQL identifier; JSON,
+JSON Lines, CSV, Parquet, and XLSX inputs use the same format support as the desktop catalog.
+
+```bash
+wherewolf query 'SELECT region, sum(amount) AS total FROM sales GROUP BY region' \
+  --dataset sales=/srv/imports/sales.csv \
+  --format parquet \
+  --output /srv/reports/sales-by-region.data
+```
+
+`csv` is the default format. CSV, Parquet, and XLSX are supported; like desktop full export,
+XLSX is limited to 100,000 rows. The output argument is honored exactly — choosing CSV does not
+rename `sales-by-region.data` to a `.csv` suffix. A destination that already exists is rejected
+unless `--force` is given. A directory is never an output, and an output that resolves to an input
+dataset is always rejected, including through a symlink, even with `--force`.
+
+On success the command writes exactly `Wrote <absolute-path>` to standard output and exits 0.
+Dataset, SQL, and export failures write one `wherewolf query: ...` line to standard error, leave
+standard output empty, and exit 1. Argument syntax errors retain argparse's exit code 2.
+
+This v1 command accepts SQL only as one command-line argument and writes results only to a file.
+SQL files, stdin, named parameters, saved queries, stdout result streaming, Spark execution,
+progress reporting, cancellation, and workspace/catalog persistence are intentionally not part of
+this mode.
+
 ## Desktop workflow
 
 1. Choose **Add Datasets…** or drag supported local files into the Dataset Catalog. The command
@@ -87,6 +127,10 @@ installing Java.
    equivalent shortcut conventions.
 4. Press **Ctrl+.** to request cancellation of the active query. The status bar and Messages tab
    report state, timing, preview rows, truncation, and errors.
+   For an unmodified, single DuckDB statement from this editor, an engine error that includes an
+   exact `LINE`/caret location is clickable in Messages: activating it returns to the originating
+   tab and marks the failing token. After you edit the SQL, the old error remains readable but no
+   longer navigates, so it cannot point at changed text.
 5. History records successful queries in `~/.wherewolf/history.json`. Selecting a history entry
    restores its SQL only — your dataset catalog is left untouched — and does not run it. The
    History dock shows timestamp and query in separate sortable columns. Use **File → Clear
@@ -109,6 +153,22 @@ preserves values for typed sorting, and supports selection, spreadsheet-compatib
 filtering, column reordering, hiding, auto-sizing, and reset. Column headers carry a data-type
 badge such as `age [INT]` or `when [DATE]`, with the exact type in the tooltip. Right-click a
 header to copy or insert its name, adjust columns, or choose an ordering action.
+
+When a DuckDB preview is truncated, choose **Count all rows** beside the truncation notice to count
+the captured query without replacing the preview. The count runs separately, so current filters,
+local sorting, selection, exports, and query history stay intact. If a captured source changed or
+disappeared after the preview, Wherewolf asks you to rerun the query instead of showing a count for
+different data. Spark and multi-statement previews do not offer this control.
+
+Eligible truncated DuckDB previews also offer **Previous** and **Next**. Each page re-runs the
+captured statement with the preview size that was in effect when the query ran, so changing the
+preference later does not change the page boundaries. The grid, preview export, and selection export
+follow the page on screen; **Export Full Results** still uses the original captured request. A source
+that changes after page 1, a cancelled page fetch, or a page error leaves the current page on screen
+and asks you to rerun rather than mixing data from different source versions. Pagination is limited
+to one DuckDB statement. Without a final `ORDER BY`, Wherewolf warns that page membership is not
+stable. A top-level order removes that syntactic warning, but duplicate sort keys and volatile
+expressions such as `ORDER BY random()` still need a unique, deterministic order supplied by you.
 
 Selecting multiple result cells shows their cell, distinct-value, and null counts above the grid.
 For selections made entirely from numeric columns, it also shows the sum, mean, minimum, and

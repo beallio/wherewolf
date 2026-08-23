@@ -9,7 +9,6 @@ from uuid import uuid4
 import polars as pl
 import pytest
 
-from wherewolf import execution
 from wherewolf.domain import (
     ColumnProfile,
     CompletionKind,
@@ -20,10 +19,11 @@ from wherewolf.domain import (
 )
 from wherewolf.domain import models as domain_models
 from wherewolf.domain.errors import UnsupportedFormatError
+from wherewolf.execution import models as execution_models
 
 
 def test_models():
-    qr = execution.models.QueryResult()
+    qr = execution_models.QueryResult()
     assert qr.success is True
     assert isinstance(qr.df, pl.DataFrame)
 
@@ -131,7 +131,158 @@ def test_catalog_entry_unavailable_defaults_false_and_can_be_replaced() -> None:
 
 
 def test_domain_queryresult_distinct_from_execution_queryresult() -> None:
-    assert domain_models.QueryResult is not execution.models.QueryResult
+    assert domain_models.QueryResult is not execution_models.QueryResult
+
+
+def test_row_count_result_rejects_invalid_status_total_and_error_combinations() -> None:
+    request_id = uuid4()
+    completed_at = datetime.now(UTC)
+
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=None,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=-1,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=1,
+            completed_at=completed_at,
+            error_type="RuntimeError",
+            error_message="unexpected",
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.FAILED,
+            total_row_count=None,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.FAILED,
+            total_row_count=1,
+            completed_at=completed_at,
+            error_type="RuntimeError",
+            error_message="unexpected",
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.CANCELLED,
+            total_row_count=1,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.RowCountResult(
+            request_id=request_id,
+            status=ExecutionStatus.CANCELLED,
+            total_row_count=None,
+            completed_at=completed_at,
+            error_type="CancelledError",
+            error_message="cancelled",
+        )
+
+
+def test_page_result_rejects_invalid_status_frame_error_offset_and_page_size_combinations() -> None:
+    request_id = uuid4()
+    completed_at = datetime.now(UTC)
+
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            frame=None,
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            frame=pl.DataFrame(),
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+            error_type="RuntimeError",
+            error_message="unexpected",
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.FAILED,
+            frame=None,
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.FAILED,
+            frame=pl.DataFrame(),
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+            error_type="RuntimeError",
+            error_message="failed",
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.CANCELLED,
+            frame=pl.DataFrame(),
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.CANCELLED,
+            frame=None,
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+            error_type="CancelledError",
+            error_message="cancelled",
+        )
+    for offset, page_size in ((-1, 2), (0, 0), (0, -1)):
+        with pytest.raises(ValueError):
+            domain_models.PageResult(
+                request_id=request_id,
+                status=ExecutionStatus.CANCELLED,
+                frame=None,
+                offset=offset,
+                page_size=page_size,
+                has_next=False,
+                execution_seconds=0.0,
+                completed_at=completed_at,
+            )
 
 
 def test_column_profile_preserves_non_numeric_statistics_as_none() -> None:

@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+## [0.10.3] - 2026-08-22 — Count every row, page through results, export anywhere, and jump to errors
+
+### Added
+
+- **Truncated DuckDB previews can now count all matching rows without replacing the grid.** The
+  count runs against the captured query and its bound parameters in a separate cancellable task;
+  local filters, sorting, selection, exports, and history remain unchanged. If an input source has
+  changed or disappeared since the preview ran, the count fails closed and asks you to rerun the
+  query. Spark and multi-statement previews are intentionally excluded.
+
+- **Truncated DuckDB previews can now page through the captured result.** Previous and Next keep
+  the preview size, SQL, parameters, and source snapshots from the original query; the displayed
+  page becomes the preview-export source while full export remains the original request. Pagination
+  is DuckDB-only and accepts one statement. Changed sources, cancellation, and page errors retain
+  the current page, and a missing top-level `ORDER BY` warns that membership is not stable (a
+  syntactic order still does not guarantee unique or deterministic rows).
+
+- **Headless DuckDB query exports are available from the command line.** `wherewolf query` runs
+  one checked SQL statement over explicitly aliased local datasets and writes full CSV, Parquet,
+  or XLSX results without loading Qt or PySpark. It fails closed around output replacement and
+  source-file identity, making it suitable for SSH, CI, cron, and Makefiles.
+
+- **DuckDB errors can now jump straight to the failing SQL token.** When Wherewolf executes one
+  unchanged, parameter-free DuckDB statement from an editor and DuckDB provides an exact
+  `LINE`/caret excerpt, activate its Messages entry to return to the originating tab, reveal the
+  token, and underline it. Errors without a trustworthy source position remain ordinary messages;
+  editing the SQL invalidates any previous jump target.
+
 ## [0.10.2] - 2026-08-22 — Result selections are summarized, inspectable, and accurate
 
 ### Fixed
