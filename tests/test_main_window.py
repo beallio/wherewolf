@@ -13,11 +13,13 @@ from PyQt6.QtCore import (
     QItemSelection,
     QItemSelectionModel,
     QMimeData,
+    QObject,
     QPointF,
     QSettings,
     Qt,
     QThread,
     QUrl,
+    pyqtSignal,
 )
 from PyQt6.QtGui import QDropEvent, QFontMetrics, QKeySequence, QStandardItemModel
 from PyQt6.QtTest import QTest
@@ -53,6 +55,7 @@ from wherewolf.domain import (
     ExecutionStatus,
     ProfileResult,
     QueryResult,
+    RowCountResult,
     SchemaResult,
     SourceFormat,
 )
@@ -79,6 +82,69 @@ class _ProfileAdapter:
 
     def close(self) -> None:
         pass
+
+
+class _FakeRowCountController(QObject):
+    started = pyqtSignal()
+    result_ready = pyqtSignal(object)
+    handle_published = pyqtSignal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.counting = False
+        self.requests: list[ExecutionRequest] = []
+        self.cancel_calls = 0
+        self.shutdown_calls = 0
+
+    def count(self, request: ExecutionRequest) -> bool:
+        if self.counting:
+            return False
+        self.counting = True
+        self.requests.append(request)
+        self.started.emit()
+        return True
+
+    def cancel(self) -> bool:
+        if not self.counting:
+            return False
+        self.cancel_calls += 1
+        self.counting = False
+        return True
+
+    def shutdown(self) -> bool:
+        self.shutdown_calls += 1
+        self.counting = False
+        return True
+
+    def emit_result(self, result: RowCountResult) -> None:
+        self.counting = False
+        self.result_ready.emit(result)
+
+
+def _row_count_request(*, engine: EngineKind = EngineKind.DUCKDB, sql: str = "SELECT * FROM rows"):
+    return ExecutionRequest(
+        request_id=uuid4(),
+        engine=engine,
+        source_dialect="duckdb",
+        original_sql=sql,
+        executable_sql=sql,
+        catalog=(),
+        preview_limit=2,
+        submitted_at=datetime.now(UTC),
+    )
+
+
+def _truncated_result(request: ExecutionRequest) -> QueryResult:
+    return QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.SUCCEEDED,
+        frame=pl.DataFrame({"value": [1, 2]}),
+        execution_seconds=0.25,
+        preview_row_count=2,
+        total_row_count=None,
+        truncated=True,
+        completed_at=datetime.now(UTC),
+    )
 
 
 class _ProfileRegistry:
@@ -3849,3 +3915,165 @@ def test_main_window_shows_and_clears_result_selection_statistics(qtbot) -> None
     selection_model.clearSelection()
 
     assert window.result_selection_stats_label.isHidden()
+
+
+@pytest.mark.parametrize(
+    ("engine", "sql", "status", "truncated", "visible"),
+    (
+        (EngineKind.DUCKDB, "SELECT * FROM rows", ExecutionStatus.SUCCEEDED, True, True),
+        (EngineKind.SPARK, "SELECT * FROM rows", ExecutionStatus.SUCCEEDED, True, False),
+        (EngineKind.DUCKDB, "SELECT 1; SELECT 2", ExecutionStatus.SUCCEEDED, True, False),
+        (EngineKind.DUCKDB, "SELECT * FROM rows", ExecutionStatus.SUCCEEDED, False, False),
+        (EngineKind.DUCKDB, "SELECT * FROM rows", ExecutionStatus.FAILED, False, False),
+        (EngineKind.DUCKDB, "SELECT * FROM rows", ExecutionStatus.CANCELLED, False, False),
+    ),
+)
+def test_main_window_only_offers_count_all_rows_for_truncated_one_statement_duckdb_results(
+    qtbot, engine, sql, status, truncated, visible
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(engine=engine, sql=sql)
+    if status is ExecutionStatus.SUCCEEDED:
+        result = replace(_truncated_result(request), truncated=truncated)
+    else:
+        result = QueryResult(
+            request_id=request.request_id,
+            status=status,
+            frame=None,
+            execution_seconds=0.25,
+            preview_row_count=0,
+            total_row_count=None,
+            truncated=truncated,
+            completed_at=datetime.now(UTC),
+            error_type="RuntimeError" if status is ExecutionStatus.FAILED else None,
+            error_message="failed" if status is ExecutionStatus.FAILED else None,
+        )
+
+    window._on_query_result_ready(result, request)
+
+    assert window.count_all_rows_button.isHidden() is not visible
+    assert window.count_all_rows_button.isEnabled() is visible
+
+
+def test_main_window_count_all_rows_preserves_grid_and_routes_only_the_captured_request(
+    qtbot, monkeypatch
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    window._on_query_result_ready(_truncated_result(request), request)
+    frame_before = window.result_table_view.frame()
+    assert frame_before is not None
+    set_frame_calls: list[object] = []
+    monkeypatch.setattr(window.result_table_view, "set_frame", set_frame_calls.append)
+    query_calls: list[ExecutionRequest] = []
+    monkeypatch.setattr(window.query_controller, "execute", query_calls.append)
+
+    window.count_all_rows_button.click()
+
+    assert controller.requests == [request]
+    assert query_calls == []
+    assert window.result_count_status_label.text() == "Counting..."
+    assert not window.count_all_rows_button.isEnabled()
+    assert window.result_table_view.frame() is frame_before
+    assert set_frame_calls == []
+
+
+def test_main_window_count_success_updates_only_own_tab_summary_without_history_or_frame(
+    qtbot, monkeypatch
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    result = _truncated_result(request)
+    history_calls: list[tuple[QueryResult, ExecutionRequest]] = []
+    monkeypatch.setattr(
+        window,
+        "_record_query_history",
+        lambda item, item_request: history_calls.append((item, item_request)),
+    )
+    window._on_query_result_ready(result, request)
+    frame_before = window.result_table_view.frame()
+    set_frame_calls: list[object] = []
+    monkeypatch.setattr(window.result_table_view, "set_frame", set_frame_calls.append)
+
+    window.count_all_rows_button.click()
+    controller.emit_result(
+        RowCountResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+
+    assert window._last_result is not None
+    assert window._last_result.total_row_count == 5
+    assert window._last_result.frame is result.frame
+    assert (
+        window.result_summary_label.text()
+        == "DuckDB · showing 2 of 5 rows · 0.25s · truncated at 2 preview rows"
+    )
+    assert window.result_table_view.frame() is frame_before
+    assert set_frame_calls == []
+    assert history_calls == [(result, request)]
+    assert not window.count_all_rows_button.isEnabled()
+
+
+def test_main_window_count_rejects_stale_and_inconsistent_results_without_changing_preview(
+    qtbot,
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    result = _truncated_result(request)
+    window._on_query_result_ready(result, request)
+    frame_before = window.result_table_view.frame()
+    window.count_all_rows_button.click()
+    controller.emit_result(
+        RowCountResult(
+            request_id=uuid4(),
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=5,
+            completed_at=datetime.now(UTC),
+        )
+    )
+    assert window._last_result == result
+    controller.emit_result(
+        RowCountResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            total_row_count=1,
+            completed_at=datetime.now(UTC),
+        )
+    )
+    assert window._last_result == result
+    assert "rerun" in window.result_count_status_label.text().lower()
+    assert window.result_table_view.frame() is frame_before
+
+
+def test_main_window_new_query_cancel_and_shutdown_include_active_row_count(
+    qtbot, monkeypatch
+) -> None:
+    controller = _FakeRowCountController()
+    window = MainWindow(row_count_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request()
+    window._on_query_result_ready(_truncated_result(request), request)
+    window.count_all_rows_button.click()
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda item: submitted.append(item) or True
+    )
+    window.editor.setText("SELECT 1")
+    window._on_run_triggered()
+
+    assert controller.cancel_calls == 1
+    assert submitted
+    window.close()
+    assert controller.shutdown_calls == 1
