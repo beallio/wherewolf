@@ -31,6 +31,7 @@ from wherewolf.domain import (
     EngineUnavailableError,
     ExecutionRequest,
     ExecutionStatus,
+    PageResult,
     ProfileResult,
     QueryResult,
     RowCountResult,
@@ -40,6 +41,7 @@ from wherewolf.domain import (
 from wherewolf.execution.base import CancellationHandle, ExecutionEngine
 from wherewolf.services.export_destination import ExportFormat, write_atomically
 from wherewolf.services.identifier_quoting import quote_identifier
+from wherewolf.services.result_pagination import build_page_sql
 from wherewolf.services.statement_service import StatementService
 
 FULL_XLSX_ROW_LIMIT = 100_000
@@ -317,6 +319,131 @@ class _DuckDBAdapter(ExecutionEngine):
             try:
                 con.close()
             except Exception:  # noqa: BLE001, S110  # Cleanup boundary: ignore errors during connection closure
+                pass
+
+    def fetch_page(self, request: ExecutionRequest, offset: int, page_size: int) -> PageResult:
+        """Fetch one page from a captured DuckDB request without changing it."""
+        import time
+
+        import duckdb
+
+        if offset < 0:
+            raise ValueError("Page offset must be non-negative")
+        if page_size <= 0:
+            raise ValueError("Page size must be positive")
+
+        start_time = time.time()
+        if self._cancelled:
+            return PageResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.CANCELLED,
+                frame=None,
+                offset=offset,
+                page_size=page_size,
+                has_next=False,
+                execution_seconds=0.0,
+                completed_at=datetime.now(UTC),
+            )
+
+        if _source_warnings(request):
+            return PageResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                frame=None,
+                offset=offset,
+                page_size=page_size,
+                has_next=False,
+                execution_seconds=time.time() - start_time,
+                completed_at=datetime.now(UTC),
+                error_type="SourceChangedError",
+                error_message="Source changed since query ran; rerun the query",
+            )
+
+        try:
+            page_sql = build_page_sql(request.executable_sql)
+        except Exception as error:  # noqa: BLE001 - normalize captured-query validation failures.
+            return PageResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                frame=None,
+                offset=offset,
+                page_size=page_size,
+                has_next=False,
+                execution_seconds=time.time() - start_time,
+                completed_at=datetime.now(UTC),
+                error_type=type(error).__name__,
+                error_message=str(error),
+            )
+
+        con = duckdb.connect(database=":memory:")
+        self._con = con
+        try:
+            if self._cancelled:
+                con.interrupt()
+            for binding in request.catalog:
+                self._register_view(con, str(binding.path), binding.alias)
+            rel = con.sql(
+                page_sql,
+                params=[*request.parameters, page_size + 1, offset],
+            )
+            frame_with_probe = rel.pl()
+            frame = frame_with_probe.head(page_size)
+            execution_seconds = time.time() - start_time
+            if self._cancelled:
+                return PageResult(
+                    request_id=request.request_id,
+                    status=ExecutionStatus.CANCELLED,
+                    frame=None,
+                    offset=offset,
+                    page_size=page_size,
+                    has_next=False,
+                    execution_seconds=execution_seconds,
+                    completed_at=datetime.now(UTC),
+                )
+            return PageResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.SUCCEEDED,
+                frame=frame,
+                offset=offset,
+                page_size=page_size,
+                has_next=frame_with_probe.height > page_size,
+                execution_seconds=execution_seconds,
+                completed_at=datetime.now(UTC),
+            )
+        except Exception as error:  # noqa: BLE001 - page execution boundary normalizes DuckDB errors.
+            execution_seconds = time.time() - start_time
+            if (
+                self._cancelled
+                or isinstance(error, duckdb.InterruptException)
+                or "interrupt" in str(error).lower()
+            ):
+                return PageResult(
+                    request_id=request.request_id,
+                    status=ExecutionStatus.CANCELLED,
+                    frame=None,
+                    offset=offset,
+                    page_size=page_size,
+                    has_next=False,
+                    execution_seconds=execution_seconds,
+                    completed_at=datetime.now(UTC),
+                )
+            return PageResult(
+                request_id=request.request_id,
+                status=ExecutionStatus.FAILED,
+                frame=None,
+                offset=offset,
+                page_size=page_size,
+                has_next=False,
+                execution_seconds=execution_seconds,
+                completed_at=datetime.now(UTC),
+                error_type=type(error).__name__,
+                error_message=str(error),
+            )
+        finally:
+            self._con = None
+            try:
+                con.close()
+            except Exception:  # noqa: BLE001, S110 - cleanup boundary ignores connection-close errors.
                 pass
 
     def profile_dataset(self, entry: CatalogEntry) -> ProfileResult:

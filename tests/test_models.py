@@ -195,6 +195,96 @@ def test_row_count_result_rejects_invalid_status_total_and_error_combinations() 
         )
 
 
+def test_page_result_rejects_invalid_status_frame_error_offset_and_page_size_combinations() -> None:
+    request_id = uuid4()
+    completed_at = datetime.now(UTC)
+
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            frame=None,
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.SUCCEEDED,
+            frame=pl.DataFrame(),
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+            error_type="RuntimeError",
+            error_message="unexpected",
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.FAILED,
+            frame=None,
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.FAILED,
+            frame=pl.DataFrame(),
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+            error_type="RuntimeError",
+            error_message="failed",
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.CANCELLED,
+            frame=pl.DataFrame(),
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+        )
+    with pytest.raises(ValueError):
+        domain_models.PageResult(
+            request_id=request_id,
+            status=ExecutionStatus.CANCELLED,
+            frame=None,
+            offset=0,
+            page_size=2,
+            has_next=False,
+            execution_seconds=0.0,
+            completed_at=completed_at,
+            error_type="CancelledError",
+            error_message="cancelled",
+        )
+    for offset, page_size in ((-1, 2), (0, 0), (0, -1)):
+        with pytest.raises(ValueError):
+            domain_models.PageResult(
+                request_id=request_id,
+                status=ExecutionStatus.CANCELLED,
+                frame=None,
+                offset=offset,
+                page_size=page_size,
+                has_next=False,
+                execution_seconds=0.0,
+                completed_at=completed_at,
+            )
+
+
 def test_column_profile_preserves_non_numeric_statistics_as_none() -> None:
     entry_id = uuid4()
     profile = ColumnProfile(

@@ -10,6 +10,13 @@
   changed or disappeared since the preview ran, the count fails closed and asks you to rerun the
   query. Spark and multi-statement previews are intentionally excluded.
 
+- **Truncated DuckDB previews can now page through the captured result.** Previous and Next keep
+  the preview size, SQL, parameters, and source snapshots from the original query; the displayed
+  page becomes the preview-export source while full export remains the original request. Pagination
+  is DuckDB-only and accepts one statement. Changed sources, cancellation, and page errors retain
+  the current page, and a missing top-level `ORDER BY` warns that membership is not stable (a
+  syntactic order still does not guarantee unique or deterministic rows).
+
 - **Headless DuckDB query exports are available from the command line.** `wherewolf query` runs
   one checked SQL statement over explicitly aliased local datasets and writes full CSV, Parquet,
   or XLSX results without loading Qt or PySpark. It fails closed around output replacement and
