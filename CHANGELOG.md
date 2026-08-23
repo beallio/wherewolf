@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.10.3] - 2026-08-22 — Count every row, page through results, export anywhere, and jump to errors
+
 ### Added
 
 - **Truncated DuckDB previews can now count all matching rows without replacing the grid.** The
