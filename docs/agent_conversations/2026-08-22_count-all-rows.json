@@ -52,7 +52,8 @@
   "failure_recovery": [
     "The plan-required pull needed host access because the sandbox could not read the system SSH proxy configuration; it then reported the branch was already up to date.",
     "The first feature commit exposed test calls through the intentionally narrow ExecutionEngine protocol. Tests now declare and cast only the optional count capability, leaving the shared protocol unchanged.",
-    "The combined suite exposed pre-existing test_models import-order coupling; it now imports wherewolf.execution.models explicitly. The new summary assertion compares scalar fields and frame identity instead of asking Polars DataFrames for boolean equality."
+    "The combined suite exposed pre-existing test_models import-order coupling; it now imports wherewolf.execution.models explicitly. The new summary assertion compares scalar fields and frame identity instead of asking Polars DataFrames for boolean equality.",
+    "The review-round commit hook reported a test-only optional-state type error. The closed-tab regression now narrows the current editor state once before reading last_request; rerunning ty check and the focused suite passed."
   ],
   "verification": [
     {
