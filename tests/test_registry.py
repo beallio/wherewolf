@@ -70,6 +70,63 @@ def test_registry_create_returns_execution_engine() -> None:
     assert isinstance(engine, ExecutionEngine)
 
 
+def test_duckdb_adapter_registers_jsonl_with_typed_columns(tmp_path: Path) -> None:
+    json_lines_file = tmp_path / "events.jsonl"
+    json_lines_file.write_text('{"id": 1, "payload": "alpha"}\n{"id": 2, "payload": "beta"}\n')
+
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    catalog = CatalogService()
+    catalog.add_paths((json_lines_file,))
+    request = ExecutionRequestBuilder.build(
+        sql="SELECT id, payload FROM events ORDER BY id",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog,
+    )
+    adapter = EngineRegistry().create(EngineKind.DUCKDB, uuid4())
+
+    result = adapter.execute_preview(request)
+
+    assert result.status.name == "SUCCEEDED"
+    assert result.frame is not None
+    assert result.frame.columns == ["id", "payload"]
+    assert result.frame.schema == {"id": pl.Int64, "payload": pl.String}
+    assert result.frame.rows() == [(1, "alpha"), (2, "beta")]
+
+
+def test_duckdb_adapter_rejects_unsupported_suffix(tmp_path: Path) -> None:
+    unsupported_file = tmp_path / "events.unsupported"
+    unsupported_file.write_text("id,payload\n1,alpha\n")
+
+    from wherewolf.services.catalog_service import CatalogService
+    from wherewolf.services.execution_request_builder import ExecutionRequestBuilder
+
+    catalog = CatalogService(
+        initial_entries=(
+            CatalogEntry(
+                id=uuid4(),
+                alias="events",
+                path=unsupported_file,
+                source_format=SourceFormat.CSV,
+            ),
+        )
+    )
+    request = ExecutionRequestBuilder.build(
+        sql="SELECT * FROM events",
+        source_dialect="duckdb",
+        engine=EngineKind.DUCKDB,
+        catalog_service=catalog,
+    )
+
+    result = EngineRegistry().create(EngineKind.DUCKDB, uuid4()).execute_preview(request)
+
+    assert result.status.name == "FAILED"
+    assert result.error_type == "UnsupportedFormatError"
+    assert result.error_message == "Unsupported source format: .unsupported"
+
+
 def test_registry_create_spark_unavailable_raises(monkeypatch) -> None:
     monkeypatch.setattr("importlib.util.find_spec", lambda name: None)
     reg = EngineRegistry()

@@ -62,6 +62,15 @@ def test_version_flag_does_not_launch_the_gui() -> None:
     assert wherewolf.__version__ in result.stdout
 
 
+def test_version_flag_does_not_construct_the_headless_query_runner(monkeypatch) -> None:
+    def fail() -> None:
+        raise AssertionError("--version must not construct the query runner")
+
+    monkeypatch.setattr("wherewolf.cli.HeadlessQueryRunner", fail, raising=False)
+
+    assert main(["--version"]) == 0
+
+
 def test_main_without_arguments_still_launches_the_desktop_app(monkeypatch) -> None:
     """The version flag must not disturb the ordinary entry point."""
     launched: list[bool] = []

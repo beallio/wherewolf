@@ -1,12 +1,17 @@
+import os
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
+import pytest
+
 import wherewolf
 import wherewolf.cli
 import wherewolf.desktop.application
 from wherewolf.desktop.application import main
+from wherewolf.services.export_destination import ExportFormat
+from wherewolf.services.headless_query import HeadlessQueryError, HeadlessQueryOptions
 
 
 def _project_toml_path() -> str:
@@ -27,7 +32,7 @@ def test_cli_delegates_to_desktop_main(monkeypatch) -> None:
     assert wherewolf.cli.main([]) == 23
 
 
-def test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched(monkeypatch) -> None:
+def test_desktop_main_executes_and_returns_zero_when_exec_monkeypatched(monkeypatch, qapp) -> None:
     created = {"count": 0}
 
     class FakeApp:
@@ -125,3 +130,181 @@ def test_cli_desktop_entry_commands_do_not_launch_the_gui(monkeypatch) -> None:
     monkeypatch.setattr(desktop_entry, "remove_desktop_entry", lambda: ())
 
     assert wherewolf.cli.main(["remove-desktop-entry"]) == 0
+
+
+class _FakeQueryRunner:
+    def __init__(self, destination: Path, error: Exception | None = None) -> None:
+        self.destination = destination
+        self.error = error
+        self.options: HeadlessQueryOptions | None = None
+
+    def run(self, options: HeadlessQueryOptions) -> Path:
+        self.options = options
+        if self.error is not None:
+            raise self.error
+        return self.destination.resolve()
+
+
+@pytest.mark.parametrize("export_format", tuple(ExportFormat))
+def test_query_parses_typed_options_and_passes_them_to_the_runner(
+    monkeypatch, tmp_path: Path, export_format: ExportFormat
+) -> None:
+    destination = tmp_path / f"output.{export_format.value}"
+    runner = _FakeQueryRunner(destination)
+    monkeypatch.setattr(wherewolf.cli, "HeadlessQueryRunner", lambda: runner, raising=False)
+
+    result = wherewolf.cli.main(
+        [
+            "query",
+            "SELECT * FROM sales",
+            "--dataset",
+            "sales=/data/sales.csv",
+            "--dataset",
+            "archive=/data/archive.parquet",
+            "--format",
+            export_format.value,
+            "-o",
+            str(destination),
+            "--force",
+        ]
+    )
+
+    assert result == 0
+    assert runner.options == HeadlessQueryOptions(
+        sql="SELECT * FROM sales",
+        datasets=("sales=/data/sales.csv", "archive=/data/archive.parquet"),
+        export_format=export_format,
+        output=destination,
+        force=True,
+    )
+
+
+def test_query_defaults_to_csv_and_accepts_long_output_option(monkeypatch, tmp_path: Path) -> None:
+    destination = tmp_path / "output.anything"
+    runner = _FakeQueryRunner(destination)
+    monkeypatch.setattr(wherewolf.cli, "HeadlessQueryRunner", lambda: runner, raising=False)
+
+    assert wherewolf.cli.main(["query", "SELECT 1", "--output", str(destination)]) == 0
+
+    assert runner.options is not None
+    assert runner.options.export_format is ExportFormat.CSV
+    assert runner.options.datasets == ()
+    assert runner.options.force is False
+
+
+def test_query_success_prints_one_destination_line(monkeypatch, tmp_path: Path, capsys) -> None:
+    destination = tmp_path / "out.csv"
+    monkeypatch.setattr(
+        wherewolf.cli,
+        "HeadlessQueryRunner",
+        lambda: _FakeQueryRunner(destination),
+        raising=False,
+    )
+
+    assert wherewolf.cli.main(["query", "SELECT 1", "-o", str(destination)]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.out == f"Wrote {destination.resolve()}\n"
+    assert captured.err == ""
+
+
+def test_query_failure_uses_the_stable_stderr_prefix(monkeypatch, tmp_path: Path, capsys) -> None:
+    destination = tmp_path / "out.csv"
+    monkeypatch.setattr(
+        wherewolf.cli,
+        "HeadlessQueryRunner",
+        lambda: _FakeQueryRunner(destination, HeadlessQueryError("invalid dataset")),
+        raising=False,
+    )
+
+    assert wherewolf.cli.main(["query", "SELECT 1", "-o", str(destination)]) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == "wherewolf query: invalid dataset\n"
+
+
+def test_query_unexpected_runner_error_is_not_presented_as_a_user_error(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    destination = tmp_path / "out.csv"
+    monkeypatch.setattr(
+        wherewolf.cli,
+        "HeadlessQueryRunner",
+        lambda: _FakeQueryRunner(destination, RuntimeError("programming error")),
+        raising=False,
+    )
+
+    with pytest.raises(RuntimeError, match="programming error"):
+        wherewolf.cli.main(["query", "SELECT 1", "-o", str(destination)])
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_query_subprocess_reports_multiline_duckdb_errors_on_one_line(tmp_path: Path) -> None:
+    destination = tmp_path / "failure.csv"
+    code = (
+        "from wherewolf.cli import main\n"
+        f"raise SystemExit(main(['query', 'SELECT missing_column', '-o', {str(destination)!r}]))\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.startswith("wherewolf query: ")
+    assert result.stderr.count("\n") == 1
+    assert "COPY (" not in result.stderr
+    assert str(destination.parent) not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "argv",
+    (
+        ("query",),
+        ("query", "SELECT 1"),
+        ("query", "SELECT 1", "--format", "json", "-o", "out.csv"),
+    ),
+)
+def test_query_syntax_errors_retain_argparse_exit_two(argv: tuple[str, ...]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        wherewolf.cli.main(argv)
+
+    assert exc_info.value.code == 2
+
+
+def test_query_subprocess_stays_free_of_qt_and_pyspark_with_unusable_qt(tmp_path: Path) -> None:
+    destination = tmp_path / "constant.csv"
+    code = (
+        "import sys\n"
+        "from wherewolf.cli import main\n"
+        f"exit_code = main(['query', 'SELECT 1 AS answer', '-o', {str(destination)!r}])\n"
+        "if exit_code != 0:\n"
+        "    raise SystemExit(exit_code)\n"
+        "forbidden = [name for name in sys.modules if name.startswith(('PyQt6', 'pyspark'))]\n"
+        "if forbidden:\n"
+        "    raise SystemExit('forbidden modules loaded: ' + ', '.join(forbidden))\n"
+    )
+    environment = os.environ.copy()
+    environment["QT_QPA_PLATFORM"] = "definitely-not-a-platform"
+    environment["QT_QPA_PLATFORM_PLUGIN_PATH"] = "/nonexistent/wherewolf-qt-plugins"
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=environment,
+    )
+
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert result.stdout == f"Wrote {destination.resolve()}\n"
+    assert result.stderr == ""
+    assert destination.read_text() == "answer\n1\n"
