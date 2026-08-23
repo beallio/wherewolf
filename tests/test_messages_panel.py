@@ -101,3 +101,25 @@ def test_messages_panel_retains_parse_translation_and_export_diagnostics(qtbot: 
     assert "parse failed" in messages[0]
     assert "translation failed" in messages[1]
     assert "export failed" in messages[2]
+
+
+def test_messages_panel_only_emits_navigation_targets_for_activated_diagnostics(
+    qtbot: QtBot,
+) -> None:
+    panel = MessagesPanel()
+    qtbot.addWidget(panel)
+    activated: list[object] = []
+    panel.diagnostic_activated.connect(activated.append)
+    target = object()
+
+    panel.add_message("ordinary error", severity="error")
+    panel.add_diagnostic(SqlDiagnostic("bad SQL", "error", 1, 1), navigation_target=target)
+
+    ordinary_item = panel._list_widget.item(0)
+    diagnostic_item = panel._list_widget.item(1)
+    assert ordinary_item is not None
+    assert diagnostic_item is not None
+    panel._list_widget.itemActivated.emit(ordinary_item)
+    assert activated == []
+    panel._list_widget.itemActivated.emit(diagnostic_item)
+    assert activated == [target]

@@ -1,5 +1,6 @@
 import json
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -1282,7 +1283,7 @@ def test_main_window_export_button_writes_selected_parquet_scope(
         truncated=False,
         completed_at=datetime.now(UTC),
     )
-    window._on_query_result_ready(result, request)
+    window._on_query_result_ready(replace(result, request_id=request.request_id), request)
 
     def accept_parquet_preview(dialog: main_window.ExportOptionsDialog) -> int:
         dialog.format_selector.setCurrentIndex(
@@ -1670,6 +1671,140 @@ def test_main_window_routes_editor_diagnostic_to_messages_tab(qtbot) -> None:
     text, severity = window.messages_panel.message_at(0)
     assert "bad SQL" in text
     assert severity == "info"
+
+
+def test_main_window_navigation_activates_exact_duckdb_error_location_in_originating_selection(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    origin = window.editor
+    origin.setText("SELECT 1;\n  SELECT\n    missing_column\n  FROM range(3)")
+    origin.setSelection(1, 2, 3, len("  FROM range(3)"))
+
+    window._on_run_triggered()
+    request = submitted.pop()
+    assert request.executable_sql == "SELECT\n    missing_column\n  FROM range(3)"
+    result = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="BinderException",
+        error_message=(
+            'Binder Error: Referenced column "missing_column" not found!\n\n'
+            "LINE 2:     missing_column\n"
+            "            ^"
+        ),
+    )
+    window._on_query_result_ready(result, request)
+    other = window._new_editor_tab()
+    other.setText("SELECT unrelated")
+    before_activation = other.getCursorPosition()
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert window.current_editor is origin
+    assert origin.getCursorPosition() == (2, 4)
+    assert other.getCursorPosition() == before_activation
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "Parser Error: syntax error at end of input",
+        "Binder Error\n\nLINE 1: SELECT different_column\n        ^",
+    ),
+)
+def test_main_window_withholds_navigation_when_error_location_is_not_exact(
+    qtbot, monkeypatch, message: str
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    window.editor.setText("SELECT missing_column")
+    window._on_run_triggered()
+    request = submitted.pop()
+    cursor_before = window.editor.getCursorPosition()
+    window._on_query_result_ready(
+        QueryResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.FAILED,
+            frame=None,
+            execution_seconds=0.01,
+            preview_row_count=0,
+            total_row_count=None,
+            truncated=False,
+            completed_at=datetime.now(UTC),
+            error_type="BinderException",
+            error_message=message,
+        ),
+        request,
+    )
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert window.editor.getCursorPosition() == cursor_before
+
+
+def test_main_window_rejects_navigation_when_editor_changes_before_result_or_activation(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    editor = window.editor
+    editor.setText("SELECT missing_column")
+    window._on_run_triggered()
+    request = submitted.pop()
+    result = QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="BinderException",
+        error_message="Binder Error\n\nLINE 1: SELECT missing_column\n               ^",
+    )
+    editor.setText("SELECT changed_before_result")
+    cursor_before_result = editor.getCursorPosition()
+    window._on_query_result_ready(result, request)
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+    window.messages_panel._list_widget.itemActivated.emit(item)
+    assert editor.getCursorPosition() == cursor_before_result
+
+    editor.setText("SELECT missing_column")
+    window._on_run_triggered()
+    request = submitted.pop()
+    window._on_query_result_ready(replace(result, request_id=request.request_id), request)
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+    editor.setText("SELECT changed_before_activation")
+    editor.setCursorPosition(0, 0)
+    window.messages_panel._list_widget.itemActivated.emit(item)
+    assert editor.getCursorPosition() == (0, 0)
 
 
 def test_main_window_raises_messages_tab_only_for_failed_query_results(qtbot) -> None:
