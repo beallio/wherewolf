@@ -131,7 +131,7 @@ class _RequestOrigin:
     result_origin: str
     editor_state_id: UUID
     document_snapshot: str
-    fragment_start_offset: int | None
+    fragment_start_codepoint_offset: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -139,6 +139,19 @@ class DiagnosticNavigationTarget:
     editor_state_id: UUID
     diagnostic: SqlDiagnostic
     document_snapshot: str
+
+
+def _scintilla_byte_offset_to_codepoint_offset(document: str, byte_offset: int) -> int | None:
+    """Convert a QScintilla UTF-8 byte position only when it is a character boundary."""
+    if byte_offset < 0:
+        return None
+    document_bytes = document.encode("utf-8")
+    if byte_offset > len(document_bytes):
+        return None
+    try:
+        return len(document_bytes[:byte_offset].decode("utf-8"))
+    except UnicodeDecodeError:
+        return None
 
 
 class FindReplaceDialog(QDialog):
@@ -706,15 +719,20 @@ class MainWindow(QMainWindow):
             state = self._editor_states.get(owner)
             if state is None:
                 return
+            document_snapshot = owner.text()
             adjusted_start = None
             if fragment_start_offset is not None and not direct_saved_query:
-                adjusted_start = fragment_start_offset + len(sql) - len(sql.lstrip())
+                codepoint_offset = _scintilla_byte_offset_to_codepoint_offset(
+                    document_snapshot, fragment_start_offset
+                )
+                if codepoint_offset is not None:
+                    adjusted_start = codepoint_offset + len(sql) - len(sql.lstrip())
             self._result_origin_by_request_id[request.request_id] = _RequestOrigin(
                 editor=owner,
                 result_origin=result_origin,
                 editor_state_id=state.navigation_id,
-                document_snapshot=owner.text(),
-                fragment_start_offset=adjusted_start,
+                document_snapshot=document_snapshot,
+                fragment_start_codepoint_offset=adjusted_start,
             )
 
     def _save_current_query(self, _checked: bool = False) -> None:
@@ -874,7 +892,7 @@ class MainWindow(QMainWindow):
             origin is None
             or result.status is not ExecutionStatus.FAILED
             or origin.result_origin != "editor"
-            or origin.fragment_start_offset is None
+            or origin.fragment_start_codepoint_offset is None
             or request.engine is not EngineKind.DUCKDB
             or request.source_dialect.casefold() != "duckdb"
             or request.original_sql != request.executable_sql
@@ -908,12 +926,12 @@ class MainWindow(QMainWindow):
             + location.column
             - 1
         )
-        absolute_offset = origin.fragment_start_offset + relative_offset
+        absolute_offset = origin.fragment_start_codepoint_offset + relative_offset
         if (
             absolute_offset < 0
             or absolute_offset >= len(origin.document_snapshot)
             or origin.document_snapshot[
-                origin.fragment_start_offset : origin.fragment_start_offset
+                origin.fragment_start_codepoint_offset : origin.fragment_start_codepoint_offset
                 + len(request.executable_sql)
             ]
             != request.executable_sql

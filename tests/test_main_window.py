@@ -1719,6 +1719,219 @@ def test_main_window_navigation_activates_exact_duckdb_error_location_in_origina
     assert other.getCursorPosition() == before_activation
 
 
+def test_main_window_navigation_converts_selected_scintilla_bytes_to_codepoints(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    origin = window.editor
+    origin.setText("é\nAAAAA")
+    origin.setSelection(1, 0, 1, 4)
+
+    window._on_run_triggered()
+
+    request = submitted.pop()
+    assert request.executable_sql == "AAAA"
+    window._on_query_result_ready(
+        QueryResult(
+            request_id=request.request_id,
+            status=ExecutionStatus.FAILED,
+            frame=None,
+            execution_seconds=0.01,
+            preview_row_count=0,
+            total_row_count=None,
+            truncated=False,
+            completed_at=datetime.now(UTC),
+            error_type="ParserException",
+            error_message="Parser Error\n\nLINE 1: AAAA\n        ^",
+        ),
+        request,
+    )
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert origin.getCursorPosition() == (1, 0)
+
+
+def _failed_result_for_navigation(
+    request: ExecutionRequest,
+    message: str = "Binder Error\n\nLINE 1: SELECT missing_column\n               ^",
+) -> QueryResult:
+    return QueryResult(
+        request_id=request.request_id,
+        status=ExecutionStatus.FAILED,
+        frame=None,
+        execution_seconds=0.01,
+        preview_row_count=0,
+        total_row_count=None,
+        truncated=False,
+        completed_at=datetime.now(UTC),
+        error_type="BinderException",
+        error_message=message,
+    )
+
+
+def _assert_message_activation_leaves_editor_unchanged(
+    window: MainWindow, editor: SqlEditor
+) -> None:
+    tab_before = window.editor_tabs.currentIndex()
+    cursor_before = editor.getCursorPosition()
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert window.editor_tabs.currentIndex() == tab_before
+    assert editor.getCursorPosition() == cursor_before
+
+
+def test_main_window_withholds_navigation_for_translated_parameterized_and_multi_statement_queries(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    editor = window.editor
+
+    editor.setText("SELECT missing_column")
+    window.input_dialect_selector.setCurrentIndex(
+        window.input_dialect_selector.findData("postgres")
+    )
+    window._on_run_triggered()
+    translated_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(translated_request), translated_request
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    window.input_dialect_selector.setCurrentIndex(window.input_dialect_selector.findData("duckdb"))
+    editor.setText("SELECT ?")
+    window._execute_sql(
+        "SELECT ?",
+        original_sql="SELECT :value",
+        parameters=("value",),
+        editor=editor,
+        fragment_start_offset=0,
+    )
+    parameterized_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(
+            parameterized_request,
+            "Binder Error\n\nLINE 1: SELECT ?\n        ^",
+        ),
+        parameterized_request,
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    editor.setText("SELECT 1; SELECT missing_column")
+    window._execute_sql(
+        editor.text(),
+        editor=editor,
+        fragment_start_offset=0,
+    )
+    multi_statement_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(
+            multi_statement_request,
+            "Binder Error\n\nLINE 1: SELECT 1; SELECT missing_column\n        ^",
+        ),
+        multi_statement_request,
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+
+def test_main_window_withholds_navigation_for_saved_spark_and_ambiguous_error_sources(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    saved_query = store.save_query(name="Direct", description="", sql="SELECT missing_column")
+    window = MainWindow(saved_query_store=store)
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    editor = window.editor
+    editor.setText("SELECT missing_column")
+
+    window._run_saved_query(saved_query)
+    saved_request = submitted.pop()
+    window._on_query_result_ready(_failed_result_for_navigation(saved_request), saved_request)
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    window.engine_selector.setCurrentIndex(window.engine_selector.findData(EngineKind.SPARK))
+    window.input_dialect_selector.setCurrentIndex(window.input_dialect_selector.findData("spark"))
+    window._on_run_triggered()
+    spark_request = submitted.pop()
+    assert spark_request.engine is EngineKind.SPARK
+    window._on_query_result_ready(_failed_result_for_navigation(spark_request), spark_request)
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    window.engine_selector.setCurrentIndex(window.engine_selector.findData(EngineKind.DUCKDB))
+    window.input_dialect_selector.setCurrentIndex(window.input_dialect_selector.findData("duckdb"))
+    editor.setText("\tSELECT missing_column")
+    window._on_run_triggered()
+    tab_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(
+            tab_request,
+            "Binder Error\n\nLINE 1: \tSELECT missing_column\n        ^",
+        ),
+        tab_request,
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+    editor.setText("SELECT émissing_column")
+    window._on_run_triggered()
+    unicode_request = submitted.pop()
+    window._on_query_result_ready(
+        _failed_result_for_navigation(
+            unicode_request,
+            "Binder Error\n\nLINE 1: SELECT émissing_column\n                 ^",
+        ),
+        unicode_request,
+    )
+    _assert_message_activation_leaves_editor_unchanged(window, editor)
+
+
+def test_main_window_withholds_navigation_after_the_originating_tab_closes(
+    qtbot, monkeypatch
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    submitted: list[ExecutionRequest] = []
+    monkeypatch.setattr(
+        window.query_controller, "execute", lambda request: submitted.append(request) or True
+    )
+    origin = window.editor
+    origin.setText("SELECT missing_column")
+    window._on_run_triggered()
+    request = submitted.pop()
+    window._on_query_result_ready(_failed_result_for_navigation(request), request)
+    item = window.messages_panel._list_widget.item(0)
+    assert item is not None
+
+    other = window._new_editor_tab()
+    other.setText("SELECT unrelated")
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(origin))
+    window._close_current_editor_tab()
+    other.setCursorPosition(0, 0)
+
+    window.messages_panel._list_widget.itemActivated.emit(item)
+
+    assert window.current_editor is other
+    assert other.getCursorPosition() == (0, 0)
+
+
 @pytest.mark.parametrize(
     "message",
     (

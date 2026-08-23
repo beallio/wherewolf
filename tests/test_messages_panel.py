@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor
 from pytestqt.qtbot import QtBot
 
@@ -103,7 +104,7 @@ def test_messages_panel_retains_parse_translation_and_export_diagnostics(qtbot: 
     assert "export failed" in messages[2]
 
 
-def test_messages_panel_only_emits_navigation_targets_for_activated_diagnostics(
+def test_messages_panel_only_emits_navigation_targets_for_mouse_and_keyboard_activated_diagnostics(
     qtbot: QtBot,
 ) -> None:
     panel = MessagesPanel()
@@ -119,7 +120,29 @@ def test_messages_panel_only_emits_navigation_targets_for_activated_diagnostics(
     diagnostic_item = panel._list_widget.item(1)
     assert ordinary_item is not None
     assert diagnostic_item is not None
-    panel._list_widget.itemActivated.emit(ordinary_item)
+    panel.resize(400, 300)
+    panel.show()
+    qtbot.wait(10)
+    panel._list_widget.setCurrentItem(ordinary_item)
+    qtbot.keyClick(panel._list_widget, Qt.Key.Key_Return)
     assert activated == []
-    panel._list_widget.itemActivated.emit(diagnostic_item)
+    panel._list_widget.setCurrentItem(diagnostic_item)
+    qtbot.keyClick(panel._list_widget, Qt.Key.Key_Return)
+    assert activated == [target]
+
+    qtbot.wait(10)
+    activated.clear()
+    qtbot.mouseClick(
+        panel._list_widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=panel._list_widget.visualItemRect(ordinary_item).center(),
+    )
+    assert panel._list_widget.currentItem() is ordinary_item
+    qtbot.mouseClick(
+        panel._list_widget.viewport(),
+        Qt.MouseButton.LeftButton,
+        pos=panel._list_widget.visualItemRect(diagnostic_item).center(),
+    )
+
+    assert panel._list_widget.currentItem() is diagnostic_item
     assert activated == [target]

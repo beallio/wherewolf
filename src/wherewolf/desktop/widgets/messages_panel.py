@@ -1,6 +1,6 @@
 """Widget for displaying execution errors, diagnostics, and system messages with severity roles."""
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QBrush
 from PyQt6.QtWidgets import (
     QListWidget,
@@ -29,7 +29,9 @@ class MessagesPanel(QWidget):
 
         self._list_widget = QListWidget(self)
         self._list_widget.setObjectName("messages_list")
+        self._recently_activated_item: QListWidgetItem | None = None
         self._list_widget.itemActivated.connect(self._on_item_activated)
+        self._list_widget.itemClicked.connect(self._on_item_activated)
         layout.addWidget(self._list_widget)
         self.error_details_toggle = QToolButton(self)
         self.error_details_toggle.setObjectName("error_details_toggle")
@@ -113,6 +115,13 @@ class MessagesPanel(QWidget):
         item.setForeground(QBrush(message_severity_color(severity, self.palette())))
 
     def _on_item_activated(self, item: QListWidgetItem) -> None:
+        if item is self._recently_activated_item:
+            return
         navigation_target = item.data(Qt.ItemDataRole.UserRole + 1)
         if navigation_target is not None:
+            self._recently_activated_item = item
+            QTimer.singleShot(0, self._clear_recent_activation)
             self.diagnostic_activated.emit(navigation_target)
+
+    def _clear_recent_activation(self) -> None:
+        self._recently_activated_item = None

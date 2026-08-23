@@ -22,13 +22,46 @@
     "DuckDB LINE/caret parser accepts exact parser, binder, and catalog excerpts and rejects incomplete or elided excerpts.",
     "SqlEditor public diagnostic navigation clamps coordinates, safely declines ambiguous Unicode positions, and clears on edit.",
     "Messages activation emits only stored navigation payloads.",
-    "MainWindow maps selected-statement errors to the originating tab and rejects positionless, mismatched, and stale targets."
+    "MainWindow maps selected-statement errors to the originating tab and rejects positionless, mismatched, and stale targets.",
+    "Selected SQL following a non-ASCII character converts QScintilla UTF-8 byte offsets before source navigation.",
+    "Mouse and keyboard Messages activation use real QListWidget input, while translated, parameterized, multi-statement, saved-query, Spark, tab-expanded, Unicode-ambiguous, and closed-tab errors remain non-navigable."
   ],
   "design_decisions": [
     "Navigation data remains desktop-only; ExecutionRequest and QueryResult were not changed.",
     "The parser and request mapping fail closed for missing carets, elision, tabs, Unicode before the target, changed documents, translated SQL, parameters, multi-statement requests, saved-query execution, and non-DuckDB engines.",
-    "The request origin records the source snapshot and adjusts the editor selection start for ExecutionRequestBuilder whitespace stripping."
+    "The request origin records the source snapshot and adjusts the editor selection start for ExecutionRequestBuilder whitespace stripping.",
+    "A request origin converts the selected QScintilla UTF-8 byte offset to a Python codepoint offset only at a valid UTF-8 boundary; conversion failure leaves navigation unavailable.",
+    "Messages treats a real list-item mouse click and keyboard activation as navigation input, while a zero-delay guard prevents one platform activation gesture from emitting twice."
   ],
+  "review_round_02": {
+    "review_note": "docs/review/error-position-navigation-review-01.md",
+    "red_evidence": [
+      {
+        "command": "./run.sh uv run pytest tests/test_messages_panel.py tests/test_main_window.py -q --no-cov -k 'navigation or activated'",
+        "exit_code": 1,
+        "tally": "2 failed, 7 passed, 137 deselected in 0.71s",
+        "evidence": "The selected-fragment UTF-8 regression landed on the second A instead of the first; the real mouse activation test emitted no payload."
+      }
+    ],
+    "requested_negative_controls": [
+      "translated SQL",
+      "bound parameters",
+      "multi-statement execution",
+      "direct saved-query execution",
+      "Spark",
+      "tab-expanded source excerpts",
+      "Unicode column ambiguity",
+      "a closed originating tab",
+      "positionless/mismatched and stale-document errors",
+      "ordinary non-navigable Messages items"
+    ],
+    "failure_recovery": {
+      "command": "commit-hook ty check .",
+      "exit_code": 1,
+      "evidence": "Four no-matching-overload diagnostics identified direct static QTest calls in the new input test.",
+      "resolution": "Replaced them with the typed pytest-qt QtBot input helpers; focused tests and ty then passed."
+    }
+  },
   "verification": [
     {
       "command": "./run.sh uv run pytest tests/test_execution_diagnostics.py -q --no-cov",
@@ -64,6 +97,26 @@
       "command": "scripts/orchestration/run-quality-gates",
       "exit_code": 0,
       "tally": "ruff check and format passed; ty passed; 678 passed, 7 deselected in 18.73s; no deleted review notes"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_execution_diagnostics.py tests/test_sql_editor.py tests/test_messages_panel.py tests/test_main_window.py -q --no-cov",
+      "exit_code": 0,
+      "tally": "185 passed in 5.38s"
+    },
+    {
+      "command": "./run.sh uv run pytest tests/test_messages_panel.py tests/test_main_window.py -q --no-cov -k 'only_emits_navigation_targets or withholds_navigation or rejects_navigation'",
+      "exit_code": 0,
+      "tally": "7 passed, 139 deselected in 0.35s"
+    },
+    {
+      "command": "./run.sh uv run ruff check . --fix && ./run.sh uv run ruff format . && ./run.sh uv run ty check src/ && scripts/orchestration/run-quality-gates && scripts/orchestration/check-review-notes-not-deleted",
+      "exit_code": 0,
+      "tally": "ruff fixed one lint issue and reformatted one file; ty passed; quality gates passed with 682 passed, 7 deselected in 20.66s; no review notes deleted"
+    },
+    {
+      "command": "./run.sh uv run ruff check . --fix && ./run.sh uv run ruff format . && ./run.sh uv run ty check . && scripts/orchestration/run-quality-gates && scripts/orchestration/check-review-notes-not-deleted",
+      "exit_code": 0,
+      "tally": "ruff and whole-tree ty passed; final quality gates passed with 682 passed, 7 deselected in 18.89s; no review notes deleted"
     }
   ],
   "deferred_cases": [
