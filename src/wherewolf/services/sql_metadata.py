@@ -204,7 +204,9 @@ def get_dialect_functions(dialect: str) -> tuple[SqlFunctionInfo, ...]:
     if norm == "duckdb":
         return _load_duckdb_catalog().all_functions
     if norm == "spark":
-        return _SPARK_FUNCTIONS
+        from wherewolf.services.spark_function_metadata import current_spark_function_metadata
+
+        return current_spark_function_metadata().all_functions
     return _COMMON_FUNCTIONS
 
 
@@ -215,7 +217,9 @@ def get_dialect_expression_functions(dialect: str) -> tuple[SqlFunctionInfo, ...
     if norm == "duckdb":
         return _load_duckdb_catalog().expression
     if norm == "spark":
-        return _SPARK_FUNCTIONS
+        from wherewolf.services.spark_function_metadata import current_spark_function_metadata
+
+        return current_spark_function_metadata().expression
     return _COMMON_FUNCTIONS
 
 
@@ -226,7 +230,9 @@ def get_dialect_table_functions(dialect: str) -> tuple[SqlFunctionInfo, ...]:
     if norm == "duckdb":
         return _load_duckdb_catalog().table
     if norm == "spark":
-        return ()
+        from wherewolf.services.spark_function_metadata import current_spark_function_metadata
+
+        return current_spark_function_metadata().table
     return ()
 
 

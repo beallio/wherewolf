@@ -9,16 +9,29 @@
     "src/wherewolf/services/completion_context.py",
     "src/wherewolf/services/completion_symbols.py",
     "src/wherewolf/services/sql_metadata.py",
+    "src/wherewolf/services/spark_function_metadata.py",
+    "src/wherewolf/execution/spark_runtime.py",
+    "src/wherewolf/execution/spark_engine.py",
     "tests/test_completion_context.py",
-    "tests/test_completion_symbols.py"
+    "tests/test_completion_symbols.py",
+    "tests/test_sql_metadata.py",
+    "tests/test_spark_function_metadata.py",
+    "tests/test_import_boundaries.py",
+    "tests/test_spark_engine.py",
+    "tests/test_spark_engine_logic.py",
+    "tests/test_spark_engine_optimization.py",
+    "tests/test_spark_runtime.py"
   ],
   "tests_added": [
     "tests/test_completion_matching.py",
-    "tests/test_completion_symbols.py"
+    "tests/test_completion_symbols.py",
+    "tests/test_spark_function_metadata.py",
+    "tests/test_spark_runtime.py"
   ],
   "design_decisions": [
     "The implementation starts from dev after the supplied plan is committed as the first feature-branch commit.",
-    "Project tooling runs through ./run.sh and writes environments and caches under /tmp/wherewolf."
+    "Project tooling runs through ./run.sh and writes environments and caches under /tmp/wherewolf.",
+    "Spark execution and metadata obtain separate child sessions from one lock-protected root context; neither request cleanup nor metadata discovery stops that root."
   ],
   "results": {
     "baseline_commit": "5aecdf558764d905e1f5239aa8a00ab1efd1c6f2",
@@ -51,6 +64,15 @@
       "red_result": "collection failed because get_dialect_table_functions did not exist",
       "green_command": "./run.sh uv run pytest -q --no-cov tests/test_sql_metadata.py",
       "green_result": "7 passed in 0.10s"
+    },
+    {
+      "task": 5,
+      "red_command": "./run.sh uv run pytest -q --no-cov tests/test_spark_function_metadata.py tests/test_import_boundaries.py",
+      "red_result": "collection failed with ModuleNotFoundError: wherewolf.services.spark_function_metadata",
+      "green_command": "./run.sh uv run pytest -q --no-cov tests/test_spark_function_metadata.py tests/test_import_boundaries.py tests/test_spark_engine.py tests/test_spark_engine_logic.py tests/test_sql_metadata.py",
+      "green_result": "27 passed, 6 deselected in 1.59s",
+      "spark_live_command": "./run.sh uv run pytest -q --no-cov -m spark tests/test_spark_function_metadata.py -v",
+      "spark_live_result": "2 passed, 3 deselected in 6.63s; PySpark 4.2.0, OpenJDK 25.0.4; 549 accepted functions (540 expression, 14 table)"
     }
   ],
   "final_quality_gates": null,
