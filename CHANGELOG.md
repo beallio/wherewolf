@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.11.0] - 2026-08-24 — Find SQL completions by fuzzy match, including aliases and functions
+
 ### Added
 
 - SQL completion now supports deterministic case-insensitive fuzzy matching for catalog names,
