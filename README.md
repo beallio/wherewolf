@@ -54,7 +54,10 @@ uv tool install 'wherewolf[spark]'
 ```
 
 Spark runs locally as `local[1]` with bounded driver memory. It is not a remote- or cluster-Spark
-client.
+client. When you select Spark, completion immediately uses a curated set of common functions and
+then discovers the local runtime's built-in SQL functions in the background. That discovery can
+start the bounded local JVM before your first Spark query; DuckDB-only startup still does not
+import PySpark or require Java.
 
 ### SQL source dialects
 
@@ -125,6 +128,9 @@ this mode.
 3. Write SQL in the editor and press **Ctrl+Return** to run the selection or current statement.
    **Ctrl+Space** opens completion, and **Ctrl+Shift+F** formats SQL. On macOS, use the platform's
    equivalent shortcut conventions.
+   Completion is case-insensitive and can match a prefix, token initials, or the middle of a
+   catalog alias, visible SQL alias, column, or function: for example, `sales` finds
+   `monthly_sales`, `dt` finds `DATE_TRUNC`, and `trunc` also finds `DATE_TRUNC`.
 4. Press **Ctrl+.** to request cancellation of the active query. The status bar and Messages tab
    report state, timing, preview rows, truncation, and errors.
    For an unmodified, single DuckDB statement from this editor, an engine error that includes an

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- SQL completion now supports deterministic case-insensitive fuzzy matching for catalog names,
+  visible aliases, columns, and local function metadata. Spark starts with curated functions and
+  discovers its local built-in catalog asynchronously after its execution engine is selected.
+
 ## [0.10.3] - 2026-08-22 — Count every row, page through results, export anywhere, and jump to errors
 
 ### Added

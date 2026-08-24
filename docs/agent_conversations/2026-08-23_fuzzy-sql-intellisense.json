@@ -4,6 +4,9 @@
   "files_modified": [
     "docs/plans/2026-08-23_fuzzy-sql-intellisense.md",
     "docs/agent_conversations/2026-08-23_fuzzy-sql-intellisense.json",
+    "docs/specs/sql-completion.md",
+    "README.md",
+    "CHANGELOG.md",
     "src/wherewolf/services/completion_matching.py",
     "tests/test_completion_matching.py",
     "src/wherewolf/services/completion_context.py",
@@ -111,9 +114,18 @@
       "green_result": "221 passed in 7.70s; the background worker start path and bounded late-result shutdown use fakes without starting Spark"
     }
   ],
-  "final_quality_gates": null,
+  "final_quality_gates": {
+    "focused_completion_suite": "289 passed, 2 deselected in 8.10s",
+    "direct_service_acceptance": "passed: fuzzy catalog, alias, column, expression-function, and table-function cases",
+    "qscintilla_keyboard_activation": "4 passed, 37 deselected in 0.71s",
+    "default_metadata_and_import_isolation": "16 passed, 2 deselected in 1.85s",
+    "live_spark_metadata": "2 passed, 3 deselected in 7.00s with PySpark 4.2.0; default locked environment restored",
+    "quality_gates": "866 passed, 9 deselected in 27.30s; Ruff, formatting, ty, and review-note integrity passed; total coverage 91%"
+  },
   "mutation_results": [],
   "deferred_and_unverified": [
-    "Manual desktop and live Spark checks are recorded at closeout after their automated implementation tasks are complete."
+    "Manual desktop checks requiring a real display, including popup placement, colors, truncation, accessibility, and mouse activation, were not run in this headless session.",
+    "The live Spark catalog was verified automatically with the lockfile PySpark 4.2.0 runtime, but its manual engine-switch UI flow was not exercised on a real desktop.",
+    "Remote Spark Connect, cluster catalogs, persistent user UDFs/macros, optional DuckDB extensions, vendor-specific function catalogs, and deeply correlated SQL scopes remain out of scope as specified by the plan."
   ]
 }
