@@ -523,6 +523,27 @@ def test_complete_does_not_leak_ctes_tables_or_columns_from_another_statement() 
     assert "visible_new" in {item.label for item in column_items}
 
 
+@pytest.mark.parametrize("trailing_fragment", ["", "\n  ", "\r\n\t"])
+def test_complete_does_not_leak_completed_statement_symbols_into_empty_fragment(
+    trailing_fragment: str,
+) -> None:
+    catalog = (
+        _make_catalog_entry("old_table", (ColumnSchema("secret_old", "VARCHAR"),)),
+        _make_catalog_entry("new_table", (ColumnSchema("visible_new", "VARCHAR"),)),
+    )
+    completed_statement = (
+        "WITH old_cte AS (SELECT * FROM old_table) "
+        "SELECT old_alias.secret_old FROM old_table AS old_alias;"
+    )
+    sql = f"{completed_statement}{trailing_fragment}"
+
+    items = SqlCompletionService().complete(CompletionContext(sql, len(sql), "duckdb", catalog))
+    labels = {item.label for item in items}
+
+    assert {"old_cte", "old_alias", "secret_old"}.isdisjoint(labels)
+    assert "new_table" in labels
+
+
 def test_complete_keeps_cte_and_outer_query_aliases_in_their_own_scopes() -> None:
     catalog = (
         _make_catalog_entry("source_table", (ColumnSchema("source_id", "INTEGER"),)),

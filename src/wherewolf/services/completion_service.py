@@ -270,13 +270,17 @@ class SqlCompletionService:
         """Return the one statement that may contribute completion candidates."""
 
         statement_service = StatementService()
-        selection = statement_service.find_statement(sql, cursor_offset)
-        if selection.text is None and cursor_offset == len(sql) and cursor_offset:
-            selection = statement_service.find_statement(sql, cursor_offset - 1)
+        bounded_cursor = max(0, min(cursor_offset, len(sql)))
+        selection = statement_service.find_statement(sql, bounded_cursor)
         if selection.text is None:
-            return sql, max(0, min(cursor_offset, len(sql)))
+            fragment_start = 0
+            for statement in statement_service.split_statements(sql):
+                if statement.has_trailing_semicolon and statement.end_offset <= bounded_cursor:
+                    fragment_start = statement.end_offset
+            statement_sql = sql[fragment_start:bounded_cursor]
+            return statement_sql, len(statement_sql)
 
-        relative_cursor = cursor_offset - selection.start_offset
+        relative_cursor = bounded_cursor - selection.start_offset
         statement_sql = sql[selection.start_offset : selection.end_offset]
         return statement_sql, max(0, min(relative_cursor, len(statement_sql)))
 
