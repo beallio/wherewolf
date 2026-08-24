@@ -1644,6 +1644,29 @@ def test_engine_selector_synchronizes_completion_dialect_across_editor_tabs(
     third = window._new_editor_tab()
     assert third._completion_dialect == "spark"
 
+    class CompletionSpy:
+        def __init__(self) -> None:
+            self.contexts: list[Any] = []
+
+        def call_tip(self, _context: Any) -> None:
+            return None
+
+        def complete(self, context: Any) -> tuple[Any, ...]:
+            self.contexts.append(context)
+            return ()
+
+    completion_spy = CompletionSpy()
+    for editor in (first, second, third):
+        editor._completion_service = cast(Any, completion_spy)
+        editor._completion_adapter._service = cast(Any, completion_spy)
+        editor.setText("SELECT EXP")
+        editor.setCursorPosition(0, len("SELECT EXP"))
+    completion_spy.contexts.clear()
+
+    for editor in (first, second, third):
+        editor.request_completion(forced=True)
+    assert [context.dialect for context in completion_spy.contexts] == ["spark", "spark", "spark"]
+
     window.engine_selector.setCurrentIndex(window.engine_selector.findData(EngineKind.DUCKDB))
     assert all(editor._completion_dialect == "duckdb" for editor in window._editor_states)
 
