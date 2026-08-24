@@ -120,9 +120,57 @@
     "qscintilla_keyboard_activation": "4 passed, 37 deselected in 0.71s",
     "default_metadata_and_import_isolation": "16 passed, 2 deselected in 1.85s",
     "live_spark_metadata": "2 passed, 3 deselected in 7.00s with PySpark 4.2.0; default locked environment restored",
-    "quality_gates": "866 passed, 9 deselected in 27.30s; Ruff, formatting, ty, and review-note integrity passed; total coverage 91%"
+    "quality_gates": "866 passed, 9 deselected in 27.30s; Ruff, formatting, ty, and review-note integrity passed; total coverage 91%",
+    "multi_tab_completion_context_coverage": "1 passed in 0.45s; the existing selector test now observes three real completion contexts from two existing editors and a new Spark tab",
+    "post_coverage_commit_gate": "866 passed, 9 deselected in 26.41s; the pre-commit hook also passed Ruff, formatting, ty across the repository, pytest, and TDD checks"
   },
-  "mutation_results": [],
+  "mutation_results": [
+    {
+      "mutation": "prefix-only matcher",
+      "production_file": "src/wherewolf/services/completion_matching.py",
+      "failing_nodes": [
+        "tests/test_completion_matching.py::test_match_identifier_classifies_documented_match_order",
+        "tests/test_completion_matching.py::test_match_identifier_is_case_insensitive_and_rejects_weak_matches",
+        "tests/test_completion_matching.py::test_match_identifier_bounds_ordered_subsequence_span"
+      ]
+    },
+    {
+      "mutation": "no SELECT expression aliases",
+      "production_file": "src/wherewolf/services/completion_symbols.py",
+      "failing_nodes": [
+        "tests/test_completion_service.py::test_complete_limits_alias_visibility_to_valid_expression_clauses"
+      ]
+    },
+    {
+      "mutation": "replace SCI_USERLISTSHOW with SCI_AUTOCSHOW",
+      "production_file": "src/wherewolf/desktop/widgets/completion_adapter.py",
+      "failing_nodes": [
+        "tests/test_sql_editor.py::test_sql_editor_user_list_activation_replaces_fuzzy_prefix_once"
+      ]
+    },
+    {
+      "mutation": "curated-only DuckDB metadata",
+      "production_file": "src/wherewolf/services/sql_metadata.py",
+      "failing_nodes": [
+        "tests/test_sql_metadata.py::test_duckdb_metadata_includes_dynamic_expression_and_table_functions"
+      ]
+    },
+    {
+      "mutation": "curated-only Spark metadata normalization",
+      "production_file": "src/wherewolf/services/spark_function_metadata.py",
+      "failing_nodes": [
+        "tests/test_spark_function_metadata.py::test_spark_metadata_loader_uses_one_child_session_and_caches_result"
+      ]
+    },
+    {
+      "mutation": "hardcode completion context dialect to DuckDB",
+      "production_file": "src/wherewolf/desktop/widgets/sql_editor.py",
+      "failing_nodes": [
+        "tests/test_sql_editor.py::test_sql_editor_completion_dialect_defaults_to_duckdb_and_can_switch",
+        "tests/test_main_window.py::test_engine_selector_synchronizes_completion_dialect_across_editor_tabs"
+      ]
+    }
+  ],
   "deferred_and_unverified": [
     "Manual desktop checks requiring a real display, including popup placement, colors, truncation, accessibility, and mouse activation, were not run in this headless session.",
     "The live Spark catalog was verified automatically with the lockfile PySpark 4.2.0 runtime, but its manual engine-switch UI flow was not exercised on a real desktop.",
