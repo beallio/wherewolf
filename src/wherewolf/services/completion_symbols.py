@@ -296,6 +296,37 @@ def _expression_aliases_from_select(
     return tuple(aliases)
 
 
+def _nearest_select_ancestor(expression: exp.Expression) -> exp.Select | None:
+    current = expression.parent
+    while current is not None:
+        if isinstance(current, exp.Select):
+            return current
+        current = current.parent
+    return None
+
+
+def _select_for_scope(
+    parsed: exp.Expression, statement_sql: str, scope: _SelectScope
+) -> exp.Select | None:
+    """Return the parsed SELECT whose direct identifiers occupy *scope*.
+
+    SQLGlot visits the outer SELECT before SELECTs inside CTEs, whereas the lexical scanner
+    encounters a CTE SELECT first.  Source offsets and AST ancestry make the association
+    independent of either traversal order.
+    """
+
+    for select in parsed.find_all(exp.Select):
+        for identifier in select.find_all(exp.Identifier):
+            if _nearest_select_ancestor(identifier) is not select:
+                continue
+            identifier_start = identifier.meta.get("start")
+            if not isinstance(identifier_start, int):
+                continue
+            if _scope_for_cursor(statement_sql, identifier_start) == scope:
+                return select
+    return None
+
+
 def _lexical_table_aliases(masked_sql: str) -> tuple[TableAlias, ...]:
     aliases: list[TableAlias] = []
     pattern = re.compile(
@@ -360,11 +391,8 @@ def collect_symbols(sql: str, cursor_offset: int, dialect: str) -> CompletionSym
 
     try:
         parsed = sqlglot.parse_one(statement_sql, read=dialect)
-        selects = tuple(parsed.find_all(exp.Select)) if parsed is not None else ()
-        scopes, _ = _scan_select_scopes(statement_sql, relative_cursor)
-        select_index = scopes.index(scope)
-        if select_index < len(selects):
-            select = selects[select_index]
+        select = _select_for_scope(parsed, statement_sql, scope) if parsed is not None else None
+        if select is not None:
             return CompletionSymbols(
                 table_aliases=_table_aliases_from_select(select),
                 expression_aliases=_expression_aliases_from_select(select, relative_cursor),

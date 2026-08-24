@@ -24,6 +24,7 @@ from wherewolf.services.sql_metadata import (
     get_dialect_table_functions,
     lookup_function_info,
 )
+from wherewolf.services.statement_service import StatementService
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,7 +81,10 @@ class SqlCompletionService:
     """Provides SQL code completion candidates given a completion context."""
 
     def complete(self, context: CompletionContext) -> tuple[CompletionItem, ...]:
-        cursor_ctx = detect_context(context.sql, context.cursor_offset)
+        statement_sql, statement_cursor = self._current_statement(
+            context.sql, context.cursor_offset
+        )
+        cursor_ctx = detect_context(statement_sql, statement_cursor)
         if cursor_ctx.kind == CursorContextKind.SUPPRESSED:
             return ()
 
@@ -88,9 +92,9 @@ class SqlCompletionService:
         prefix = cursor_ctx.prefix
         dialect = context.dialect
 
-        ctes = self._find_ctes(context.sql, dialect, context.catalog)
+        ctes = self._find_ctes(statement_sql, dialect, context.catalog)
         cte_map = {cte.name.lower(): cte for cte in ctes}
-        symbols = collect_symbols(context.sql, context.cursor_offset, dialect)
+        symbols = collect_symbols(statement_sql, statement_cursor, dialect)
         table_aliases = {alias.name.casefold(): alias.relation for alias in symbols.table_aliases}
 
         if cursor_ctx.kind == CursorContextKind.TABLE_REF:
@@ -143,7 +147,7 @@ class SqlCompletionService:
                     target_table = table_aliases.get(
                         qual_lower
                     ) or self._resolve_qualifier_to_table(
-                        context.sql, context.cursor_offset, qualifier, dialect
+                        statement_sql, statement_cursor, qualifier, dialect
                     )
                     if target_table:
                         entry = self._find_catalog_entry(context.catalog, target_table)
@@ -200,7 +204,7 @@ class SqlCompletionService:
                         )
                     )
 
-            visible_relations = list(self._find_tables_in_statement(context.sql, dialect))
+            visible_relations = list(self._find_tables_in_statement(statement_sql, dialect))
             visible_relations.extend(alias.relation for alias in symbols.table_aliases)
             for tbl in dict.fromkeys(visible_relations):
                 tbl_lower = tbl.casefold()
@@ -260,6 +264,21 @@ class SqlCompletionService:
                 )
 
         return self._rank_candidates(candidates, prefix)
+
+    @staticmethod
+    def _current_statement(sql: str, cursor_offset: int) -> tuple[str, int]:
+        """Return the one statement that may contribute completion candidates."""
+
+        statement_service = StatementService()
+        selection = statement_service.find_statement(sql, cursor_offset)
+        if selection.text is None and cursor_offset == len(sql) and cursor_offset:
+            selection = statement_service.find_statement(sql, cursor_offset - 1)
+        if selection.text is None:
+            return sql, max(0, min(cursor_offset, len(sql)))
+
+        relative_cursor = cursor_offset - selection.start_offset
+        statement_sql = sql[selection.start_offset : selection.end_offset]
+        return statement_sql, max(0, min(relative_cursor, len(statement_sql)))
 
     @staticmethod
     def _visible_expression_aliases(

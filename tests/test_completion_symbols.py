@@ -71,3 +71,22 @@ def test_collect_symbols_excludes_later_select_aliases() -> None:
     symbols = collect_symbols(sql, cursor_offset, "duckdb")
 
     assert [symbol.name for symbol in symbols.expression_aliases] == ["earlier"]
+
+
+def test_collect_symbols_matches_cte_and_outer_select_scopes_by_source_position() -> None:
+    sql = """WITH cte AS (
+        SELECT source_id AS cte_alias FROM source_table s WHERE source_id > 0
+    )
+    SELECT outer_id AS outer_alias FROM outer_table o ORDER BY outer_alias"""
+
+    inner_symbols = collect_symbols(sql, sql.index("WHERE ") + len("WHERE "), "duckdb")
+    outer_symbols = collect_symbols(sql, len(sql), "duckdb")
+
+    assert [(symbol.name, symbol.relation) for symbol in inner_symbols.table_aliases] == [
+        ("s", "source_table")
+    ]
+    assert [symbol.name for symbol in inner_symbols.expression_aliases] == ["cte_alias"]
+    assert [(symbol.name, symbol.relation) for symbol in outer_symbols.table_aliases] == [
+        ("o", "outer_table")
+    ]
+    assert [symbol.name for symbol in outer_symbols.expression_aliases] == ["outer_alias"]

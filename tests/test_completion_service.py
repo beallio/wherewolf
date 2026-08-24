@@ -483,3 +483,67 @@ def test_call_tip_uses_dynamic_expression_and_table_metadata() -> None:
 
     assert sqrt_tip is not None and sqrt_tip.startswith("SQRT(")
     assert read_csv_tip is not None and read_csv_tip.startswith("READ_CSV(")
+
+
+def test_complete_does_not_leak_ctes_tables_or_columns_from_another_statement() -> None:
+    catalog = (
+        _make_catalog_entry("old_table", (ColumnSchema("secret_old", "VARCHAR"),)),
+        _make_catalog_entry("new_table", (ColumnSchema("visible_new", "VARCHAR"),)),
+    )
+    service = SqlCompletionService()
+
+    cte_items = service.complete(
+        CompletionContext(
+            "WITH old_cte AS (SELECT 1 AS x) SELECT * FROM old_cte; SELECT * FROM old",
+            len("WITH old_cte AS (SELECT 1 AS x) SELECT * FROM old_cte; SELECT * FROM old"),
+            "duckdb",
+            catalog,
+        )
+    )
+    qualified_items = service.complete(
+        CompletionContext(
+            "SELECT x. FROM old_table x; SELECT x.",
+            len("SELECT x. FROM old_table x; SELECT x."),
+            "duckdb",
+            catalog,
+        )
+    )
+    column_items = service.complete(
+        CompletionContext(
+            "SELECT * FROM old_table; SELECT  FROM new_table",
+            len("SELECT * FROM old_table; SELECT "),
+            "duckdb",
+            catalog,
+        )
+    )
+
+    assert "old_cte" not in {item.label for item in cte_items}
+    assert "secret_old" not in {item.label for item in qualified_items}
+    assert "secret_old" not in {item.label for item in column_items}
+    assert "visible_new" in {item.label for item in column_items}
+
+
+def test_complete_keeps_cte_and_outer_query_aliases_in_their_own_scopes() -> None:
+    catalog = (
+        _make_catalog_entry("source_table", (ColumnSchema("source_id", "INTEGER"),)),
+        _make_catalog_entry("outer_table", (ColumnSchema("outer_id", "INTEGER"),)),
+    )
+    sql = """WITH cte AS (
+        SELECT source_id AS cte_alias FROM source_table s WHERE source_id > 0
+    )
+    SELECT outer_id AS outer_alias FROM outer_table o ORDER BY outer_id"""
+    service = SqlCompletionService()
+
+    inner_items = service.complete(
+        CompletionContext(sql, sql.index("WHERE ") + len("WHERE "), "duckdb", catalog)
+    )
+    outer_items = service.complete(
+        CompletionContext(sql, sql.index("ORDER BY ") + len("ORDER BY "), "duckdb", catalog)
+    )
+
+    inner_labels = {item.label for item in inner_items}
+    outer_labels = {item.label for item in outer_items}
+    assert {"cte_alias", "s"} <= inner_labels
+    assert {"outer_alias", "o"}.isdisjoint(inner_labels)
+    assert {"outer_alias", "o"} <= outer_labels
+    assert {"cte_alias", "s"}.isdisjoint(outer_labels)
