@@ -33,9 +33,16 @@ def test_completion_adapter_converts_items_and_shows_list(qtbot, editor):
     editor.SendScintilla = show_spy
 
     adapter.request_completion(ctx)
+    qtbot.waitUntil(
+        lambda: any(call.args[0] == editor.SCI_USERLISTSHOW for call in show_spy.call_args_list)
+    )
 
     service.complete.assert_called_once_with(ctx)
-    show_spy.assert_called_once_with(editor.SCI_AUTOCSHOW, 3, b"orders?1 customers?1")
+    assert show_spy.call_args_list[-1].args == (
+        editor.SCI_USERLISTSHOW,
+        1,
+        b"orders\x1e1\x1fcustomers\x1e1",
+    )
 
 
 def test_completion_adapter_empty_result_no_popup(qtbot, editor):
@@ -49,7 +56,42 @@ def test_completion_adapter_empty_result_no_popup(qtbot, editor):
     editor.SendScintilla = show_spy
 
     adapter.request_completion(ctx)
-    show_spy.assert_not_called()
+    show_spy.assert_called_once_with(editor.SCI_AUTOCCANCEL, 0, b"")
+
+
+def test_completion_adapter_uses_user_list_and_cancels_stale_results(qtbot, editor):
+    service = MagicMock(spec=SqlCompletionService)
+    service.complete.return_value = (
+        CompletionItem(
+            "DATE_TRUNC",
+            "DATE_TRUNC(",
+            CompletionKind.FUNCTION,
+            "DATE_TRUNC(unit, timestamp)",
+            (0, "date_trunc"),
+        ),
+    )
+    adapter = CompletionAdapter(editor=editor, completion_service=service)
+    ctx = CompletionContext(sql="SELECT dt", cursor_offset=9, dialect="duckdb", catalog=())
+    show_spy = MagicMock()
+    editor.SendScintilla = show_spy
+
+    adapter.request_completion(ctx)
+    qtbot.waitUntil(
+        lambda: any(call.args[0] == editor.SCI_USERLISTSHOW for call in show_spy.call_args_list)
+    )
+
+    assert any(
+        call.args[0] == editor.SCI_USERLISTSHOW and call.args[1] == 1
+        for call in show_spy.call_args_list
+    )
+    assert any(
+        len(call.args) == 3 and b"DATE_TRUNC" in call.args[-1] for call in show_spy.call_args_list
+    )
+
+    service.complete.return_value = ()
+    adapter.request_completion(ctx)
+    assert any(call.args[0] == editor.SCI_AUTOCCANCEL for call in show_spy.call_args_list)
+    assert adapter._active_items == {}
 
 
 def test_completion_adapter_replaces_only_typed_prefix(qtbot, editor):

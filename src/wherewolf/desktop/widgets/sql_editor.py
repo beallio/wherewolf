@@ -80,6 +80,8 @@ class SqlEditor(QsciScintilla):
             self._show_completion_action.setEnabled(True)
 
         self._catalog: tuple[CatalogEntry, ...] = ()
+        self._completion_insertion_in_progress = False
+        self._completion_updates_suspended = False
         self._completion_adapter = CompletionAdapter(self, self._completion_service)
         self._diagnostic_indicator = 1
         self._font_size = self._settings_service.restore_editor_font_size()
@@ -148,7 +150,14 @@ class SqlEditor(QsciScintilla):
         wholesale replacements avoids changing the horizontal scroll position on every
         character typed into an existing line.
         """
-        super().setText(text)
+        completion_adapter = getattr(self, "_completion_adapter", None)
+        if completion_adapter is not None:
+            completion_adapter.cancel()
+        self._completion_updates_suspended = True
+        try:
+            super().setText(text)
+        finally:
+            self._completion_updates_suspended = False
         self.setScrollWidth(1)
 
     def set_text_undoable(self, text: str) -> None:
@@ -185,7 +194,14 @@ class SqlEditor(QsciScintilla):
         self._completion_adapter.request_completion(ctx)
 
     def _on_text_changed_completion(self) -> None:
+        if self._completion_insertion_in_progress or self._completion_updates_suspended:
+            return
         self.request_completion(forced=False)
+
+    def _set_completion_insertion_in_progress(self, active: bool) -> None:
+        """Keep an inserted completion from recursively reopening a stale user list."""
+
+        self._completion_insertion_in_progress = active
 
     def _release_conflicting_scintilla_keys(self) -> None:
         """Unbind Scintilla commands whose keys belong to desktop actions."""

@@ -8,6 +8,7 @@
     "tests/test_completion_matching.py",
     "src/wherewolf/services/completion_context.py",
     "src/wherewolf/services/completion_symbols.py",
+    "src/wherewolf/services/completion_service.py",
     "src/wherewolf/services/sql_metadata.py",
     "src/wherewolf/services/spark_function_metadata.py",
     "src/wherewolf/execution/spark_runtime.py",
@@ -73,6 +74,13 @@
       "green_result": "27 passed, 6 deselected in 1.59s",
       "spark_live_command": "./run.sh uv run pytest -q --no-cov -m spark tests/test_spark_function_metadata.py -v",
       "spark_live_result": "2 passed, 3 deselected in 6.63s; PySpark 4.2.0, OpenJDK 25.0.4; 549 accepted functions (540 expression, 14 table)"
+    },
+    {
+      "task": 6,
+      "red_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_service.py",
+      "red_result": "4 failures: prefix-only catalog/function filtering, missing expression aliases and table functions, and no candidate cap",
+      "green_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_service.py",
+      "green_result": "31 passed in 0.22s"
     }
   ],
   "final_quality_gates": null,
