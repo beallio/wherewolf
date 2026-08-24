@@ -11,6 +11,10 @@
     "src/wherewolf/services/completion_service.py",
     "src/wherewolf/desktop/widgets/completion_adapter.py",
     "src/wherewolf/desktop/widgets/sql_editor.py",
+    "src/wherewolf/desktop/spark_metadata_controller.py",
+    "src/wherewolf/desktop/workers/spark_metadata_worker.py",
+    "src/wherewolf/desktop/workers/__init__.py",
+    "src/wherewolf/desktop/main_window.py",
     "src/wherewolf/services/sql_metadata.py",
     "src/wherewolf/services/spark_function_metadata.py",
     "src/wherewolf/execution/spark_runtime.py",
@@ -25,18 +29,24 @@
     "tests/test_spark_engine_optimization.py",
     "tests/test_spark_runtime.py",
     "tests/test_completion_adapter.py",
-    "tests/test_sql_editor.py"
+    "tests/test_sql_editor.py",
+    "tests/test_main_window.py",
+    "tests/test_spark_metadata_controller.py",
+    "tests/test_spark_metadata_worker.py"
   ],
   "tests_added": [
     "tests/test_completion_matching.py",
     "tests/test_completion_symbols.py",
     "tests/test_spark_function_metadata.py",
-    "tests/test_spark_runtime.py"
+    "tests/test_spark_runtime.py",
+    "tests/test_spark_metadata_controller.py",
+    "tests/test_spark_metadata_worker.py"
   ],
   "design_decisions": [
     "The implementation starts from dev after the supplied plan is committed as the first feature-branch commit.",
     "Project tooling runs through ./run.sh and writes environments and caches under /tmp/wherewolf.",
-    "Spark execution and metadata obtain separate child sessions from one lock-protected root context; neither request cleanup nor metadata discovery stops that root."
+    "Spark execution and metadata obtain separate child sessions from one lock-protected root context; neither request cleanup nor metadata discovery stops that root.",
+    "The engine selector changes future completion contexts for every open and new editor, while one Qt worker publishes cached Spark metadata without reopening an active completion list."
   ],
   "results": {
     "baseline_commit": "5aecdf558764d905e1f5239aa8a00ab1efd1c6f2",
@@ -92,6 +102,13 @@
       "red_result": "user-list regression failed because the adapter sent SCI_AUTOCSHOW instead of SCI_USERLISTSHOW",
       "green_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_adapter.py tests/test_sql_editor.py -k user_list",
       "green_result": "40 passed in 1.41s across adapter and real offscreen keyboard activation coverage; full default suite then passed 859 tests with 9 Spark tests deselected"
+    },
+    {
+      "task": 8,
+      "red_command": "./run.sh uv run pytest -q --no-cov tests/test_sql_editor.py tests/test_main_window.py tests/test_spark_metadata_controller.py",
+      "red_result": "collection failed with ModuleNotFoundError: wherewolf.desktop.spark_metadata_controller",
+      "green_command": "./run.sh uv run pytest -q --no-cov tests/test_sql_editor.py tests/test_main_window.py tests/test_spark_metadata_controller.py",
+      "green_result": "221 passed in 7.70s; the background worker start path and bounded late-result shutdown use fakes without starting Spark"
     }
   ],
   "final_quality_gates": null,

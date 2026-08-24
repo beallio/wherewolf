@@ -17,9 +17,11 @@ class _SpyCompletionService(SqlCompletionService):
     def __init__(self) -> None:
         super().__init__()
         self.calls = 0
+        self.contexts = []
 
     def complete(self, context):
         self.calls += 1
+        self.contexts.append(context)
         return super().complete(context)
 
 
@@ -565,6 +567,28 @@ def test_sql_editor_completion_custom_threshold(qtbot, tmp_path) -> None:
     editor.setCursorPosition(0, 3)
     editor.request_completion(forced=False)
     assert spy_service.calls == 1
+
+
+def test_sql_editor_completion_dialect_defaults_to_duckdb_and_can_switch(qtbot) -> None:
+    spy_service = _SpyCompletionService()
+    editor = SqlEditor(completion_service=spy_service)
+    qtbot.addWidget(editor)
+    editor.setText("SELECT EXP")
+    editor.setCursorPosition(0, len("SELECT EXP"))
+
+    editor.request_completion(forced=True)
+    assert spy_service.contexts[0].dialect == "duckdb"
+
+    editor.set_completion_dialect("spark")
+    editor.request_completion(forced=True)
+    assert spy_service.contexts[-1].dialect == "spark"
+
+    try:
+        editor.set_completion_dialect("postgres")
+    except ValueError as error:
+        assert str(error) == "Unsupported completion dialect: postgres"
+    else:
+        raise AssertionError("unsupported completion dialect was accepted")
 
 
 def test_sql_editor_typing_shows_catalog_keyword_and_function_completions(qtbot) -> None:

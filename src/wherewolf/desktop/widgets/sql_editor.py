@@ -80,6 +80,7 @@ class SqlEditor(QsciScintilla):
             self._show_completion_action.setEnabled(True)
 
         self._catalog: tuple[CatalogEntry, ...] = ()
+        self._completion_dialect = "duckdb"
         self._completion_insertion_in_progress = False
         self._completion_updates_suspended = False
         self._completion_adapter = CompletionAdapter(self, self._completion_service)
@@ -143,6 +144,14 @@ class SqlEditor(QsciScintilla):
     def set_catalog(self, catalog: tuple[CatalogEntry, ...]) -> None:
         self._catalog = tuple(catalog)
 
+    def set_completion_dialect(self, dialect: str) -> None:
+        """Use an execution-engine completion catalog for future requests."""
+
+        normalized = dialect.strip().lower()
+        if normalized not in {"duckdb", "spark"}:
+            raise ValueError(f"Unsupported completion dialect: {dialect}")
+        self._completion_dialect = normalized
+
     def setText(self, text: str) -> None:
         """Replace the document and let scroll-width tracking recompute from scratch.
 
@@ -185,7 +194,7 @@ class SqlEditor(QsciScintilla):
         ctx = CompletionContext(
             sql=text,
             cursor_offset=cursor_offset,
-            dialect="duckdb",
+            dialect=self._completion_dialect,
             catalog=self._catalog,
         )
         call_tip = self._completion_service.call_tip(ctx)
