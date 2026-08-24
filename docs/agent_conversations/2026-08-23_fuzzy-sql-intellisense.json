@@ -12,6 +12,7 @@
     "src/wherewolf/services/completion_context.py",
     "src/wherewolf/services/completion_symbols.py",
     "src/wherewolf/services/completion_service.py",
+    "src/wherewolf/services/statement_service.py",
     "src/wherewolf/desktop/widgets/completion_adapter.py",
     "src/wherewolf/desktop/widgets/sql_editor.py",
     "src/wherewolf/desktop/spark_metadata_controller.py",
@@ -23,6 +24,7 @@
     "src/wherewolf/execution/spark_runtime.py",
     "src/wherewolf/execution/spark_engine.py",
     "tests/test_completion_context.py",
+    "tests/test_completion_service.py",
     "tests/test_completion_symbols.py",
     "tests/test_sql_metadata.py",
     "tests/test_spark_function_metadata.py",
@@ -49,7 +51,8 @@
     "The implementation starts from dev after the supplied plan is committed as the first feature-branch commit.",
     "Project tooling runs through ./run.sh and writes environments and caches under /tmp/wherewolf.",
     "Spark execution and metadata obtain separate child sessions from one lock-protected root context; neither request cleanup nor metadata discovery stops that root.",
-    "The engine selector changes future completion contexts for every open and new editor, while one Qt worker publishes cached Spark metadata without reopening an active completion list."
+    "The engine selector changes future completion contexts for every open and new editor, while one Qt worker publishes cached Spark metadata without reopening an active completion list.",
+    "Statement spans retain whether the quote/comment-aware scanner observed a real terminating semicolon, allowing completion to use only the empty post-terminator fragment without confusing semicolons in strings or comments for boundaries."
   ],
   "results": {
     "baseline_commit": "5aecdf558764d905e1f5239aa8a00ab1efd1c6f2",
@@ -131,6 +134,28 @@
       "production_file": "src/wherewolf/services/completion_service.py",
       "failing_node": "tests/test_completion_service.py::test_complete_does_not_leak_ctes_tables_or_columns_from_another_statement",
       "result": "1 failed in 0.11s after the disposable-worktree mutation; the worktree was restored and removed."
+    }
+  },
+  "review_round_03": {
+    "review_note": "docs/review/fuzzy-sql-intellisense-review-02.md at 29f83d878f184683ae7bb66b8a2070e65f779e26",
+    "red_green": {
+      "red_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_service.py -k completed_statement_symbols_into_empty_fragment",
+      "red_result": "3 failed, 33 deselected in 0.19s: the no-selection fallback completed from the preceding CTE, table alias, and column scope.",
+      "green_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_service.py -k 'completed_statement_symbols_into_empty_fragment or does_not_leak_ctes_tables_or_columns_from_another_statement'",
+      "green_result": "4 passed, 32 deselected in 0.08s; the related completion-symbol, service, and statement suite then passed 54 tests in 0.26s."
+    },
+    "repair_commit": "7e7ecf9 fix(intellisense): isolate empty completion fragments",
+    "quality_gate_before_commit": "872 passed, 9 deselected in 26.86s; Ruff, formatting, ty, orchestration quality gates, and review-note integrity passed. The commit hook reran the full suite: 872 passed, 9 deselected in 27.83s.",
+    "session_record_quality_gate": "872 passed, 9 deselected in 26.15s; Ruff, formatting, ty, orchestration quality gates, review-note integrity, JSON validation, and diff whitespace checks passed.",
+    "mutation_result": {
+      "mutation": "return the full editor buffer when _current_statement has no selected statement",
+      "production_file": "src/wherewolf/services/completion_service.py",
+      "failing_nodes": [
+        "tests/test_completion_service.py::test_complete_does_not_leak_completed_statement_symbols_into_empty_fragment[]",
+        "tests/test_completion_service.py::test_complete_does_not_leak_completed_statement_symbols_into_empty_fragment[\\n  ]",
+        "tests/test_completion_service.py::test_complete_does_not_leak_completed_statement_symbols_into_empty_fragment[\\r\\n\\t]"
+      ],
+      "result": "The disposable-worktree mutation changed production code and produced 3 assertion failures in 0.18s; the worktree was removed afterward."
     }
   },
   "final_quality_gates": {
