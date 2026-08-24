@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import QMenu, QWidget
 
 from wherewolf.desktop.widgets.completion_adapter import CompletionAdapter
@@ -197,6 +197,13 @@ class SqlEditor(QsciScintilla):
         if self._completion_insertion_in_progress or self._completion_updates_suspended:
             return
         self.request_completion(forced=False)
+
+    def keyPressEvent(self, e: QKeyEvent) -> None:
+        """Return printable typing to the document before refreshing a user list."""
+
+        if e.text().isprintable() and self.isListActive():
+            self._completion_adapter.cancel()
+        super().keyPressEvent(e)
 
     def _set_completion_insertion_in_progress(self, active: bool) -> None:
         """Keep an inserted completion from recursively reopening a stale user list."""

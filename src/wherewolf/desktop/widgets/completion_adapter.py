@@ -76,14 +76,32 @@ class CompletionAdapter:
         if self._editor.isListActive():
             self._editor.SendScintilla(self._editor.SCI_AUTOCCANCEL, 0, b"")
 
-        formatted = [
-            f"{item.label}{_TYPE_SEPARATOR}{KIND_IMAGE_IDS.get(item.kind, 1)}" for item in items
-        ]
-
         def show_user_list() -> None:
             if request_generation != self._request_generation:
                 return
             try:
+                text = self._editor.text()
+                line, column = self._editor.getCursorPosition()
+                cursor_offset = self._editor.positionFromLineIndex(line, column)
+                current_context = CompletionContext(
+                    sql=text,
+                    cursor_offset=cursor_offset,
+                    dialect=context.dialect,
+                    catalog=context.catalog,
+                )
+                current_items = self._service.complete(current_context)
+                if not current_items:
+                    self._active_items = {}
+                    self._prefix = ""
+                    self._editor.SendScintilla(self._editor.SCI_AUTOCCANCEL, 0, b"")
+                    return
+                current_cursor_ctx = detect_context(text, cursor_offset)
+                self._prefix = current_cursor_ctx.prefix
+                self._active_items = {item.label: item for item in current_items}
+                formatted = [
+                    f"{item.label}{_TYPE_SEPARATOR}{KIND_IMAGE_IDS.get(item.kind, 1)}"
+                    for item in current_items
+                ]
                 self._editor.SendScintilla(
                     self._editor.SCI_AUTOCSETSEPARATOR, ord(_LIST_SEPARATOR), b""
                 )
@@ -102,7 +120,7 @@ class CompletionAdapter:
         # Let Scintilla finish processing the keystroke that changed the prefix before opening
         # the application-ranked list. Otherwise its normal prefix-popup teardown can close a
         # freshly shown user list in the same key event.
-        QTimer.singleShot(10, show_user_list)
+        QTimer.singleShot(150, show_user_list)
 
     def cancel(self) -> None:
         """Discard an open or delayed completion list without changing editor text."""

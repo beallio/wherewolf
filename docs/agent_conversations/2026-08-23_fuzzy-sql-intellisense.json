@@ -9,6 +9,8 @@
     "src/wherewolf/services/completion_context.py",
     "src/wherewolf/services/completion_symbols.py",
     "src/wherewolf/services/completion_service.py",
+    "src/wherewolf/desktop/widgets/completion_adapter.py",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
     "src/wherewolf/services/sql_metadata.py",
     "src/wherewolf/services/spark_function_metadata.py",
     "src/wherewolf/execution/spark_runtime.py",
@@ -21,7 +23,9 @@
     "tests/test_spark_engine.py",
     "tests/test_spark_engine_logic.py",
     "tests/test_spark_engine_optimization.py",
-    "tests/test_spark_runtime.py"
+    "tests/test_spark_runtime.py",
+    "tests/test_completion_adapter.py",
+    "tests/test_sql_editor.py"
   ],
   "tests_added": [
     "tests/test_completion_matching.py",
@@ -81,6 +85,13 @@
       "red_result": "4 failures: prefix-only catalog/function filtering, missing expression aliases and table functions, and no candidate cap",
       "green_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_service.py",
       "green_result": "31 passed in 0.22s"
+    },
+    {
+      "task": 7,
+      "red_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_adapter.py",
+      "red_result": "user-list regression failed because the adapter sent SCI_AUTOCSHOW instead of SCI_USERLISTSHOW",
+      "green_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_adapter.py tests/test_sql_editor.py -k user_list",
+      "green_result": "40 passed in 1.41s across adapter and real offscreen keyboard activation coverage; full default suite then passed 859 tests with 9 Spark tests deselected"
     }
   ],
   "final_quality_gates": null,

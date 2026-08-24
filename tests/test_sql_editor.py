@@ -605,6 +605,55 @@ def test_sql_editor_typing_shows_catalog_keyword_and_function_completions(qtbot)
     assert "COUNT" in editor._completion_adapter._active_items
 
 
+def test_sql_editor_user_list_activation_replaces_fuzzy_prefix_once(qtbot) -> None:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.show()
+    editor.setFocus()
+    QTest.keyClicks(editor, "SELECT dt")  # ty: ignore  # QTest stubs model self.
+
+    qtbot.waitUntil(editor.isListActive)
+    QTest.keyClick(editor, Qt.Key.Key_Return)  # ty: ignore  # QTest stubs model self.
+    qtbot.waitUntil(lambda: editor.text() == "SELECT DATE_TRUNC(")
+
+    assert editor._completion_adapter._active_items == {}
+
+
+def test_sql_editor_user_list_activation_replaces_catalog_substring(qtbot) -> None:
+    from pathlib import Path
+    from uuid import uuid4
+
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    from wherewolf.domain.enums import SourceFormat
+    from wherewolf.domain.models import CatalogEntry
+
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.set_catalog(
+        (
+            CatalogEntry(
+                id=uuid4(),
+                alias="monthly_sales",
+                path=Path("monthly_sales.csv"),
+                source_format=SourceFormat.CSV,
+                schema=(),
+            ),
+        )
+    )
+    editor.show()
+    editor.setFocus()
+    QTest.keyClicks(editor, "SELECT * FROM sales")  # ty: ignore  # QTest stubs model self.
+
+    qtbot.waitUntil(editor.isListActive)
+    QTest.keyClick(editor, Qt.Key.Key_Return)  # ty: ignore  # QTest stubs model self.
+    qtbot.waitUntil(lambda: editor.text() == "SELECT * FROM monthly_sales")
+
+
 def test_main_window_show_completion_action_is_same_object_in_query_menu_and_editor(qtbot) -> None:
     from wherewolf.desktop import MainWindow
 

@@ -37,7 +37,8 @@ def test_completion_adapter_converts_items_and_shows_list(qtbot, editor):
         lambda: any(call.args[0] == editor.SCI_USERLISTSHOW for call in show_spy.call_args_list)
     )
 
-    service.complete.assert_called_once_with(ctx)
+    assert service.complete.call_args_list[0].args == (ctx,)
+    assert service.complete.call_count == 2
     assert show_spy.call_args_list[-1].args == (
         editor.SCI_USERLISTSHOW,
         1,
