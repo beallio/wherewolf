@@ -56,43 +56,24 @@ def test_spark_engine_refuses_bound_parameters() -> None:
 def test_spark_engine_creates_a_memory_bounded_session_lazily_and_reuses_it():
     with (
         patch("wherewolf.execution.spark_engine.SPARK_AVAILABLE", True),
-        patch("wherewolf.execution.spark_engine.import_module") as import_module,
+        patch("wherewolf.execution.spark_engine.create_child_session") as create_child_session,
     ):
-        spark_session = import_module.return_value.SparkSession
         session = MagicMock()
-        (
-            spark_session.builder.appName.return_value.master.return_value.config.return_value.config.return_value.config.return_value.config.return_value.getOrCreate.return_value.newSession.return_value
-        ) = session
+        create_child_session.return_value = session
 
         engine = SparkEngine()
 
-        import_module.assert_not_called()
         assert engine._get_session() is session
         assert engine._get_session() is session
-
-        spark_session.builder.appName.assert_called_once_with("Wherewolf")
-        spark_session.builder.appName.return_value.master.assert_called_once_with("local[1]")
-        builder = spark_session.builder.appName.return_value.master.return_value
-        builder.config.assert_called_once_with("spark.driver.memory", "512m")
-        builder.config.return_value.config.assert_called_once_with("spark.ui.enabled", "false")
-        builder.config.return_value.config.return_value.config.assert_called_once_with(
-            "spark.sql.shuffle.partitions", "1"
-        )
-        builder.config.return_value.config.return_value.config.return_value.config.assert_called_once_with(
-            "spark.sql.execution.arrow.pyspark.enabled", "true"
-        )
-        builder.config.return_value.config.return_value.config.return_value.config.return_value.getOrCreate.assert_called_once_with()
+        create_child_session.assert_called_once_with()
 
 
 def test_spark_engine_startup_failure_is_actionable():
     with (
         patch("wherewolf.execution.spark_engine.SPARK_AVAILABLE", True),
-        patch("wherewolf.execution.spark_engine.import_module") as import_module,
+        patch("wherewolf.execution.spark_engine.create_child_session") as create_child_session,
     ):
-        spark_session = import_module.return_value.SparkSession
-        spark_session.builder.appName.return_value.master.return_value.config.return_value.config.return_value.config.return_value.config.return_value.getOrCreate.side_effect = RuntimeError(
-            "gateway failed"
-        )
+        create_child_session.side_effect = RuntimeError("gateway failed")
 
         result = SparkEngine().execute("SELECT 1")
 

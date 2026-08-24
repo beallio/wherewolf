@@ -9,14 +9,10 @@ def test_spark_engine_execute_logic_parquet():
     """Verify SparkEngine logic for Parquet files using mocks."""
     with (
         patch("wherewolf.execution.spark_engine.SPARK_AVAILABLE", True),
-        patch("wherewolf.execution.spark_engine.import_module") as mock_import_module,
+        patch("wherewolf.execution.spark_engine.create_child_session") as create_child_session,
     ):
-        # Setup mock chain
-        mock_spark_session = mock_import_module.return_value.SparkSession
         mock_spark = MagicMock()
-        (
-            mock_spark_session.builder.appName.return_value.master.return_value.config.return_value.config.return_value.config.return_value.config.return_value.getOrCreate.return_value.newSession.return_value
-        ) = mock_spark
+        create_child_session.return_value = mock_spark
         mock_df = MagicMock()
         mock_spark.read.parquet.return_value = mock_df
         mock_res = MagicMock()
@@ -40,7 +36,7 @@ def test_spark_engine_unsupported_format():
     """Verify SparkEngine handles unsupported formats."""
     with (
         patch("wherewolf.execution.spark_engine.SPARK_AVAILABLE", True),
-        patch("wherewolf.execution.spark_engine.import_module"),
+        patch("wherewolf.execution.spark_engine.create_child_session"),
     ):
         engine = SparkEngine()
         result = engine.execute("SELECT 1", "/tmp/test.txt")

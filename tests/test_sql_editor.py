@@ -17,9 +17,11 @@ class _SpyCompletionService(SqlCompletionService):
     def __init__(self) -> None:
         super().__init__()
         self.calls = 0
+        self.contexts = []
 
     def complete(self, context):
         self.calls += 1
+        self.contexts.append(context)
         return super().complete(context)
 
 
@@ -567,6 +569,28 @@ def test_sql_editor_completion_custom_threshold(qtbot, tmp_path) -> None:
     assert spy_service.calls == 1
 
 
+def test_sql_editor_completion_dialect_defaults_to_duckdb_and_can_switch(qtbot) -> None:
+    spy_service = _SpyCompletionService()
+    editor = SqlEditor(completion_service=spy_service)
+    qtbot.addWidget(editor)
+    editor.setText("SELECT EXP")
+    editor.setCursorPosition(0, len("SELECT EXP"))
+
+    editor.request_completion(forced=True)
+    assert spy_service.contexts[0].dialect == "duckdb"
+
+    editor.set_completion_dialect("spark")
+    editor.request_completion(forced=True)
+    assert spy_service.contexts[-1].dialect == "spark"
+
+    try:
+        editor.set_completion_dialect("postgres")
+    except ValueError as error:
+        assert str(error) == "Unsupported completion dialect: postgres"
+    else:
+        raise AssertionError("unsupported completion dialect was accepted")
+
+
 def test_sql_editor_typing_shows_catalog_keyword_and_function_completions(qtbot) -> None:
     from pathlib import Path
     from uuid import uuid4
@@ -603,6 +627,55 @@ def test_sql_editor_typing_shows_catalog_keyword_and_function_completions(qtbot)
     qtbot.waitUntil(editor.isListActive)
     assert "SELECT" in editor._completion_adapter._active_items
     assert "COUNT" in editor._completion_adapter._active_items
+
+
+def test_sql_editor_user_list_activation_replaces_fuzzy_prefix_once(qtbot) -> None:
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.show()
+    editor.setFocus()
+    QTest.keyClicks(editor, "SELECT dt")  # ty: ignore  # QTest stubs model self.
+
+    qtbot.waitUntil(editor.isListActive)
+    QTest.keyClick(editor, Qt.Key.Key_Return)  # ty: ignore  # QTest stubs model self.
+    qtbot.waitUntil(lambda: editor.text() == "SELECT DATE_TRUNC(")
+
+    assert editor._completion_adapter._active_items == {}
+
+
+def test_sql_editor_user_list_activation_replaces_catalog_substring(qtbot) -> None:
+    from pathlib import Path
+    from uuid import uuid4
+
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtTest import QTest
+
+    from wherewolf.domain.enums import SourceFormat
+    from wherewolf.domain.models import CatalogEntry
+
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.set_catalog(
+        (
+            CatalogEntry(
+                id=uuid4(),
+                alias="monthly_sales",
+                path=Path("monthly_sales.csv"),
+                source_format=SourceFormat.CSV,
+                schema=(),
+            ),
+        )
+    )
+    editor.show()
+    editor.setFocus()
+    QTest.keyClicks(editor, "SELECT * FROM sales")  # ty: ignore  # QTest stubs model self.
+
+    qtbot.waitUntil(editor.isListActive)
+    QTest.keyClick(editor, Qt.Key.Key_Return)  # ty: ignore  # QTest stubs model self.
+    qtbot.waitUntil(lambda: editor.text() == "SELECT * FROM monthly_sales")
 
 
 def test_main_window_show_completion_action_is_same_object_in_query_menu_and_editor(qtbot) -> None:
