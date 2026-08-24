@@ -114,6 +114,25 @@
       "green_result": "221 passed in 7.70s; the background worker start path and bounded late-result shutdown use fakes without starting Spark"
     }
   ],
+  "review_round_02": {
+    "review_note": "docs/review/fuzzy-sql-intellisense-review-01.md at ed6f498bcdfa3f7f1215f5015f07a2e3f30ff5f7",
+    "process_deviation_remediation": "The review found that Task 6 production changes already included most Task 7 adapter/editor behavior before the recorded Task 7 Red run. The original record is retained unchanged; this repair round added scope regressions before their production fix and records their observed Red and Green results here.",
+    "red_green": {
+      "red_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_symbols.py tests/test_completion_service.py",
+      "red_result": "3 failed, 37 passed in 0.23s: CTE/outer SELECT traversal-order mapping returned outer aliases for the inner scope; completion leaked an earlier statement CTE; and service completion lost inner aliases.",
+      "green_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_symbols.py tests/test_completion_service.py",
+      "green_result": "40 passed in 0.21s after statement slicing and identifier-span plus ancestry scope mapping."
+    },
+    "repair_commit": "c3c6975 fix(intellisense): isolate completion statement scopes",
+    "focused_completion_suite": "292 passed, 2 deselected in 7.71s across the plan's matcher, symbol, context, metadata, service, QScintilla, editor, Spark-controller, and MainWindow checks.",
+    "quality_gate_before_commit": "869 passed, 9 deselected in 26.32s; Ruff, formatting, ty, and review-note integrity passed.",
+    "mutation_result": {
+      "mutation": "return the full editor buffer from _current_statement",
+      "production_file": "src/wherewolf/services/completion_service.py",
+      "failing_node": "tests/test_completion_service.py::test_complete_does_not_leak_ctes_tables_or_columns_from_another_statement",
+      "result": "1 failed in 0.11s after the disposable-worktree mutation; the worktree was restored and removed."
+    }
+  },
   "final_quality_gates": {
     "focused_completion_suite": "289 passed, 2 deselected in 8.10s",
     "direct_service_acceptance": "passed: fuzzy catalog, alias, column, expression-function, and table-function cases",
