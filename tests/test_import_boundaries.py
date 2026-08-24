@@ -101,3 +101,19 @@ def test_existing_services_exports_remain_importable() -> None:
         )
         """
     )
+
+
+def test_completion_metadata_imports_are_free_of_pyspark() -> None:
+    _run_import_probe(
+        """
+        import sys
+        import wherewolf.services
+        import wherewolf.services.completion_service
+        import wherewolf.services.spark_function_metadata
+        import wherewolf.services.sql_metadata
+
+        forbidden = [name for name in sys.modules if name.startswith("pyspark")]
+        if forbidden:
+            raise SystemExit("forbidden modules loaded: " + ", ".join(forbidden))
+        """
+    )

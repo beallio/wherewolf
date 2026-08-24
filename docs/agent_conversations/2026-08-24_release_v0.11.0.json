@@ -1,0 +1,27 @@
+{
+  "date": "2026-08-24",
+  "task_objective": "Merge the completed and reviewed fuzzy SQL IntelliSense feature from dev into main and publish minor release v0.11.0.",
+  "files_modified": [
+    "CHANGELOG.md",
+    "README.md",
+    "docs/agent_conversations/2026-08-24_release_v0.11.0.json",
+    "pyproject.toml",
+    "uv.lock"
+  ],
+  "tests_added": [],
+  "design_decisions": [
+    "Use v0.11.0 because main and the latest published release are at v0.10.3 and the requested release type is minor.",
+    "Promote the reviewed dev branch containing fuzzy catalog matching, in-scope SQL aliases, DuckDB functions, and Spark built-in function discovery.",
+    "Build the GitHub release title and notes from CHANGELOG.md before tagging, as required by the release workflow.",
+    "Increment README image cacheBuster values from 35 to 36 for the new release tag.",
+    "Use scripts/orchestration-hooks/finalize-release minor on main for the version bump, release commit, annotated tag, and push."
+  ],
+  "known_limitations": [
+    "Spark's comprehensive built-in function catalog is discovered asynchronously only after the Spark execution engine is selected and initialized; curated Spark functions remain available before then."
+  ],
+  "results": {
+    "feature_verification": "Fuzzy matching, aliases, DuckDB functions, and live Spark built-in discovery passed their focused and integration tests before release preparation.",
+    "quality_gates": "Ruff check, Ruff format, ty, and the full default test suite passed on dev: 872 passed, 9 deselected, 91% coverage. The gate is rerun on main before tagging.",
+    "release_automation": "The tag-triggered release workflow, GitHub release assets, and fresh PyPI installation are verified after v0.11.0 is pushed."
+  }
+}

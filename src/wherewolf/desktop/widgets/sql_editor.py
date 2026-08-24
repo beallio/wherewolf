@@ -6,7 +6,7 @@ from typing import ClassVar
 
 from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeySequence
+from PyQt6.QtGui import QAction, QColor, QFont, QFontMetrics, QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import QMenu, QWidget
 
 from wherewolf.desktop.widgets.completion_adapter import CompletionAdapter
@@ -80,6 +80,9 @@ class SqlEditor(QsciScintilla):
             self._show_completion_action.setEnabled(True)
 
         self._catalog: tuple[CatalogEntry, ...] = ()
+        self._completion_dialect = "duckdb"
+        self._completion_insertion_in_progress = False
+        self._completion_updates_suspended = False
         self._completion_adapter = CompletionAdapter(self, self._completion_service)
         self._diagnostic_indicator = 1
         self._font_size = self._settings_service.restore_editor_font_size()
@@ -141,6 +144,14 @@ class SqlEditor(QsciScintilla):
     def set_catalog(self, catalog: tuple[CatalogEntry, ...]) -> None:
         self._catalog = tuple(catalog)
 
+    def set_completion_dialect(self, dialect: str) -> None:
+        """Use an execution-engine completion catalog for future requests."""
+
+        normalized = dialect.strip().lower()
+        if normalized not in {"duckdb", "spark"}:
+            raise ValueError(f"Unsupported completion dialect: {dialect}")
+        self._completion_dialect = normalized
+
     def setText(self, text: str) -> None:
         """Replace the document and let scroll-width tracking recompute from scratch.
 
@@ -148,7 +159,14 @@ class SqlEditor(QsciScintilla):
         wholesale replacements avoids changing the horizontal scroll position on every
         character typed into an existing line.
         """
-        super().setText(text)
+        completion_adapter = getattr(self, "_completion_adapter", None)
+        if completion_adapter is not None:
+            completion_adapter.cancel()
+        self._completion_updates_suspended = True
+        try:
+            super().setText(text)
+        finally:
+            self._completion_updates_suspended = False
         self.setScrollWidth(1)
 
     def set_text_undoable(self, text: str) -> None:
@@ -176,7 +194,7 @@ class SqlEditor(QsciScintilla):
         ctx = CompletionContext(
             sql=text,
             cursor_offset=cursor_offset,
-            dialect="duckdb",
+            dialect=self._completion_dialect,
             catalog=self._catalog,
         )
         call_tip = self._completion_service.call_tip(ctx)
@@ -185,7 +203,21 @@ class SqlEditor(QsciScintilla):
         self._completion_adapter.request_completion(ctx)
 
     def _on_text_changed_completion(self) -> None:
+        if self._completion_insertion_in_progress or self._completion_updates_suspended:
+            return
         self.request_completion(forced=False)
+
+    def keyPressEvent(self, e: QKeyEvent) -> None:
+        """Return printable typing to the document before refreshing a user list."""
+
+        if e.text().isprintable() and self.isListActive():
+            self._completion_adapter.cancel()
+        super().keyPressEvent(e)
+
+    def _set_completion_insertion_in_progress(self, active: bool) -> None:
+        """Keep an inserted completion from recursively reopening a stale user list."""
+
+        self._completion_insertion_in_progress = active
 
     def _release_conflicting_scintilla_keys(self) -> None:
         """Unbind Scintilla commands whose keys belong to desktop actions."""

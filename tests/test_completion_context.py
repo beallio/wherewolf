@@ -1,4 +1,10 @@
-from wherewolf.services.completion_context import CursorContextKind, detect_context
+import pytest
+
+from wherewolf.services.completion_context import (
+    CompletionClause,
+    CursorContextKind,
+    detect_context,
+)
 
 
 def test_detect_context_table_ref_from_and_join() -> None:
@@ -41,6 +47,24 @@ def test_detect_context_column_ref_clauses() -> None:
     ]:
         ctx = detect_context(sql_clause, len(sql_clause))
         assert ctx.kind == CursorContextKind.COLUMN_REF, f"Failed on {sql_clause}"
+
+
+@pytest.mark.parametrize(
+    ("sql", "clause"),
+    [
+        ("SELECT ", CompletionClause.SELECT),
+        ("SELECT * FROM orders WHERE ", CompletionClause.WHERE),
+        ("SELECT * FROM orders GROUP BY ", CompletionClause.GROUP_BY),
+        ("SELECT * FROM orders HAVING ", CompletionClause.HAVING),
+        ("SELECT * FROM orders QUALIFY ", CompletionClause.QUALIFY),
+        ("SELECT * FROM orders ORDER BY ", CompletionClause.ORDER_BY),
+        ("SELECT * FROM orders JOIN customers ON ", CompletionClause.JOIN_ON),
+    ],
+)
+def test_detect_context_classifies_alias_visibility_clause(
+    sql: str, clause: CompletionClause
+) -> None:
+    assert detect_context(sql, len(sql)).clause is clause
 
 
 def test_detect_context_suppressed_strings_and_comments() -> None:

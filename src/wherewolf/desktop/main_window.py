@@ -57,6 +57,7 @@ from wherewolf.desktop.export_controller import ExportController, ExportResult
 from wherewolf.desktop.page_controller import PageController
 from wherewolf.desktop.query_controller import QueryController
 from wherewolf.desktop.row_count_controller import RowCountController
+from wherewolf.desktop.spark_metadata_controller import SparkMetadataController
 from wherewolf.desktop.theming import PROGRAM_THEME_NAMES, apply_program_theme
 from wherewolf.desktop.widgets import CatalogDock, HistoryDock, SavedQueriesDock, SqlEditor
 from wherewolf.desktop.widgets.cell_inspector_window import CellInspectorWindow
@@ -161,6 +162,14 @@ class _PageController(Protocol):
     def fetch(self, request: ExecutionRequest, page_index: int) -> bool: ...
 
     def cancel(self) -> bool: ...
+
+    def shutdown(self) -> bool: ...
+
+
+class _SparkMetadataController(Protocol):
+    status_changed: Any
+
+    def ensure_started(self) -> bool: ...
 
     def shutdown(self) -> bool: ...
 
@@ -343,6 +352,7 @@ class MainWindow(QMainWindow):
         history_manager: HistoryManager | None = None,
         catalog_store: CatalogStore | None = None,
         saved_query_store: SavedQueryStore | None = None,
+        spark_metadata_controller: _SparkMetadataController | None = None,
     ) -> None:
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
@@ -398,12 +408,17 @@ class MainWindow(QMainWindow):
         self._elapsed_timer.timeout.connect(self._update_elapsed_status)
         self._query_started_at: float | None = None
         self._query_status = ExecutionStatus.IDLE
+        self._spark_metadata_controller = spark_metadata_controller or SparkMetadataController(
+            parent=self
+        )
+        self._spark_metadata_controller.status_changed.connect(self._on_spark_metadata_status)
 
         self.setCentralWidget(self._central_splitter)
         self._update_window_title()
         self._build_menus()
         self._connect_actions()
         self._restore_state()
+        self._on_completion_engine_changed()
         self._queue_restored_catalog_work()
         self._update_catalog_affordances()
 
@@ -694,6 +709,7 @@ class MainWindow(QMainWindow):
         self.desktop_actions.export_selection.triggered.connect(
             lambda: self._export_selection(self._current_export_format())
         )
+        self.engine_selector.currentIndexChanged.connect(self._on_completion_engine_changed)
 
         self.query_controller.status_changed.connect(self._on_query_status_changed)
         self.query_controller.result_ready.connect(self._on_query_result_ready)
@@ -1667,6 +1683,8 @@ class MainWindow(QMainWindow):
             parent=self,
         )
         editor.setObjectName("query_editor")
+        engine = cast(EngineKind, self.engine_selector.currentData())
+        editor.set_completion_dialect(engine.value)
         editor.set_catalog(self._catalog_service.entries)
         editor.diagnostics_reported.connect(self._on_editor_diagnostics)
         editor.textChanged.connect(lambda editor=editor: self._on_editor_text_changed(editor))
@@ -2319,6 +2337,7 @@ class MainWindow(QMainWindow):
         self.export_controller.cancel()
         self.row_count_controller.cancel()
         self.page_controller.cancel()
+        self._spark_metadata_controller.shutdown()
         self._elapsed_timer.stop()
         self._query_started_at = None
         for window in list(self._value_counts_windows):
@@ -2373,6 +2392,26 @@ class MainWindow(QMainWindow):
 
     def _show_status(self, message: str, timeout: int = 3000) -> None:
         self.status_bar.showMessage(message, timeout)
+
+    def _on_completion_engine_changed(self, _index: int = 0) -> None:
+        """Keep all editors' completion metadata aligned with the execution engine."""
+
+        engine = self.engine_selector.currentData()
+        if not isinstance(engine, EngineKind):
+            return
+        for editor in self._editor_states:
+            editor.set_completion_dialect(engine.value)
+        if engine is EngineKind.SPARK:
+            model = cast(QStandardItemModel, self.engine_selector.model())
+            selected_item = model.item(self.engine_selector.currentIndex())
+            if selected_item is not None and selected_item.isEnabled():
+                self._spark_metadata_controller.ensure_started()
+
+    def _on_spark_metadata_status(self, message: str) -> None:
+        """Show discovery status only while Spark remains the active engine."""
+
+        if self.engine_selector.currentData() is EngineKind.SPARK:
+            self._show_status(message, 5000)
 
     def _set_result_summary(self, text: str) -> None:
         self.result_summary_label.setText(text)

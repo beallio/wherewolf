@@ -346,3 +346,225 @@ def test_call_tip_inside_string_or_comment_returns_none() -> None:
     sql_cmt = "SELECT -- COALESCE("
     ctx_cmt = CompletionContext(sql=sql_cmt, cursor_offset=18, dialect="duckdb", catalog=())
     assert service.call_tip(ctx_cmt) is None
+
+
+def test_complete_uses_fuzzy_catalog_function_and_qualified_column_matching() -> None:
+    catalog = (
+        _make_catalog_entry(
+            "monthly_sales",
+            (
+                ColumnSchema("customer_identifier", "VARCHAR"),
+                ColumnSchema("gross_revenue", "DOUBLE"),
+            ),
+        ),
+        _make_catalog_entry("other_sales", (ColumnSchema("other_revenue", "DOUBLE"),)),
+    )
+    service = SqlCompletionService()
+
+    catalog_labels = {
+        item.label
+        for item in service.complete(
+            CompletionContext("SELECT * FROM sales", len("SELECT * FROM sales"), "duckdb", catalog)
+        )
+    }
+    token_labels = {
+        item.label
+        for item in service.complete(CompletionContext("SELECT dt", 9, "duckdb", catalog))
+    }
+    substring_labels = {
+        item.label
+        for item in service.complete(CompletionContext("SELECT trunc", 12, "duckdb", catalog))
+    }
+    qualified_labels = {
+        item.label
+        for item in service.complete(
+            CompletionContext(
+                "SELECT o.rev FROM monthly_sales AS o",
+                len("SELECT o.rev"),
+                "duckdb",
+                catalog,
+            )
+        )
+    }
+
+    assert "monthly_sales" in catalog_labels
+    assert "DATE_TRUNC" in token_labels
+    assert "DATE_TRUNC" in substring_labels
+    assert "gross_revenue" in qualified_labels
+    assert "other_revenue" not in qualified_labels
+
+
+def test_complete_limits_alias_visibility_to_valid_expression_clauses() -> None:
+    catalog = (_make_catalog_entry("monthly_sales", (ColumnSchema("gross_revenue", "DOUBLE"),)),)
+    service = SqlCompletionService()
+
+    def labels(sql: str, cursor_offset: int | None = None) -> set[str]:
+        return {
+            item.label
+            for item in service.complete(
+                CompletionContext(
+                    sql, len(sql) if cursor_offset is None else cursor_offset, "duckdb", catalog
+                )
+            )
+        }
+
+    assert "o" in labels("SELECT o FROM monthly_sales AS o", len("SELECT o"))
+    assert "o" not in labels("SELECT * FROM o")
+    assert "revenue_total" in labels(
+        "SELECT gross_revenue AS revenue_total FROM monthly_sales ORDER BY rev"
+    )
+    assert "revenue_total" in labels(
+        "SELECT gross_revenue AS revenue_total FROM monthly_sales WHERE rev"
+    )
+    assert "revenue_total" in labels(
+        "SELECT gross_revenue AS revenue_total FROM monthly_sales GROUP BY rev"
+    )
+    assert "revenue_total" in labels(
+        "SELECT SUM(gross_revenue) AS revenue_total FROM monthly_sales HAVING rev"
+    )
+    assert "row_number" in labels(
+        "SELECT ROW_NUMBER() OVER () AS row_number FROM monthly_sales QUALIFY row"
+    )
+    assert "revenue_total" not in labels(
+        "SELECT gross_revenue AS revenue_total FROM monthly_sales JOIN monthly_sales AS m ON rev"
+    )
+
+
+def test_complete_uses_context_correct_dynamic_table_and_expression_functions() -> None:
+    service = SqlCompletionService()
+
+    expression_labels = {
+        item.label for item in service.complete(CompletionContext("SELECT sqr", 10, "duckdb", ()))
+    }
+    table_labels = {
+        item.label
+        for item in service.complete(
+            CompletionContext("SELECT * FROM read_c", len("SELECT * FROM read_c"), "duckdb", ())
+        )
+    }
+    spark_table_labels = {
+        item.label
+        for item in service.complete(CompletionContext("SELECT * FROM exp", 17, "spark", ()))
+    }
+    spark_expression_labels = {
+        item.label for item in service.complete(CompletionContext("SELECT exp", 10, "spark", ()))
+    }
+
+    assert "SQRT" in expression_labels
+    assert "READ_CSV" in table_labels
+    assert "EXPLODE" in spark_table_labels
+    assert "EXPLODE" in spark_expression_labels
+
+
+def test_complete_deduplicates_ranks_and_caps_results() -> None:
+    catalog = tuple(_make_catalog_entry(f"sales_{index:03}") for index in range(120)) + (
+        _make_catalog_entry("count"),
+    )
+    service = SqlCompletionService()
+
+    capped = service.complete(CompletionContext("SELECT * FROM ", 14, "duckdb", catalog))
+    duplicate = service.complete(CompletionContext("SELECT count", 12, "duckdb", catalog))
+
+    assert len(capped) == 100
+    assert [item.label for item in duplicate].count("count") + [
+        item.label for item in duplicate
+    ].count("COUNT") == 1
+    assert (
+        next(item for item in duplicate if item.label.upper() == "COUNT").kind
+        is CompletionKind.TABLE
+    )
+
+
+def test_call_tip_uses_dynamic_expression_and_table_metadata() -> None:
+    service = SqlCompletionService()
+
+    sqrt_tip = service.call_tip(CompletionContext("SELECT SQRT(", 12, "duckdb", ()))
+    read_csv_tip = service.call_tip(CompletionContext("SELECT * FROM READ_CSV(", 23, "duckdb", ()))
+
+    assert sqrt_tip is not None and sqrt_tip.startswith("SQRT(")
+    assert read_csv_tip is not None and read_csv_tip.startswith("READ_CSV(")
+
+
+def test_complete_does_not_leak_ctes_tables_or_columns_from_another_statement() -> None:
+    catalog = (
+        _make_catalog_entry("old_table", (ColumnSchema("secret_old", "VARCHAR"),)),
+        _make_catalog_entry("new_table", (ColumnSchema("visible_new", "VARCHAR"),)),
+    )
+    service = SqlCompletionService()
+
+    cte_items = service.complete(
+        CompletionContext(
+            "WITH old_cte AS (SELECT 1 AS x) SELECT * FROM old_cte; SELECT * FROM old",
+            len("WITH old_cte AS (SELECT 1 AS x) SELECT * FROM old_cte; SELECT * FROM old"),
+            "duckdb",
+            catalog,
+        )
+    )
+    qualified_items = service.complete(
+        CompletionContext(
+            "SELECT x. FROM old_table x; SELECT x.",
+            len("SELECT x. FROM old_table x; SELECT x."),
+            "duckdb",
+            catalog,
+        )
+    )
+    column_items = service.complete(
+        CompletionContext(
+            "SELECT * FROM old_table; SELECT  FROM new_table",
+            len("SELECT * FROM old_table; SELECT "),
+            "duckdb",
+            catalog,
+        )
+    )
+
+    assert "old_cte" not in {item.label for item in cte_items}
+    assert "secret_old" not in {item.label for item in qualified_items}
+    assert "secret_old" not in {item.label for item in column_items}
+    assert "visible_new" in {item.label for item in column_items}
+
+
+@pytest.mark.parametrize("trailing_fragment", ["", "\n  ", "\r\n\t"])
+def test_complete_does_not_leak_completed_statement_symbols_into_empty_fragment(
+    trailing_fragment: str,
+) -> None:
+    catalog = (
+        _make_catalog_entry("old_table", (ColumnSchema("secret_old", "VARCHAR"),)),
+        _make_catalog_entry("new_table", (ColumnSchema("visible_new", "VARCHAR"),)),
+    )
+    completed_statement = (
+        "WITH old_cte AS (SELECT * FROM old_table) "
+        "SELECT old_alias.secret_old FROM old_table AS old_alias;"
+    )
+    sql = f"{completed_statement}{trailing_fragment}"
+
+    items = SqlCompletionService().complete(CompletionContext(sql, len(sql), "duckdb", catalog))
+    labels = {item.label for item in items}
+
+    assert {"old_cte", "old_alias", "secret_old"}.isdisjoint(labels)
+    assert "new_table" in labels
+
+
+def test_complete_keeps_cte_and_outer_query_aliases_in_their_own_scopes() -> None:
+    catalog = (
+        _make_catalog_entry("source_table", (ColumnSchema("source_id", "INTEGER"),)),
+        _make_catalog_entry("outer_table", (ColumnSchema("outer_id", "INTEGER"),)),
+    )
+    sql = """WITH cte AS (
+        SELECT source_id AS cte_alias FROM source_table s WHERE source_id > 0
+    )
+    SELECT outer_id AS outer_alias FROM outer_table o ORDER BY outer_id"""
+    service = SqlCompletionService()
+
+    inner_items = service.complete(
+        CompletionContext(sql, sql.index("WHERE ") + len("WHERE "), "duckdb", catalog)
+    )
+    outer_items = service.complete(
+        CompletionContext(sql, sql.index("ORDER BY ") + len("ORDER BY "), "duckdb", catalog)
+    )
+
+    inner_labels = {item.label for item in inner_items}
+    outer_labels = {item.label for item in outer_items}
+    assert {"cte_alias", "s"} <= inner_labels
+    assert {"outer_alias", "o"}.isdisjoint(inner_labels)
+    assert {"outer_alias", "o"} <= outer_labels
+    assert {"cte_alias", "s"}.isdisjoint(outer_labels)

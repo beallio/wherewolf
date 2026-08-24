@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from importlib import import_module, util
+from importlib import util
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID, uuid4
@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 import polars as pl
 
 from .models import QueryResult
+from .spark_runtime import create_child_session
 
 SPARK_AVAILABLE = util.find_spec("pyspark") is not None
 
@@ -29,20 +30,7 @@ class SparkEngine:
             raise RuntimeError("PySpark is not installed; install wherewolf[spark]")
 
         try:
-            spark_session = import_module("pyspark.sql").SparkSession
-            root_session = (
-                # pyspark exposes `builder` dynamically, which ty cannot resolve.
-                spark_session.builder.appName("Wherewolf")  # ty: ignore[unresolved-attribute]
-                .master("local[1]")
-                .config("spark.driver.memory", "512m")
-                .config("spark.ui.enabled", "false")
-                .config("spark.sql.shuffle.partitions", "1")
-                .config("spark.sql.execution.arrow.pyspark.enabled", "true")
-                .getOrCreate()
-            )
-            # `getOrCreate` reuses the one JVM-backed context. A child SQL session keeps
-            # temporary views isolated between request adapters while sharing that context.
-            self.spark = root_session.newSession()
+            self.spark = create_child_session()
         except Exception as error:  # Startup boundary: normalize JVM failures.
             raise RuntimeError(
                 "Unable to start Spark. Install wherewolf[spark] and a compatible Java runtime. "

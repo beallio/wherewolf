@@ -12,6 +12,7 @@ class StatementSpan:
     text: str
     start_offset: int
     end_offset: int
+    has_trailing_semicolon: bool
 
 
 @dataclass(frozen=True)
@@ -233,6 +234,7 @@ class StatementService:
             text=statement_text,
             start_offset=start,
             end_offset=stop,
+            has_trailing_semicolon=has_trailing_semicolon,
         )
 
 

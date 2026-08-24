@@ -1,16 +1,16 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=35" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=36" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=35)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=35)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=35)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=36)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=36)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=36)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 Wherewolf is a local SQL workbench for CSV, Parquet, JSON, JSON Lines, and XLSX files. It opens
 a native PyQt6 desktop window and runs queries with DuckDB by default. There is no browser UI and
 no local web server.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=35)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=36)
 
 ## Install
 
@@ -54,7 +54,10 @@ uv tool install 'wherewolf[spark]'
 ```
 
 Spark runs locally as `local[1]` with bounded driver memory. It is not a remote- or cluster-Spark
-client.
+client. When you select Spark, completion immediately uses a curated set of common functions and
+then discovers the local runtime's built-in SQL functions in the background. That discovery can
+start the bounded local JVM before your first Spark query; DuckDB-only startup still does not
+import PySpark or require Java.
 
 ### SQL source dialects
 
@@ -125,6 +128,9 @@ this mode.
 3. Write SQL in the editor and press **Ctrl+Return** to run the selection or current statement.
    **Ctrl+Space** opens completion, and **Ctrl+Shift+F** formats SQL. On macOS, use the platform's
    equivalent shortcut conventions.
+   Completion is case-insensitive and can match a prefix, token initials, or the middle of a
+   catalog alias, visible SQL alias, column, or function: for example, `sales` finds
+   `monthly_sales`, `dt` finds `DATE_TRUNC`, and `trunc` also finds `DATE_TRUNC`.
 4. Press **Ctrl+.** to request cancellation of the active query. The status bar and Messages tab
    report state, timing, preview rows, truncation, and errors.
    For an unmodified, single DuckDB statement from this editor, an engine error that includes an

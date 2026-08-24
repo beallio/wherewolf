@@ -1605,6 +1605,86 @@ def test_main_window_engine_selector_offers_only_execution_backends(qtbot) -> No
     ]
 
 
+def test_engine_selector_synchronizes_completion_dialect_across_editor_tabs(
+    qtbot, monkeypatch
+) -> None:
+    class FakeSparkMetadataController(QObject):
+        status_changed = pyqtSignal(str)
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = False
+            self.start_count = 0
+            self.shutdown_calls = 0
+
+        def ensure_started(self) -> bool:
+            if self.started:
+                return False
+            self.started = True
+            self.start_count += 1
+            return True
+
+        def shutdown(self) -> bool:
+            self.shutdown_calls += 1
+            return True
+
+    monkeypatch.setattr(main_window.EngineRegistry, "_is_spark_available", lambda _self: True)
+    metadata_controller = FakeSparkMetadataController()
+    window = MainWindow(spark_metadata_controller=metadata_controller)
+    qtbot.addWidget(window)
+    first = window.editor
+    second = window._new_editor_tab()
+
+    window.engine_selector.setCurrentIndex(window.engine_selector.findData(EngineKind.SPARK))
+
+    assert first._completion_dialect == "spark"
+    assert second._completion_dialect == "spark"
+    assert metadata_controller.start_count == 1
+
+    third = window._new_editor_tab()
+    assert third._completion_dialect == "spark"
+
+    class CompletionSpy:
+        def __init__(self) -> None:
+            self.contexts: list[Any] = []
+
+        def call_tip(self, _context: Any) -> None:
+            return None
+
+        def complete(self, context: Any) -> tuple[Any, ...]:
+            self.contexts.append(context)
+            return ()
+
+    completion_spy = CompletionSpy()
+    for editor in (first, second, third):
+        editor._completion_service = cast(Any, completion_spy)
+        editor._completion_adapter._service = cast(Any, completion_spy)
+        editor.setText("SELECT EXP")
+        editor.setCursorPosition(0, len("SELECT EXP"))
+    completion_spy.contexts.clear()
+
+    for editor in (first, second, third):
+        editor.request_completion(forced=True)
+    assert [context.dialect for context in completion_spy.contexts] == ["spark", "spark", "spark"]
+
+    window.engine_selector.setCurrentIndex(window.engine_selector.findData(EngineKind.DUCKDB))
+    assert all(editor._completion_dialect == "duckdb" for editor in window._editor_states)
+
+    window.status_bar.showMessage("DuckDB completion is active")
+    metadata_controller.status_changed.emit("Loaded 500 local Spark SQL functions for completion")
+    assert window.status_bar.currentMessage() == "DuckDB completion is active"
+
+    window.engine_selector.setCurrentIndex(window.engine_selector.findData(EngineKind.SPARK))
+    assert metadata_controller.start_count == 1
+    window.input_dialect_selector.setCurrentIndex(
+        window.input_dialect_selector.findData("postgres")
+    )
+    assert all(editor._completion_dialect == "spark" for editor in window._editor_states)
+
+    window.close()
+    assert metadata_controller.shutdown_calls == 1
+
+
 def test_input_dialect_selector_exposes_all_supported_source_dialects(qtbot) -> None:
     window = MainWindow()
     qtbot.addWidget(window)

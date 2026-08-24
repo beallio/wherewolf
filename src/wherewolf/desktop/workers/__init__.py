@@ -3,12 +3,14 @@
 from .execution_worker import ExecutionWorker
 from .profile_worker import ProfileWorker
 from .schema_worker import SchemaWorker
+from .spark_metadata_worker import SparkMetadataWorker
 from .value_counts_worker import ValueCount, ValueCountsResult, ValueCountsWorker
 
 __all__ = [
     "ExecutionWorker",
     "ProfileWorker",
     "SchemaWorker",
+    "SparkMetadataWorker",
     "ValueCount",
     "ValueCountsResult",
     "ValueCountsWorker",

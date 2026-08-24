@@ -10,18 +10,59 @@ from sqlglot import expressions as exp
 
 from wherewolf.domain.enums import CompletionKind
 from wherewolf.domain.models import CatalogEntry, ColumnSchema, CompletionContext, CompletionItem
-from wherewolf.services.completion_context import CursorContextKind, detect_context
+from wherewolf.services.completion_context import (
+    CompletionClause,
+    CursorContext,
+    CursorContextKind,
+    detect_context,
+)
+from wherewolf.services.completion_matching import match_identifier
+from wherewolf.services.completion_symbols import AliasCategory, ExpressionAlias, collect_symbols
 from wherewolf.services.sql_metadata import (
-    get_dialect_functions,
+    get_dialect_expression_functions,
     get_dialect_keywords,
+    get_dialect_table_functions,
     lookup_function_info,
 )
+from wherewolf.services.statement_service import StatementService
 
 
 @dataclass(frozen=True, slots=True)
 class _CteInfo:
     name: str
     columns: tuple[ColumnSchema, ...] | None
+
+
+@dataclass(frozen=True, slots=True)
+class _CompletionCandidate:
+    label: str
+    insert_text: str
+    kind: CompletionKind
+    detail: str | None
+    semantic_rank: int
+
+
+_CURATED_FUNCTION_NAMES = frozenset(
+    {
+        "ABS",
+        "AVG",
+        "COALESCE",
+        "CONCAT",
+        "COUNT",
+        "CURRENT_DATE",
+        "CURRENT_TIMESTAMP",
+        "DATE_TRUNC",
+        "LOWER",
+        "MAX",
+        "MIN",
+        "NOW",
+        "ROUND",
+        "SUBSTRING",
+        "SUM",
+        "TRIM",
+        "UPPER",
+    }
+)
 
 
 def _quote_identifier(name: str, dialect: str) -> str:
@@ -40,62 +81,73 @@ class SqlCompletionService:
     """Provides SQL code completion candidates given a completion context."""
 
     def complete(self, context: CompletionContext) -> tuple[CompletionItem, ...]:
-        cursor_ctx = detect_context(context.sql, context.cursor_offset)
+        statement_sql, statement_cursor = self._current_statement(
+            context.sql, context.cursor_offset
+        )
+        cursor_ctx = detect_context(statement_sql, statement_cursor)
         if cursor_ctx.kind == CursorContextKind.SUPPRESSED:
             return ()
 
-        items: list[CompletionItem] = []
-        prefix = cursor_ctx.prefix.lower()
+        candidates: list[_CompletionCandidate] = []
+        prefix = cursor_ctx.prefix
         dialect = context.dialect
 
-        ctes = self._find_ctes(context.sql, dialect, context.catalog)
+        ctes = self._find_ctes(statement_sql, dialect, context.catalog)
         cte_map = {cte.name.lower(): cte for cte in ctes}
+        symbols = collect_symbols(statement_sql, statement_cursor, dialect)
+        table_aliases = {alias.name.casefold(): alias.relation for alias in symbols.table_aliases}
 
         if cursor_ctx.kind == CursorContextKind.TABLE_REF:
             added_names: set[str] = set()
             for cte in ctes:
-                name_lower = cte.name.lower()
-                if not prefix or name_lower.startswith(prefix):
-                    insert_text = _quote_identifier(cte.name, dialect)
-                    tier = 0 if prefix and name_lower == prefix else 1
-                    items.append(
-                        CompletionItem(
-                            label=cte.name,
-                            insert_text=insert_text,
-                            kind=CompletionKind.CTE,
-                            detail="CTE",
-                            sort_key=(tier, name_lower),
-                        )
+                candidates.append(
+                    _CompletionCandidate(
+                        cte.name,
+                        _quote_identifier(cte.name, dialect),
+                        CompletionKind.CTE,
+                        "CTE",
+                        0,
                     )
-                    added_names.add(name_lower)
+                )
+                added_names.add(cte.name.casefold())
 
             for entry in context.catalog:
-                alias_lower = entry.alias.lower()
+                alias_lower = entry.alias.casefold()
                 if alias_lower in added_names:
                     continue
-                if not prefix or alias_lower.startswith(prefix):
-                    insert_text = _quote_identifier(entry.alias, dialect)
-                    tier = 0 if prefix and alias_lower == prefix else 2
-                    items.append(
-                        CompletionItem(
-                            label=entry.alias,
-                            insert_text=insert_text,
-                            kind=CompletionKind.TABLE,
-                            detail="table",
-                            sort_key=(tier, alias_lower),
-                        )
+                candidates.append(
+                    _CompletionCandidate(
+                        entry.alias,
+                        _quote_identifier(entry.alias, dialect),
+                        CompletionKind.TABLE,
+                        "table",
+                        2,
                     )
+                )
+
+            for function in get_dialect_table_functions(dialect):
+                candidates.append(
+                    _CompletionCandidate(
+                        function.name,
+                        f"{function.name}(",
+                        CompletionKind.FUNCTION,
+                        function.signature,
+                        4,
+                    )
+                )
 
         elif cursor_ctx.kind == CursorContextKind.QUALIFIED_COLUMN:
             qualifier = cursor_ctx.qualifier
             if qualifier:
-                qual_lower = qualifier.lower()
+                qual_lower = qualifier.casefold()
                 cols_to_add: tuple[ColumnSchema, ...] | None = None
                 if qual_lower in cte_map:
                     cols_to_add = cte_map[qual_lower].columns
                 else:
-                    target_table = self._resolve_qualifier_to_table(
-                        context.sql, context.cursor_offset, qualifier, dialect
+                    target_table = table_aliases.get(
+                        qual_lower
+                    ) or self._resolve_qualifier_to_table(
+                        statement_sql, statement_cursor, qualifier, dialect
                     )
                     if target_table:
                         entry = self._find_catalog_entry(context.catalog, target_table)
@@ -104,56 +156,58 @@ class SqlCompletionService:
 
                 if cols_to_add:
                     for col in cols_to_add:
-                        c_lower = col.name.lower()
-                        if not prefix or c_lower.startswith(prefix):
-                            insert_text = _quote_identifier(col.name, dialect)
-                            items.append(
-                                CompletionItem(
-                                    label=col.name,
-                                    insert_text=insert_text,
-                                    kind=CompletionKind.COLUMN,
-                                    detail=col.data_type,
-                                    sort_key=(0, c_lower),
-                                )
+                        candidates.append(
+                            _CompletionCandidate(
+                                col.name,
+                                _quote_identifier(col.name, dialect),
+                                CompletionKind.COLUMN,
+                                col.data_type,
+                                0,
                             )
+                        )
 
         elif cursor_ctx.kind == CursorContextKind.COLUMN_REF:
-            # 1. In-scope CTEs (Tier 1)
             added_tables: set[str] = set()
             for cte in ctes:
-                c_lower = cte.name.lower()
-                if not prefix or c_lower.startswith(prefix):
-                    tier = 0 if prefix and c_lower == prefix else 1
-                    items.append(
-                        CompletionItem(
-                            label=cte.name,
-                            insert_text=_quote_identifier(cte.name, dialect),
-                            kind=CompletionKind.CTE,
-                            detail="CTE",
-                            sort_key=(tier, c_lower),
-                        )
+                candidates.append(
+                    _CompletionCandidate(
+                        cte.name,
+                        _quote_identifier(cte.name, dialect),
+                        CompletionKind.CTE,
+                        "CTE",
+                        0,
                     )
-                    added_tables.add(c_lower)
+                )
+                added_tables.add(cte.name.casefold())
 
-            # 2. In-scope catalog tables (Tier 2)
+            for alias in symbols.table_aliases:
+                candidates.append(
+                    _CompletionCandidate(
+                        alias.name,
+                        _quote_identifier(alias.name, dialect),
+                        CompletionKind.TABLE,
+                        f"alias for {alias.relation}",
+                        1,
+                    )
+                )
+
             for entry in context.catalog:
-                a_lower = entry.alias.lower()
-                if a_lower not in added_tables and (not prefix or a_lower.startswith(prefix)):
-                    tier = 0 if prefix and a_lower == prefix else 2
-                    items.append(
-                        CompletionItem(
-                            label=entry.alias,
-                            insert_text=_quote_identifier(entry.alias, dialect),
-                            kind=CompletionKind.TABLE,
-                            detail="table",
-                            sort_key=(tier, a_lower),
+                a_lower = entry.alias.casefold()
+                if a_lower not in added_tables:
+                    candidates.append(
+                        _CompletionCandidate(
+                            entry.alias,
+                            _quote_identifier(entry.alias, dialect),
+                            CompletionKind.TABLE,
+                            "table",
+                            2,
                         )
                     )
 
-            # 3. In-scope columns from referenced tables/CTEs (Tier 3)
-            tables_in_query = self._find_tables_in_statement(context.sql, dialect)
-            for tbl in tables_in_query:
-                tbl_lower = tbl.lower()
+            visible_relations = list(self._find_tables_in_statement(statement_sql, dialect))
+            visible_relations.extend(alias.relation for alias in symbols.table_aliases)
+            for tbl in dict.fromkeys(visible_relations):
+                tbl_lower = tbl.casefold()
                 cols: tuple[ColumnSchema, ...] | None = None
                 if tbl_lower in cte_map:
                     cols = cte_map[tbl_lower].columns
@@ -164,54 +218,128 @@ class SqlCompletionService:
 
                 if cols:
                     for col in cols:
-                        col_lower = col.name.lower()
-                        if not prefix or col_lower.startswith(prefix):
-                            tier = 0 if prefix and col_lower == prefix else 3
-                            items.append(
-                                CompletionItem(
-                                    label=col.name,
-                                    insert_text=_quote_identifier(col.name, dialect),
-                                    kind=CompletionKind.COLUMN,
-                                    detail=col.data_type,
-                                    sort_key=(tier, col_lower),
-                                )
+                        candidates.append(
+                            _CompletionCandidate(
+                                col.name,
+                                _quote_identifier(col.name, dialect),
+                                CompletionKind.COLUMN,
+                                col.data_type,
+                                3,
                             )
-
-            # 4. Dialect functions (Tier 4)
-            funcs = get_dialect_functions(dialect)
-            for fn in funcs:
-                fn_lower = fn.name.lower()
-                if not prefix or fn_lower.startswith(prefix):
-                    tier = 0 if prefix and fn_lower == prefix else 4
-                    items.append(
-                        CompletionItem(
-                            label=fn.name,
-                            insert_text=f"{fn.name}(",
-                            kind=CompletionKind.FUNCTION,
-                            detail=fn.signature,
-                            sort_key=(tier, fn_lower),
                         )
-                    )
 
-            # 5. Dialect keywords (Tier 5)
-            keywords = get_dialect_keywords(dialect)
-            for kw in keywords:
-                kw_lower = kw.lower()
-                if not prefix or kw_lower.startswith(prefix):
-                    tier = 0 if prefix and kw_lower == prefix else 5
-                    items.append(
-                        CompletionItem(
-                            label=kw,
-                            insert_text=kw,
-                            kind=CompletionKind.KEYWORD,
-                            detail="keyword",
-                            sort_key=(tier, kw_lower),
-                        )
+            for alias in self._visible_expression_aliases(
+                symbols.expression_aliases, cursor_ctx, dialect
+            ):
+                candidates.append(
+                    _CompletionCandidate(
+                        alias.name,
+                        _quote_identifier(alias.name, dialect),
+                        CompletionKind.COLUMN,
+                        "column alias",
+                        3,
                     )
+                )
 
-        # Stable sort by sort_key
-        sorted_items = sorted(items, key=lambda x: (x.sort_key[0], x.sort_key[1], x.label))
-        return tuple(sorted_items)
+            for function in get_dialect_expression_functions(dialect):
+                candidates.append(
+                    _CompletionCandidate(
+                        function.name,
+                        f"{function.name}(",
+                        CompletionKind.FUNCTION,
+                        function.signature,
+                        4,
+                    )
+                )
+
+            for keyword in get_dialect_keywords(dialect):
+                candidates.append(
+                    _CompletionCandidate(
+                        keyword,
+                        keyword,
+                        CompletionKind.KEYWORD,
+                        "keyword",
+                        5,
+                    )
+                )
+
+        return self._rank_candidates(candidates, prefix)
+
+    @staticmethod
+    def _current_statement(sql: str, cursor_offset: int) -> tuple[str, int]:
+        """Return the one statement that may contribute completion candidates."""
+
+        statement_service = StatementService()
+        bounded_cursor = max(0, min(cursor_offset, len(sql)))
+        selection = statement_service.find_statement(sql, bounded_cursor)
+        if selection.text is None:
+            fragment_start = 0
+            for statement in statement_service.split_statements(sql):
+                if statement.has_trailing_semicolon and statement.end_offset <= bounded_cursor:
+                    fragment_start = statement.end_offset
+            statement_sql = sql[fragment_start:bounded_cursor]
+            return statement_sql, len(statement_sql)
+
+        relative_cursor = bounded_cursor - selection.start_offset
+        statement_sql = sql[selection.start_offset : selection.end_offset]
+        return statement_sql, max(0, min(relative_cursor, len(statement_sql)))
+
+    @staticmethod
+    def _visible_expression_aliases(
+        aliases: tuple[ExpressionAlias, ...], cursor_ctx: CursorContext, dialect: str
+    ) -> tuple[ExpressionAlias, ...]:
+        """Apply dialect clause visibility without exposing select-list lateral aliases."""
+
+        clause = cursor_ctx.clause
+        if clause is CompletionClause.ORDER_BY:
+            return aliases
+        if dialect.casefold() != "duckdb":
+            return ()
+        if clause in {CompletionClause.WHERE, CompletionClause.GROUP_BY}:
+            return tuple(
+                alias for alias in aliases if alias.category is AliasCategory.NON_AGGREGATE
+            )
+        if clause is CompletionClause.HAVING:
+            return tuple(alias for alias in aliases if alias.category is AliasCategory.AGGREGATE)
+        if clause is CompletionClause.QUALIFY:
+            return tuple(alias for alias in aliases if alias.category is AliasCategory.WINDOW)
+        return ()
+
+    @staticmethod
+    def _rank_candidates(
+        candidates: list[_CompletionCandidate], prefix: str
+    ) -> tuple[CompletionItem, ...]:
+        ranked: list[tuple[int, str, _CompletionCandidate]] = []
+        for candidate in candidates:
+            match = match_identifier(prefix, candidate.label)
+            if match is None:
+                continue
+            if prefix:
+                rank = int(match.quality) * 10 + candidate.semantic_rank
+            elif candidate.kind is CompletionKind.KEYWORD:
+                rank = 4
+            elif candidate.kind is CompletionKind.FUNCTION:
+                rank = 5 if candidate.label.upper() in _CURATED_FUNCTION_NAMES else 6
+            else:
+                rank = candidate.semantic_rank
+            ranked.append((rank, candidate.label.casefold(), candidate))
+
+        deduplicated: dict[str, tuple[int, str, _CompletionCandidate]] = {}
+        for ranked_candidate in sorted(
+            ranked, key=lambda value: (value[0], value[1], value[2].label)
+        ):
+            deduplicated.setdefault(ranked_candidate[1], ranked_candidate)
+
+        return tuple(
+            CompletionItem(
+                label=candidate.label,
+                insert_text=candidate.insert_text,
+                kind=candidate.kind,
+                detail=candidate.detail,
+                sort_key=(rank, normalized_label),
+            )
+            for rank, normalized_label, candidate in list(deduplicated.values())[:100]
+        )
 
     def _find_ctes(
         self, sql: str, dialect: str, catalog: tuple[CatalogEntry, ...]
