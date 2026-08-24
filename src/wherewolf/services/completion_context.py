@@ -16,11 +16,51 @@ class CursorContextKind(StrEnum):
     SUPPRESSED = "suppressed"
 
 
+class CompletionClause(StrEnum):
+    """Current statement clause used for context-sensitive completion."""
+
+    UNKNOWN = "unknown"
+    SELECT = "select"
+    TABLE_REF = "table_ref"
+    WHERE = "where"
+    GROUP_BY = "group_by"
+    HAVING = "having"
+    QUALIFY = "qualify"
+    ORDER_BY = "order_by"
+    JOIN_ON = "join_on"
+
+
 @dataclass(frozen=True, slots=True)
 class CursorContext:
     kind: CursorContextKind
     prefix: str
     qualifier: str | None = None
+    clause: CompletionClause = CompletionClause.UNKNOWN
+
+
+def _detect_clause(before_prefix: str) -> CompletionClause:
+    matches = list(
+        re.finditer(
+            r"\b(GROUP\s+BY|ORDER\s+BY|SELECT|FROM|JOIN|WHERE|HAVING|QUALIFY|ON|WITH)\b",
+            before_prefix.upper(),
+        )
+    )
+    if not matches:
+        return CompletionClause.UNKNOWN
+
+    clause_text = matches[-1].group(1)
+    clauses = {
+        "SELECT": CompletionClause.SELECT,
+        "FROM": CompletionClause.TABLE_REF,
+        "JOIN": CompletionClause.TABLE_REF,
+        "WHERE": CompletionClause.WHERE,
+        "GROUP BY": CompletionClause.GROUP_BY,
+        "HAVING": CompletionClause.HAVING,
+        "QUALIFY": CompletionClause.QUALIFY,
+        "ORDER BY": CompletionClause.ORDER_BY,
+        "ON": CompletionClause.JOIN_ON,
+    }
+    return clauses.get(clause_text, CompletionClause.UNKNOWN)
 
 
 def detect_context(sql: str, cursor_offset: int) -> CursorContext:
@@ -137,22 +177,13 @@ def detect_context(sql: str, cursor_offset: int) -> CursorContext:
     # Remove the prefix from up_to_cursor to find previous keywords
     before_prefix = up_to_cursor[: len(up_to_cursor) - len(prefix)].rstrip()
 
-    # Split into uppercase word tokens to inspect preceding keyword
-    tokens = re.findall(r"[a-zA-Z0-9_]+", before_prefix.upper())
+    clause = _detect_clause(before_prefix)
+    if clause is CompletionClause.TABLE_REF:
+        kind = CursorContextKind.TABLE_REF
+    else:
+        kind = CursorContextKind.COLUMN_REF
 
-    table_keywords = {"FROM", "JOIN", "INTO", "UPDATE"}
-
-    # Look for last keyword in tokens
-    kind = CursorContextKind.COLUMN_REF
-    for tok in reversed(tokens):
-        if tok in table_keywords:
-            kind = CursorContextKind.TABLE_REF
-            break
-        if tok in {"SELECT", "WHERE", "GROUP", "HAVING", "ORDER", "SET", "ON", "WITH"}:
-            kind = CursorContextKind.COLUMN_REF
-            break
-
-    return CursorContext(kind=kind, prefix=prefix, qualifier=None)
+    return CursorContext(kind=kind, prefix=prefix, qualifier=None, clause=clause)
 
 
-__all__ = ["CursorContext", "CursorContextKind", "detect_context"]
+__all__ = ["CompletionClause", "CursorContext", "CursorContextKind", "detect_context"]

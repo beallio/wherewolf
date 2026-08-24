@@ -5,10 +5,15 @@
     "docs/plans/2026-08-23_fuzzy-sql-intellisense.md",
     "docs/agent_conversations/2026-08-23_fuzzy-sql-intellisense.json",
     "src/wherewolf/services/completion_matching.py",
-    "tests/test_completion_matching.py"
+    "tests/test_completion_matching.py",
+    "src/wherewolf/services/completion_context.py",
+    "src/wherewolf/services/completion_symbols.py",
+    "tests/test_completion_context.py",
+    "tests/test_completion_symbols.py"
   ],
   "tests_added": [
-    "tests/test_completion_matching.py"
+    "tests/test_completion_matching.py",
+    "tests/test_completion_symbols.py"
   ],
   "design_decisions": [
     "The implementation starts from dev after the supplied plan is committed as the first feature-branch commit.",
@@ -31,6 +36,13 @@
       "red_result": "collection failed with ModuleNotFoundError: wherewolf.services.completion_matching",
       "green_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_matching.py",
       "green_result": "4 passed in 0.08s"
+    },
+    {
+      "task": 3,
+      "red_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_context.py tests/test_completion_symbols.py",
+      "red_result": "collection failed because CompletionClause and completion_symbols did not exist",
+      "green_command": "./run.sh uv run pytest -q --no-cov tests/test_completion_context.py tests/test_completion_symbols.py",
+      "green_result": "19 passed in 0.11s"
     }
   ],
   "final_quality_gates": null,
