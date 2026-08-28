@@ -887,6 +887,6 @@ def test_sql_editor_releases_scintilla_keys_that_collide_with_app_shortcuts(qtbo
     qtbot.addWidget(editor)
 
     commands = editor.standardCommands()
-    for sequence in ("Ctrl+T", "Ctrl+/"):
+    for sequence in ("Ctrl+T", "Ctrl+/", "Ctrl+U", "Ctrl+Shift+U"):
         key = QKeySequence(sequence)[0].toCombined()
         assert commands.boundTo(key) is None, f"{sequence} is still bound in Scintilla"

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import webbrowser
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from importlib.metadata import version
 from pathlib import Path
@@ -104,6 +105,7 @@ from wherewolf.services.query_parameters import (
     extract_parameters,
 )
 from wherewolf.services.result_pagination import has_top_level_order_by
+from wherewolf.services.text_case import TEXT_CASE_TRANSFORMS
 from wherewolf.storage.catalog import CatalogStore
 from wherewolf.storage.history import HistoryManager
 from wherewolf.storage.saved_queries import SavedQuery, SavedQueryStore
@@ -116,6 +118,15 @@ SQL_DIALECT_REFERENCE_URLS: Final = {
     "Microsoft T-SQL": "https://learn.microsoft.com/en-us/sql/t-sql/language-reference",
     "SQLite": "https://www.sqlite.org/lang.html",
     "Spark SQL": "https://spark.apache.org/docs/latest/sql-ref.html",
+}
+
+_FORMAT_TEXT_SHORTCUTS: dict[str, tuple[str, ...]] = {
+    "lowercase": ("Ctrl+Shift+Y", "Ctrl+U"),
+    "UPPERCASE": ("Ctrl+Shift+X", "Ctrl+Shift+U"),
+    "Title Case": ("Ctrl+Shift+C",),
+    "camelCase": ("Ctrl+Shift+M",),
+    "snake_case": ("Ctrl+Shift+N",),
+    "kebab-case": ("Ctrl+Shift+K",),
 }
 
 
@@ -2021,6 +2032,11 @@ class MainWindow(QMainWindow):
         if editor is not None:
             getattr(editor, operation)()
 
+    def _apply_text_case(self, transform: Callable[[str], str]) -> None:
+        editor = self.current_editor
+        if editor is not None:
+            editor.apply_text_case(transform)
+
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
         assert menu_bar is not None
@@ -2090,6 +2106,19 @@ class MainWindow(QMainWindow):
         self.find_replace_action.triggered.connect(self._show_find_replace)
         edit_menu.addAction(self.select_all_action)
         edit_menu.addAction(self.find_replace_action)
+        self.format_text_menu = cast(QMenu, edit_menu.addMenu("Format Text"))
+        self.format_text_menu.setObjectName("format_text_menu")
+        self.format_text_actions: dict[str, QAction] = {}
+        assert _FORMAT_TEXT_SHORTCUTS.keys() == TEXT_CASE_TRANSFORMS.keys()
+        for label, transform in TEXT_CASE_TRANSFORMS.items():
+            action = cast(QAction, self.format_text_menu.addAction(label))
+            action.setShortcuts(
+                [QKeySequence(sequence) for sequence in _FORMAT_TEXT_SHORTCUTS[label]]
+            )
+            action.triggered.connect(
+                lambda _checked=False, transform=transform: self._apply_text_case(transform)
+            )
+            self.format_text_actions[label] = action
         edit_menu.addSeparator()
         edit_menu.addAction(self.toggle_comment_action)
         edit_menu.addSeparator()

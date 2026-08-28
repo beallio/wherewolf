@@ -66,6 +66,7 @@ from wherewolf.services import (
     SettingsService,
     serialise_history_records_to_sql,
 )
+from wherewolf.services.text_case import TEXT_CASE_TRANSFORMS
 from wherewolf.storage import HistoryManager, SavedQueryStore
 from wherewolf.storage.catalog import CatalogStore
 
@@ -1769,6 +1770,7 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
         "Paste",
         "Select All",
         "Find / Replace…",
+        "Format Text",
         "Toggle Comment",
         "Clear History",
     ]
@@ -1778,6 +1780,84 @@ def test_main_window_edit_menu_exposes_the_editor_actions(qtbot) -> None:
     assert window.select_all_action.shortcut().toString() == "Ctrl+A"
     assert window.find_replace_action.shortcut().toString() == "Ctrl+F"
     assert window.toggle_comment_action.shortcut().toString() == "Ctrl+/"
+
+
+def test_main_window_edit_menu_has_a_format_text_submenu(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+
+    assert window.format_text_menu.title() == "Format Text"
+    assert window.format_text_menu.menuAction() in window.edit_menu.actions()
+    assert [action.text() for action in window.format_text_menu.actions()] == list(
+        TEXT_CASE_TRANSFORMS
+    )
+
+
+def test_main_window_format_text_action_recases_the_current_editor(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.editor.setText("select customerOrderId from t")
+    window.editor.setSelection(0, 7, 0, 22)
+
+    action = next(
+        action for action in window.format_text_menu.actions() if action.text() == "snake_case"
+    )
+    assert action is window.format_text_actions["snake_case"]
+    action.trigger()
+
+    assert window.editor.text() == "select customer_order_id from t"
+
+
+def test_main_window_format_text_actions_have_the_specified_shortcuts(qtbot) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    expected_shortcuts = {
+        "lowercase": ("Ctrl+Shift+Y", "Ctrl+U"),
+        "UPPERCASE": ("Ctrl+Shift+X", "Ctrl+Shift+U"),
+        "Title Case": ("Ctrl+Shift+C",),
+        "camelCase": ("Ctrl+Shift+M",),
+        "snake_case": ("Ctrl+Shift+N",),
+        "kebab-case": ("Ctrl+Shift+K",),
+    }
+
+    for label, shortcuts in expected_shortcuts.items():
+        action = window.format_text_actions[label]
+        assert action.shortcut() == QKeySequence(shortcuts[0])
+        assert [shortcut.toString() for shortcut in action.shortcuts()] == list(shortcuts)
+
+
+@pytest.mark.parametrize(
+    ("label", "shortcut", "key", "text", "expected"),
+    [
+        ("lowercase", "Ctrl+Shift+Y", Qt.Key.Key_Y, "CUSTOMER_ORDER_ID", "customer_order_id"),
+        ("UPPERCASE", "Ctrl+Shift+X", Qt.Key.Key_X, "customer_order_id", "CUSTOMER_ORDER_ID"),
+        ("Title Case", "Ctrl+Shift+C", Qt.Key.Key_C, "customer_order_id", "Customer_Order_Id"),
+        ("camelCase", "Ctrl+Shift+M", Qt.Key.Key_M, "customer_order_id", "customerOrderId"),
+        ("snake_case", "Ctrl+Shift+N", Qt.Key.Key_N, "customerOrderId", "customer_order_id"),
+        ("kebab-case", "Ctrl+Shift+K", Qt.Key.Key_K, "customer_order_id", "customer-order-id"),
+    ],
+)
+def test_main_window_format_text_shortcuts_fire_with_focus_in_the_editor(
+    qtbot, label: str, shortcut: str, key: Qt.Key, text: str, expected: str
+) -> None:
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.show()
+    QTest.qWaitForWindowExposed(window)  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+    assert window.format_text_actions[label].shortcut() == QKeySequence(shortcut)
+    window.editor.setText(text)
+    window.editor.setCursorPosition(0, len(text) // 2)
+    window.editor.setFocus()
+
+    QTest.keyClick(  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+        window.editor,
+        key,
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+    )
+    QTest.keyRelease(window.editor, Qt.Key.Key_Shift)  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+    QTest.keyRelease(window.editor, Qt.Key.Key_Control)  # ty: ignore[no-matching-overload]  # QTest stubs model self.
+
+    assert window.editor.text() == expected, label
 
 
 def test_main_window_find_replace_dialog_changes_editor_text(qtbot) -> None:
