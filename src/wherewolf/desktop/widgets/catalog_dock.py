@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PyQt6.QtCore import QMimeData, QPoint, Qt, QUrl, pyqtSignal
+from PyQt6.QtCore import QItemSelectionModel, QMimeData, QPoint, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QDragEnterEvent, QDropEvent
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -180,8 +180,31 @@ class CatalogDock(QWidget):
 
         return self._model.entry_at(row), row
 
+    def _resolve_context_target(self, position: QPoint) -> tuple[CatalogEntry, int] | None:
+        """Anchor the context menu on the right-clicked row.
+
+        A blank-space click must not inherit a stale ``currentIndex()``, so it resolves to
+        ``None`` rather than deferring to :meth:`_selected_entry`.
+        """
+        index = self._view.indexAt(position)
+        if not index.isValid():
+            return None
+        selection_model = self._view.selectionModel()
+        if selection_model is None:
+            return None
+        # SelectItems means a selected row may have no selected cell in the clicked column,
+        # so test row membership, not cell membership.
+        already_selected = selection_model.rowIntersectsSelection(index.row())
+        selection_model.setCurrentIndex(
+            index,
+            QItemSelectionModel.SelectionFlag.NoUpdate
+            if already_selected
+            else QItemSelectionModel.SelectionFlag.ClearAndSelect,
+        )
+        return self._selected_entry()
+
     def _on_context_menu(self, position: QPoint) -> None:
-        selection = self._selected_entry()
+        selection = self._resolve_context_target(position)
         menu = QMenu(self)
 
         self._rename_action.setEnabled(selection is not None)
