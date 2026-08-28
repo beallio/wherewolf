@@ -3,10 +3,10 @@ from typing import cast
 from unittest.mock import Mock
 
 import pytest
-from PyQt6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+from PyQt6.QtCore import QItemSelectionModel, QMimeData, QPoint, QPointF, Qt, QUrl
 from PyQt6.QtGui import QDropEvent, QFontMetrics
 from PyQt6.QtTest import QSignalSpy, QTest
-from PyQt6.QtWidgets import QApplication, QDockWidget, QHeaderView, QTableView
+from PyQt6.QtWidgets import QApplication, QDockWidget, QHeaderView, QMenu, QTableView
 
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.desktop.models import CatalogModel
@@ -82,7 +82,7 @@ def test_catalog_file_column_keeps_basenames_visible_in_the_middle(qtbot) -> Non
     assert view.textElideMode() == Qt.TextElideMode.ElideMiddle
 
 
-def test_catalog_file_column_is_resizable_and_folder_column_stretches(qtbot) -> None:
+def test_catalog_all_columns_are_user_resizable(qtbot) -> None:
     dock = CatalogDock(CatalogService())
     qtbot.addWidget(dock)
     dock.show()
@@ -91,22 +91,173 @@ def test_catalog_file_column_is_resizable_and_folder_column_stretches(qtbot) -> 
     header = view.horizontalHeader()
     assert header is not None
 
-    assert header.sectionResizeMode(0) == QHeaderView.ResizeMode.Interactive
-    assert header.sectionResizeMode(1) == QHeaderView.ResizeMode.Interactive
-    assert header.sectionResizeMode(2) == QHeaderView.ResizeMode.Stretch
-    assert header.sectionResizeMode(3) == QHeaderView.ResizeMode.ResizeToContents
-    assert header.sectionResizeMode(4) == QHeaderView.ResizeMode.ResizeToContents
+    for column in range(dock.model.columnCount()):
+        assert header.sectionResizeMode(column) == QHeaderView.ResizeMode.Interactive
+        before = header.sectionSize(column)
+        header.resizeSection(column, before + 37)
+        assert header.sectionSize(column) == before + 37
 
-    dock.resize(450, 200)
-    QApplication.processEvents()
-    narrow_folder_width = header.sectionSize(2)
-    dock.resize(650, 200)
-    QApplication.processEvents()
-    assert header.sectionSize(2) > narrow_folder_width
-
-    header.resizeSection(1, 400)
-    assert header.sectionSize(1) == 400
     assert isinstance(view.itemDelegateForColumn(2), FolderColumnDelegate)
+
+
+def test_catalog_default_column_widths_are_applied(qtbot) -> None:
+    dock = CatalogDock(CatalogService())
+    qtbot.addWidget(dock)
+
+    header = dock.view.horizontalHeader()
+    assert header is not None
+    assert (
+        tuple(header.sectionSize(column) for column in range(dock.model.columnCount()))
+        == CatalogDock.DEFAULT_COLUMN_WIDTHS
+    )
+
+
+def test_catalog_widening_the_dock_leaves_user_column_widths_alone(qtbot) -> None:
+    dock = CatalogDock(CatalogService())
+    qtbot.addWidget(dock)
+    dock.resize(700, 200)
+    dock.show()
+    QApplication.processEvents()
+
+    header = dock.view.horizontalHeader()
+    assert header is not None
+    before = tuple(header.sectionSize(column) for column in range(dock.model.columnCount()))
+    dock.resize(1200, 200)
+    QApplication.processEvents()
+
+    assert tuple(header.sectionSize(column) for column in range(dock.model.columnCount())) == before
+
+
+def test_catalog_right_click_targets_the_clicked_row_not_the_current_row(
+    qtbot, monkeypatch
+) -> None:
+    service = CatalogService()
+    service.add_paths(
+        (
+            Path("/datasets/alpha.csv"),
+            Path("/datasets/bravo.csv"),
+            Path("/datasets/charlie.csv"),
+            Path("/datasets/delta.csv"),
+        )
+    )
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+    dock.resize(900, 400)
+    dock.show()
+    QApplication.processEvents()
+    monkeypatch.setattr(QMenu, "popup", lambda self, position: None)
+
+    view = dock.view
+    view.selectRow(0)
+    point = view.visualRect(dock.model.index(3, 1)).center()
+    dock._on_context_menu(point)
+
+    selection = dock._selected_entry()
+    assert selection is not None
+    assert selection[0].alias == "delta"
+    assert selection[1] == 3
+
+
+def test_catalog_right_click_on_an_unselected_row_selects_only_that_row(qtbot, monkeypatch) -> None:
+    service = CatalogService()
+    service.add_paths(
+        (
+            Path("/datasets/alpha.csv"),
+            Path("/datasets/bravo.csv"),
+            Path("/datasets/charlie.csv"),
+            Path("/datasets/delta.csv"),
+        )
+    )
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+    dock.resize(900, 400)
+    dock.show()
+    QApplication.processEvents()
+    monkeypatch.setattr(QMenu, "popup", lambda self, position: None)
+
+    view = dock.view
+    view.selectRow(0)
+    point = view.visualRect(dock.model.index(2, 1)).center()
+    dock._on_context_menu(point)
+
+    selection_model = view.selectionModel()
+    assert selection_model is not None
+    assert all(index.row() == 2 for index in selection_model.selectedIndexes())
+
+
+def test_catalog_right_click_inside_the_existing_selection_preserves_it(qtbot, monkeypatch) -> None:
+    service = CatalogService()
+    service.add_paths(
+        (
+            Path("/datasets/alpha.csv"),
+            Path("/datasets/bravo.csv"),
+            Path("/datasets/charlie.csv"),
+            Path("/datasets/delta.csv"),
+        )
+    )
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+    dock.resize(900, 400)
+    dock.show()
+    QApplication.processEvents()
+    monkeypatch.setattr(QMenu, "popup", lambda self, position: None)
+
+    view = dock.view
+    selection_model = view.selectionModel()
+    assert selection_model is not None
+    selection_model.setCurrentIndex(
+        dock.model.index(1, 2), QItemSelectionModel.SelectionFlag.ClearAndSelect
+    )
+    point = view.visualRect(dock.model.index(1, 0)).center()
+    dock._on_context_menu(point)
+
+    assert {(index.row(), index.column()) for index in selection_model.selectedIndexes()} == {
+        (1, 2)
+    }
+    selection = dock._selected_entry()
+    assert selection is not None
+    assert selection[1] == 1
+
+
+def test_catalog_right_click_on_blank_space_disables_every_context_action(
+    qtbot, monkeypatch
+) -> None:
+    service = CatalogService()
+    service.add_paths(
+        (
+            Path("/datasets/alpha.csv"),
+            Path("/datasets/bravo.csv"),
+            Path("/datasets/charlie.csv"),
+            Path("/datasets/delta.csv"),
+        )
+    )
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+    dock.resize(900, 400)
+    dock.show()
+    QApplication.processEvents()
+    monkeypatch.setattr(QMenu, "popup", lambda self, position: None)
+
+    view = dock.view
+    view.selectRow(0)
+    viewport = view.viewport()
+    assert viewport is not None
+    point = QPoint(50, viewport.height() - 5)
+    assert not view.indexAt(point).isValid()
+    dock._on_context_menu(point)
+
+    assert all(
+        not action.isEnabled()
+        for action in (
+            dock._rename_action,
+            dock._remove_action,
+            dock._refresh_action,
+            dock._copy_alias_action,
+            dock._copy_path_action,
+            dock._reveal_action,
+            dock._insert_alias_action,
+        )
+    )
 
 
 def test_catalog_file_column_shows_complete_basenames_at_user_dock_width(qtbot) -> None:
