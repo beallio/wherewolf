@@ -3983,10 +3983,12 @@ def test_main_window_result_grid_gui_thread_population(qtbot, monkeypatch) -> No
     # Verify execution updates model on GUI thread
     populated_thread: QThread | None = None
 
-    def spy_set_frame(frame):
+    def spy_set_frame(frame, *, row_offset: int = 0):
         nonlocal populated_thread
         populated_thread = QThread.currentThread()
-        type(window.result_table_view).set_frame(window.result_table_view, frame)
+        type(window.result_table_view).set_frame(
+            window.result_table_view, frame, row_offset=row_offset
+        )
 
     monkeypatch.setattr(window.result_table_view, "set_frame", spy_set_frame)
 
@@ -4711,6 +4713,50 @@ def test_main_window_pagination_success_updates_page_frame_labels_and_export_sou
     window._start_export(True, ExportFormat.CSV)
 
     assert exports == [(request, page_frame, False), (request, page_frame, True)]
+
+
+def test_main_window_next_page_row_labels_continue_from_the_previous_page(qtbot) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    window._on_query_result_ready(_truncated_result(request), request)
+
+    window.next_page_button.click()
+    controller.emit_result(
+        _page_result(request, offset=request.preview_limit, frame=pl.DataFrame({"id": [3, 4]}))
+    )
+    qtbot.waitUntil(lambda: window.page_position_label.text() == "Page 2")
+
+    model = window.result_table_view.model()
+    assert model is not None
+    row_label = model.headerData(0, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole)
+    start = int(window.page_status_label.text().split()[1].split("-")[0].replace(",", ""))
+    assert row_label == request.preview_limit + 1
+    assert row_label == start
+
+
+def test_main_window_switching_tabs_preserves_paged_row_labels(qtbot) -> None:
+    controller = _FakePageController()
+    window = MainWindow(page_controller=controller)
+    qtbot.addWidget(window)
+    request = _row_count_request(sql="SELECT * FROM rows ORDER BY id")
+    window._on_query_result_ready(_truncated_result(request), request)
+    first_editor = window.editor
+
+    window.next_page_button.click()
+    controller.emit_result(
+        _page_result(request, offset=request.preview_limit, frame=pl.DataFrame({"id": [3, 4]}))
+    )
+    window._new_editor_tab()
+    window.editor_tabs.setCurrentIndex(window.editor_tabs.indexOf(first_editor))
+    qtbot.waitUntil(lambda: window.current_editor is first_editor)
+
+    model = window.result_table_view.model()
+    assert model is not None
+    assert model.headerData(0, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole) == (
+        request.preview_limit + 1
+    )
 
 
 def test_main_window_pagination_page_navigation_uses_probe_has_next_without_a_total_and_shows_order_warning(

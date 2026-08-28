@@ -208,9 +208,15 @@ class SqlEditor(QsciScintilla):
         self.request_completion(forced=False)
 
     def keyPressEvent(self, e: QKeyEvent) -> None:
-        """Return printable typing to the document before refreshing a user list."""
+        """Return printable typing to the document before refreshing a user list.
 
-        if e.text().isprintable() and self.isListActive():
+        An empty ``QKeyEvent.text()`` is "printable" in Python, so the emptiness check is
+        load-bearing: without it every arrow, page and Home/End key cancels the active user
+        list before QScintilla can navigate or accept it.
+        """
+
+        text = e.text()
+        if text and text.isprintable() and self.isListActive():
             self._completion_adapter.cancel()
         super().keyPressEvent(e)
 

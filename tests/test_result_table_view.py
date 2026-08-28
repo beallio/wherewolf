@@ -48,6 +48,17 @@ def test_result_table_view_selection_and_copy(qtbot):
     assert cb.text() == "10\tx\n20\ty"
 
 
+def test_result_table_view_row_labels_track_the_page_offset(qtbot) -> None:
+    view = ResultTableView()
+    qtbot.addWidget(view)
+    view.set_frame(pl.DataFrame({"value": range(1000)}), row_offset=1000)
+
+    model = view.model()
+    assert model is not None
+    assert model.headerData(0, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole) == 1001
+    assert model.headerData(999, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole) == 2000
+
+
 def test_selection_for_export_maps_visual_columns_when_a_column_is_hidden(qtbot) -> None:
     frame = pl.DataFrame({"a": [1], "b": [2], "c": [3]})
     table_view = ResultTableView()

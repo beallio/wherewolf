@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- **SQL completion lists now support normal keyboard navigation.** Use arrow, page, Home, and
+  End keys to choose a suggestion before accepting it with Tab or Return.
+- **Paged result rows now keep their absolute numbers.** Later pages continue numbering from the
+  preceding page, so the grid agrees with the displayed page range.
+
 ## [0.11.0] - 2026-08-24 — Find SQL completions by fuzzy match, including aliases and functions
 
 ### Added

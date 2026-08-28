@@ -64,8 +64,8 @@ class ResultTableView(QTableView):
     def source_model(self) -> PolarsTableModel:
         return self._source_model
 
-    def set_frame(self, frame: pl.DataFrame | None) -> None:
-        self._source_model.set_frame(frame)
+    def set_frame(self, frame: pl.DataFrame | None, *, row_offset: int = 0) -> None:
+        self._source_model.set_frame(frame, row_offset=row_offset)
         if frame is not None:
             self._source_model.set_header_badges(
                 [self._dtype_badge(dtype) for dtype in frame.dtypes]

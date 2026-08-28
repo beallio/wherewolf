@@ -1241,7 +1241,10 @@ class MainWindow(QMainWindow):
         self.desktop_actions.export_selection.setEnabled(can_export)
         self.export_button.setEnabled(can_export)
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
-            self.result_table_view.set_frame(result.frame)
+            self.result_table_view.set_frame(
+                result.frame,
+                row_offset=self._page_row_offset(self._current_editor_state(), request),
+            )
         else:
             self.result_table_view.set_frame(None)
         is_empty_result = (
@@ -2494,6 +2497,13 @@ class MainWindow(QMainWindow):
             return False
         return total is None or (state.page_index + 1) * state.last_request.preview_limit < total
 
+    @staticmethod
+    def _page_row_offset(state: _EditorTabState | None, request: ExecutionRequest) -> int:
+        """Return the absolute row index of the first row of the state's current page."""
+        if state is None:
+            return 0
+        return state.page_index * request.preview_limit
+
     def _update_page_controls(self) -> None:
         state = self._current_editor_state()
         if not self._can_page_results(state):
@@ -2512,7 +2522,7 @@ class MainWindow(QMainWindow):
         request = state.last_request
         result = state.last_result
         page_number = state.page_index + 1
-        start = state.page_index * request.preview_limit + 1
+        start = self._page_row_offset(state, request) + 1
         end = start + result.preview_row_count - 1
         range_text = f"rows {start:,}-{end:,}"
         if result.total_row_count is not None:
