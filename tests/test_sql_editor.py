@@ -1,3 +1,4 @@
+import pytest
 from PyQt6.Qsci import QsciLexerSQL
 from PyQt6.QtCore import QSettings, Qt
 from PyQt6.QtGui import QColor, QKeySequence
@@ -644,6 +645,85 @@ def test_sql_editor_user_list_activation_replaces_fuzzy_prefix_once(qtbot) -> No
     qtbot.waitUntil(lambda: editor.text() == "SELECT DATE_TRUNC(")
 
     assert editor._completion_adapter._active_items == {}
+
+
+def _highlighted_entry(editor: SqlEditor) -> tuple[int, str]:
+    buffer = bytearray(256)
+    length = editor.SendScintilla(  # ty: ignore[no-matching-overload]  # QScintilla fills it.
+        editor.SCI_AUTOCGETCURRENTTEXT, 0, buffer
+    )
+    return editor.SendScintilla(editor.SCI_AUTOCGETCURRENT), bytes(buffer[:length]).decode()
+
+
+def _editor_with_dt_completion(qtbot) -> SqlEditor:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.show()
+    QTest.qWaitForWindowExposed(editor)  # ty: ignore  # QTest stubs model self.
+    editor.setFocus()
+    QTest.keyClicks(editor, "SELECT dt")  # ty: ignore  # QTest stubs model self.
+    qtbot.waitUntil(editor.isListActive)
+    return editor
+
+
+def test_sql_editor_arrow_down_moves_the_completion_highlight_without_closing_the_list(
+    qtbot,
+) -> None:
+    editor = _editor_with_dt_completion(qtbot)
+
+    initial_index, _ = _highlighted_entry(editor)
+    QTest.keyClick(editor, Qt.Key.Key_Down)  # ty: ignore  # QTest stubs model self.
+
+    assert editor.isListActive()
+    highlighted_index, _ = _highlighted_entry(editor)
+    assert highlighted_index == initial_index + 1
+
+
+def test_sql_editor_arrow_up_keeps_the_completion_list_open(qtbot) -> None:
+    editor = _editor_with_dt_completion(qtbot)
+
+    QTest.keyClick(editor, Qt.Key.Key_Up)  # ty: ignore  # QTest stubs model self.
+
+    assert editor.isListActive()
+
+
+def test_sql_editor_arrow_down_then_tab_inserts_the_highlighted_completion(qtbot) -> None:
+    editor = _editor_with_dt_completion(qtbot)
+
+    QTest.keyClick(editor, Qt.Key.Key_Down)  # ty: ignore  # QTest stubs model self.
+    _, label = _highlighted_entry(editor)
+    QTest.keyClick(editor, Qt.Key.Key_Tab)  # ty: ignore  # QTest stubs model self.
+
+    qtbot.waitUntil(lambda: editor.text() == f"SELECT {label}(")
+
+
+def test_sql_editor_end_key_jumps_to_the_last_completion_entry(qtbot) -> None:
+    editor = _editor_with_dt_completion(qtbot)
+
+    initial_index, _ = _highlighted_entry(editor)
+    QTest.keyClick(editor, Qt.Key.Key_End)  # ty: ignore  # QTest stubs model self.
+
+    assert editor.isListActive()
+    highlighted_index, _ = _highlighted_entry(editor)
+    assert highlighted_index > initial_index
+
+
+@pytest.mark.parametrize("key", (Qt.Key.Key_Left, Qt.Key.Key_Right))
+def test_sql_editor_caret_movement_keys_still_close_the_completion_list(qtbot, key) -> None:
+    editor = _editor_with_dt_completion(qtbot)
+
+    QTest.keyClick(editor, key)  # ty: ignore  # QTest stubs model self.
+
+    assert not editor.isListActive()
+    assert editor.text() == "SELECT dt"
+
+
+def test_sql_editor_typing_a_printable_character_still_refreshes_the_completion_list(qtbot) -> None:
+    editor = _editor_with_dt_completion(qtbot)
+
+    QTest.keyClicks(editor, "e")  # ty: ignore  # QTest stubs model self.
+
+    assert editor.text() == "SELECT dte"
 
 
 def test_sql_editor_user_list_activation_replaces_catalog_substring(qtbot) -> None:
