@@ -1,0 +1,68 @@
+{
+  "date": "2026-08-28",
+  "task_objective": "Implement the dataset-columns-and-right-click plan: make every Dataset Catalog column user-resizable and anchor context-menu actions to the right-clicked row.",
+  "files_modified": [
+    "docs/plans/2026-08-28_dataset-columns-and-right-click.md",
+    "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "tests/test_catalog_dock.py",
+    "CHANGELOG.md",
+    "docs/agent_conversations/2026-08-28_dataset-columns-and-right-click.json"
+  ],
+  "tests_added": [
+    "test_catalog_right_click_targets_the_clicked_row_not_the_current_row",
+    "test_catalog_right_click_on_an_unselected_row_selects_only_that_row",
+    "test_catalog_right_click_inside_the_existing_selection_preserves_it",
+    "test_catalog_right_click_on_blank_space_disables_every_context_action",
+    "test_catalog_default_column_widths_are_applied",
+    "test_catalog_widening_the_dock_leaves_user_column_widths_alone"
+  ],
+  "test_rewritten": {
+    "name": "test_catalog_all_columns_are_user_resizable",
+    "replaces": "test_catalog_file_column_is_resizable_and_folder_column_stretches",
+    "rationale": "The plan deliberately replaces Folder Stretch behavior with user-resizable fixed widths. The rewritten test checks every logical column's Interactive mode and resize round-trip while retaining the FolderColumnDelegate assertion."
+  },
+  "design_decisions": [
+    "The context menu resolves self._view.indexAt(position), where position is already viewport-relative.",
+    "rowIntersectsSelection(index.row()) preserves a row that is selected through another cell. isSelected(index) and isRowSelected(index.row()) both fail for SelectItems selection behavior.",
+    "Blank-space clicks resolve to None and disable all context actions instead of inheriting a stale currentIndex().",
+    "DEFAULT_COLUMN_WIDTHS is (120, 220, 300, 90, 180). An assertion requires this tuple to match CatalogModel.columnCount() so new columns cannot be silently unsized.",
+    "setStretchLastSection and all auto-fit behavior remain absent because they would make a column non-resizable. The accepted visible consequences are no Folder auto-growth and a horizontal scrollbar at narrow dock widths."
+  ],
+  "red_green_results": {
+    "right_click_red": "3 failed, 19 passed: target click returned alpha instead of delta; an unselected row stayed unselected; blank-space actions stayed enabled. The cell-preservation test passed before the fix, as expected.",
+    "right_click_green": "22 passed in 1.93s.",
+    "column_width_red": "3 failed, 21 passed: column 2 was Stretch, DEFAULT_COLUMN_WIDTHS was absent, and widening changed Folder from 236 to 736 pixels.",
+    "column_width_green": "24 passed in 1.71s."
+  },
+  "mutation_verification": {
+    "V1_context_anchor": "Replacing _resolve_context_target with _selected_entry caused 3 failures and 1 pass: the delta target, unselected-row selection, and blank-space action tests failed.",
+    "V2_row_membership": "Replacing rowIntersectsSelection with isSelected(index), then isRowSelected(index.row()), each caused test_catalog_right_click_inside_the_existing_selection_preserves_it to fail. In both runs selection changed from {(1, 2)} to {(1, 0)}.",
+    "V3_resize_mode": "Restoring Stretch on column 2 caused test_catalog_all_columns_are_user_resizable to fail on the mode assertion and test_catalog_widening_the_dock_leaves_user_column_widths_alone to fail as Folder changed from 88 to 588 pixels.",
+    "V5_observed_widths": [
+      "0 | Interactive | 120 | 157",
+      "1 | Interactive | 220 | 257",
+      "2 | Interactive | 300 | 337",
+      "3 | Interactive | 90 | 127",
+      "4 | Interactive | 180 | 217"
+    ]
+  },
+  "quality_gates": {
+    "ruff_check": "passed",
+    "ruff_format_check": "passed; 205 files already formatted",
+    "ty_check_src": "passed",
+    "pytest": "891 passed, 9 deselected in 30.94s",
+    "catalog_dock_test_count": "24 passed; 18 original tests with one rewritten and 6 added",
+    "catalog_column_reordering": "tests/test_main_window.py::test_all_tabular_views_allow_column_reordering[catalog] passed"
+  },
+  "deferred_and_unverified": [
+    "On-screen confirmation is deferred: offscreen tests prove modes, sizes, selection state, and action enablement, not real mouse-divider feel or context-menu placement. Validate in a windowed session with ./run.sh uv run wherewolf-desktop.",
+    "The narrow-dock horizontal scrollbar is an accepted but not on-screen-tested consequence. Default widths total 910 pixels; no test asserts scrollbar appearance.",
+    "Column widths do not persist across restart. This remains absent and out of scope.",
+    "Multi-selection batch actions remain out of scope. Remove still acts on the one anchored row; plan 3b owns batch behavior."
+  ],
+  "commits_created_before_session_log": [
+    "fe92e4b docs(plan): add dataset-columns-and-right-click implementation plan",
+    "b096d15 fix(catalog): target the right-clicked dataset row in the context menu",
+    "a42a149 feat(catalog): make every dataset column user-resizable"
+  ]
+}

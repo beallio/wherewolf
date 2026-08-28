@@ -6,6 +6,15 @@
 
 - **SQL completion lists now support normal keyboard navigation.** Use arrow, page, Home, and
   End keys to choose a suggestion before accepting it with Tab or Return.
+- **Dataset actions now use the row you right-click.** Rename, remove, refresh, copy, reveal,
+  and insert actions no longer operate on a previously selected dataset; right-clicking blank
+  space disables all of them.
+
+### Changed
+
+- **Every Dataset Catalog column can now be resized.** Folder no longer grows automatically to
+  fill unused dock space, and narrow catalog docks now show a horizontal scrollbar instead of
+  squeezing column text.
 - **Paged result rows now keep their absolute numbers.** Later pages continue numbering from the
   preceding page, so the grid agrees with the displayed page range.
 
