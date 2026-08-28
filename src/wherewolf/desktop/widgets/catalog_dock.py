@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 from PyQt6.QtCore import QItemSelectionModel, QMimeData, QPoint, Qt, QUrl, pyqtSignal
 from PyQt6.QtGui import QAction, QDragEnterEvent, QDropEvent
@@ -30,6 +31,9 @@ from wherewolf.services import CatalogService
 class CatalogDock(QWidget):
     """Single dockable catalog for browsing, filtering and mutating datasets."""
 
+    #: Default width per logical column; all columns are user-resizable from here.
+    DEFAULT_COLUMN_WIDTHS: ClassVar[tuple[int, ...]] = (120, 220, 300, 90, 180)
+
     insert_alias_requested = pyqtSignal(str)
     refresh_schema_requested = pyqtSignal(CatalogBinding)
     datasets_added = pyqtSignal(object)
@@ -44,6 +48,9 @@ class CatalogDock(QWidget):
         self._catalog_service = catalog_service
         self._model = CatalogModel(catalog_service, self)
         self._model.rename_failed.connect(self.error_reported.emit)
+        assert len(self.DEFAULT_COLUMN_WIDTHS) == self._model.columnCount(), (
+            "CatalogDock default widths must match CatalogModel columns"
+        )
 
         self._view = QTableView(self)
         self._view.setObjectName("catalog_view")
@@ -52,12 +59,9 @@ class CatalogDock(QWidget):
         header = self._view.horizontalHeader()
         if header is not None:
             header.setSectionsMovable(True)
-            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Interactive)
-            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-            header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-            header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-            header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-            header.resizeSection(1, 220)
+            for column, width in enumerate(self.DEFAULT_COLUMN_WIDTHS):
+                header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
+                header.resizeSection(column, width)
         self._folder_delegate = FolderColumnDelegate(self)
         self._view.setItemDelegateForColumn(2, self._folder_delegate)
         self._view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked)
