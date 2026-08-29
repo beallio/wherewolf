@@ -184,6 +184,21 @@ class CatalogDock(QWidget):
 
         return self._model.entry_at(row), row
 
+    def _selected_entries(self) -> tuple[tuple[CatalogEntry, int], ...]:
+        """Return every selected dataset in view row order, de-duplicated by row."""
+        selection_model = self._view.selectionModel()
+        if selection_model is None:
+            return ()
+        row_count = self._model.rowCount()
+        rows = sorted(
+            {
+                index.row()
+                for index in selection_model.selectedIndexes()
+                if 0 <= index.row() < row_count
+            }
+        )
+        return tuple((self._model.entry_at(row), row) for row in rows)
+
     def _resolve_context_target(self, position: QPoint) -> tuple[CatalogEntry, int] | None:
         """Anchor the context menu on the right-clicked row.
 
@@ -208,16 +223,20 @@ class CatalogDock(QWidget):
         return self._selected_entry()
 
     def _on_context_menu(self, position: QPoint) -> None:
-        selection = self._resolve_context_target(position)
+        target = self._resolve_context_target(position)
+        selected = self._selected_entries() if target is not None else ()
+        has_any = bool(selected)
+        single = len(selected) == 1
+        one_folder = len({entry.path.parent for entry, _ in selected}) == 1
         menu = QMenu(self)
 
-        self._rename_action.setEnabled(selection is not None)
-        self._remove_action.setEnabled(selection is not None)
-        self._refresh_action.setEnabled(selection is not None)
-        self._copy_alias_action.setEnabled(selection is not None)
-        self._copy_path_action.setEnabled(selection is not None)
-        self._insert_alias_action.setEnabled(selection is not None)
-        self._reveal_action.setEnabled(selection is not None)
+        self._rename_action.setEnabled(single)
+        self._remove_action.setEnabled(has_any)
+        self._refresh_action.setEnabled(has_any)
+        self._copy_alias_action.setEnabled(has_any)
+        self._copy_path_action.setEnabled(has_any)
+        self._insert_alias_action.setEnabled(has_any)
+        self._reveal_action.setEnabled(has_any and one_folder)
 
         menu.addAction(self._rename_action)
         menu.addAction(self._remove_action)
@@ -256,47 +275,44 @@ class CatalogDock(QWidget):
             QMessageBox.warning(self, "Rename Alias", str(err))
 
     def _remove_selected(self) -> None:
-        selection = self._selected_entry()
-        if selection is None:
+        selected = self._selected_entries()
+        if not selected:
             return
 
-        entry, _ = selection
-        self._catalog_service.remove(entry.id)
+        self._catalog_service.remove_many(entry.id for entry, _ in selected)
 
     def _refresh_schema(self) -> None:
-        selection = self._selected_entry()
-        if selection is None:
+        selected = self._selected_entries()
+        if not selected:
             return
 
-        entry, _ = selection
-        self.refresh_schema_requested.emit(
-            CatalogBinding(
-                entry_id=entry.id,
-                alias=entry.alias,
-                path=entry.path,
-                source_format=entry.source_format,
+        for entry, _ in selected:
+            self.refresh_schema_requested.emit(
+                CatalogBinding(
+                    entry_id=entry.id,
+                    alias=entry.alias,
+                    path=entry.path,
+                    source_format=entry.source_format,
+                )
             )
-        )
 
     def _copy_alias(self) -> None:
-        selection = self._selected_entry()
-        if selection is None:
+        selected = self._selected_entries()
+        if not selected:
             return
 
-        entry, _ = selection
         clipboard = QApplication.clipboard()
         if clipboard is not None:
-            clipboard.setText(entry.alias)
+            clipboard.setText("\n".join(entry.alias for entry, _ in selected))
 
     def _copy_path(self) -> None:
-        selection = self._selected_entry()
-        if selection is None:
+        selected = self._selected_entries()
+        if not selected:
             return
 
-        entry, _ = selection
         clipboard = QApplication.clipboard()
         if clipboard is not None:
-            clipboard.setText(str(entry.path))
+            clipboard.setText("\n".join(str(entry.path) for entry, _ in selected))
 
     @staticmethod
     def reveal_command(path: Path) -> list[str]:
@@ -305,19 +321,19 @@ class CatalogDock(QWidget):
             return ["open", "-R", str(path)]
         if sys.platform == "win32":
             return ["explorer", "/select,", str(path)]
-        return ["xdg-open", str(path.parent)]
+        return ["xdg-open", str(path if path.is_dir() else path.parent)]
 
     def _reveal_selected(self) -> None:
-        selection = self._selected_entry()
-        if selection is None:
+        selected = self._selected_entries()
+        folders = {entry.path.parent for entry, _ in selected}
+        if len(folders) != 1:
             return
-        entry, _ = selection
-        subprocess.Popen(self.reveal_command(entry.path))  # fixed platform command
+        target = folders.pop()
+        subprocess.Popen(self.reveal_command(target))  # fixed platform command
 
     def _insert_alias(self) -> None:
-        selection = self._selected_entry()
-        if selection is None:
+        selected = self._selected_entries()
+        if not selected:
             return
 
-        entry, _ = selection
-        self.insert_alias_requested.emit(entry.alias)
+        self.insert_alias_requested.emit(", ".join(entry.alias for entry, _ in selected))
