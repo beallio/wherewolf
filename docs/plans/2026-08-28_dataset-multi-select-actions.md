@@ -342,8 +342,48 @@ as the existing 3c tests do.
     one folder, trigger Reveal, assert `Popen` was called **exactly once**. This is the assertion
     that prevents the VS Code behaviour of opening one window per file.
 
-Run `./run.sh uv run pytest tests/test_catalog_dock.py -q` and record which fail. Expected: 6-18
-all fail. If any passes before Task 4, stop and report — the premise is wrong.
+Run `./run.sh uv run pytest tests/test_catalog_dock.py -q` and record which fail.
+
+**Expect 10 failures and 3 passes.** Three of these tests are regression pins that assert
+behaviour which is already correct today, so they pass before Task 4 and must still pass after
+it. This is expected and is **not** a reason to stop.
+
+Must FAIL before Task 4 (10):
+
+- `test_catalog_selected_rows_dedupes_cells_from_the_same_row`
+- `test_catalog_remove_deletes_every_selected_dataset`
+- `test_catalog_remove_persists_once_for_a_batch`
+- `test_catalog_copy_alias_joins_selected_aliases_with_newlines`
+- `test_catalog_copy_path_joins_selected_paths_with_newlines`
+- `test_catalog_copy_uses_view_row_order_not_click_order`
+- `test_catalog_insert_alias_joins_selected_aliases_with_commas`
+- `test_catalog_refresh_schema_emits_one_binding_per_selected_dataset`
+- `test_catalog_rename_is_disabled_for_a_multi_row_selection`
+- `test_catalog_reveal_is_disabled_when_the_selection_spans_folders`
+
+Expected to PASS before Task 4 (3) — regression pins, leave them alone:
+
+- `test_catalog_rename_stays_enabled_for_a_single_row` — a single row already enables Rename.
+- `test_catalog_reveal_is_enabled_for_several_files_in_one_folder` — Reveal is currently enabled
+  whenever anything is selected, so it is already true for this case.
+- `test_catalog_reveal_opens_one_target_for_several_files_in_one_folder` — the current handler
+  reveals only the anchored entry, which is already exactly one `Popen` call. After Task 4 it
+  must still be one call, for the folder instead of the file.
+
+Only stop and report if one of the **ten** listed above passes, or if a test outside this file
+fails.
+
+**Do NOT commit at the end of this task.** A separate red-test commit is impossible in this
+repository: the pre-commit hook (`.git/hooks/pre-commit`) runs `ty check .` over the whole tree
+including `tests/`, and then runs the full `pytest` suite. A test referencing
+`_selected_entries` before it exists fails the type check, and a red test fails the suite. Both
+reject the commit.
+
+So the TDD cycle here is: write the tests, run them, **record the observed failures in the
+session log**, then implement Task 4 and commit the tests together with the implementation in
+that task's commit. The red evidence lives in the session log, not in a separate commit. Note
+the hook also runs `git add -u`, so any commit sweeps every modified tracked file — do not rely
+on partial staging.
 
 ### Task 4 (GREEN) — batch handlers in `CatalogDock`
 
@@ -393,7 +433,13 @@ Leave `_rename_selected_alias` (`:237-256`) **unchanged**.
 
 Each handler must be a no-op on an empty selection, exactly as today.
 
-Run and record; tests 6-13 and 16-18 pass.
+Run and record. Tests 6-13 and 16-18 pass; tests 14 and 17 still fail until Task 5 adds the
+enablement gates, so `_rename_action`/`_reveal_action` enablement is expected red at this point.
+
+Commit the Task 3 tests **together with** this implementation, for the reason given at the end of
+Task 3. Because the hook runs the full suite, tests 14 and 17 must not still be failing when you
+commit — so if you cannot get a green suite here, fold Task 5 into this same commit rather than
+trying to commit a red tree.
 
 Commit: `feat(catalog): apply dataset actions to the whole selection`.
 
