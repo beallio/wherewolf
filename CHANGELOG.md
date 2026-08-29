@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Added
+
+- **Edit → Format Text** can convert a selection, or the word under the caret when nothing is
+  selected. Multi-line selections are converted one line at a time and keep their indentation and
+  line endings. Shortcuts are `Ctrl+Shift+Y` / `Ctrl+U` for lowercase, `Ctrl+Shift+X` /
+  `Ctrl+Shift+U` for UPPERCASE, `Ctrl+Shift+C` for Title Case, `Ctrl+Shift+M` for camelCase,
+  `Ctrl+Shift+N` for snake_case, and `Ctrl+Shift+K` for kebab-case. The uppercase and lowercase
+  primary shortcuts match DBeaver. A hyphen is not part of a QScintilla word, so kebab-cased text
+  must be selected before it can be reformatted; this protects expressions such as
+  `total-discount` from being rewritten as identifiers.
+
 ### Fixed
 
 - **SQL completion lists now support normal keyboard navigation.** Use arrow, page, Home, and
@@ -12,6 +23,8 @@
 
 ### Changed
 
+- QScintilla's built-in `Ctrl+U` and `Ctrl+Shift+U` case commands now route through **Edit →
+  Format Text**, so they also work on the current word and on multi-line selections.
 - **Every Dataset Catalog column can now be resized.** Folder no longer grows automatically to
   fill unused dock space, and narrow catalog docks now show a horizontal scrollbar instead of
   squeezing column text.

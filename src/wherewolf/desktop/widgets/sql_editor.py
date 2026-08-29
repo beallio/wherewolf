@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import ClassVar
 
 from PyQt6.Qsci import QsciLexerSQL, QsciScintilla
@@ -19,6 +20,7 @@ from wherewolf.services import (
     StatementService,
 )
 from wherewolf.services.completion_context import detect_context
+from wherewolf.services.text_case import transform_lines
 
 _TOGGLE_COMMENT_SHORTCUT = QKeySequence("Ctrl+/")
 
@@ -26,7 +28,12 @@ _TOGGLE_COMMENT_SHORTCUT = QKeySequence("Ctrl+/")
 # which cancels Qt's shortcut dispatch before the application actions ever see it.
 # These sequences belong to desktop actions ("New Tab", "Toggle Comment"), so their
 # Scintilla bindings are released when the editor is set up.
-_RELEASED_SCINTILLA_SHORTCUTS = ("Ctrl+T", _TOGGLE_COMMENT_SHORTCUT.toString())
+_RELEASED_SCINTILLA_SHORTCUTS = (
+    "Ctrl+T",
+    _TOGGLE_COMMENT_SHORTCUT.toString(),
+    "Ctrl+U",
+    "Ctrl+Shift+U",
+)
 
 
 class SqlEditor(QsciScintilla):
@@ -435,6 +442,38 @@ class SqlEditor(QsciScintilla):
         start = self.positionFromLineIndex(start_line, start_col)
         end = self.positionFromLineIndex(end_line, end_col)
         return self.selectedText(), start, end
+
+    def apply_text_case(self, transform: Callable[[str], str]) -> None:
+        """Re-case the selection, or the word under the caret when nothing is selected."""
+
+        cursor: tuple[int, int] | None = None
+        if self.hasSelectedText():
+            start_line, start_col, end_line, end_col = self.getSelection()
+            text = self.selectedText()
+        else:
+            cursor = self.getCursorPosition()
+            position = self.positionFromLineIndex(*cursor)
+            start = self.SendScintilla(self.SCI_WORDSTARTPOSITION, position, True)
+            end = self.SendScintilla(self.SCI_WORDENDPOSITION, position, True)
+            if start == end:
+                return
+            start_line, start_col = self.lineIndexFromPosition(start)
+            end_line, end_col = self.lineIndexFromPosition(end)
+            self.setSelection(start_line, start_col, end_line, end_col)
+            text = self.selectedText()
+
+        replacement = transform_lines(text, transform)
+        if replacement == text:
+            if cursor is not None:
+                self.setCursorPosition(*cursor)
+            return
+
+        self.beginUndoAction()
+        try:
+            self.setSelection(start_line, start_col, end_line, end_col)
+            self.replaceSelectedText(replacement)
+        finally:
+            self.endUndoAction()
 
     def format_selection_or_statement(self) -> None:
         text, start, end = self.text_to_run()

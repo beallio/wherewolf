@@ -12,6 +12,7 @@ from wherewolf.services import (
     StatementSelection,
     StatementService,
 )
+from wherewolf.services.text_case import to_camel_case, to_lowercase, to_uppercase
 
 
 class _SpyCompletionService(SqlCompletionService):
@@ -68,6 +69,21 @@ class _DiagnosticSpyEditor(SqlEditor):
     def setFocus(self, reason: Qt.FocusReason = Qt.FocusReason.OtherFocusReason) -> None:
         self.diagnostic_focus_calls += 1
         super().setFocus(reason)
+
+
+class _TextCaseNoOpSpyEditor(SqlEditor):
+    def __init__(self) -> None:
+        super().__init__()
+        self.begin_undo_calls = 0
+        self.replace_selected_text_calls = 0
+
+    def beginUndoAction(self) -> None:
+        self.begin_undo_calls += 1
+        super().beginUndoAction()
+
+    def replaceSelectedText(self, text: str) -> None:
+        self.replace_selected_text_calls += 1
+        super().replaceSelectedText(text)
 
 
 def test_sql_editor_constructs_and_round_trips_text(qtbot) -> None:
@@ -328,6 +344,130 @@ def test_sql_editor_toggle_comment_one_undo_restores_original_text(qtbot) -> Non
     assert editor.isUndoAvailable() is True
     editor.undo()
     assert editor.text() == original
+
+
+def test_apply_text_case_transforms_the_selection(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select customer_order_id from t")
+    editor.setSelection(0, 7, 0, 24)
+
+    editor.apply_text_case(to_camel_case)
+
+    assert editor.text() == "select customerOrderId from t"
+
+
+def test_apply_text_case_transforms_the_current_word_when_nothing_is_selected(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select customer_order_id from t")
+    editor.setCursorPosition(0, 12)
+
+    editor.apply_text_case(to_camel_case)
+
+    assert editor.text() == "select customerOrderId from t"
+
+
+def test_apply_text_case_current_word_is_correct_after_earlier_non_ascii(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select café, customer_order_id from t")
+    editor.setCursorPosition(0, 18)
+
+    editor.apply_text_case(to_camel_case)
+
+    assert editor.text() == "select café, customerOrderId from t"
+
+
+def test_apply_text_case_handles_non_ascii_inside_the_current_word(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select café_total from t")
+    editor.setCursorPosition(0, 10)
+
+    editor.apply_text_case(to_uppercase)
+
+    assert editor.text() == "select CAFÉ_TOTAL from t"
+
+
+def test_apply_text_case_selection_path_handles_non_ascii(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select café_total from t")
+    editor.setSelection(0, 7, 0, 17)
+
+    editor.apply_text_case(to_uppercase)
+
+    assert editor.text() == "select CAFÉ_TOTAL from t"
+
+
+def test_apply_text_case_transforms_a_multiline_selection_line_by_line(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("first_name\nlast_name\nzip_code")
+    editor.setSelection(0, 0, 2, len("zip_code"))
+
+    editor.apply_text_case(to_camel_case)
+
+    assert editor.text() == "firstName\nlastName\nzipCode"
+    assert editor.lines() == 3
+
+
+def test_apply_text_case_preserves_indentation_in_a_multiline_selection(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("  first_name\n    last_name")
+    editor.selectAll()
+
+    editor.apply_text_case(to_camel_case)
+
+    assert editor.text() == "  firstName\n    lastName"
+
+
+def test_apply_text_case_is_a_single_undo(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    original = "select customer_order_id from t"
+    editor.setText(original)
+    editor.setSelection(0, 7, 0, 24)
+
+    editor.apply_text_case(to_camel_case)
+
+    assert editor.text() == "select customerOrderId from t"
+    editor.undo()
+    assert editor.text() == original
+
+
+def test_apply_text_case_with_the_caret_in_whitespace_changes_nothing(qtbot) -> None:
+    editor = _TextCaseNoOpSpyEditor()
+    qtbot.addWidget(editor)
+    editor.setText("SELECT  FROM t")
+    editor.setModified(False)
+    editor.begin_undo_calls = 0
+    editor.replace_selected_text_calls = 0
+    editor.setCursorPosition(0, 7)
+
+    editor.apply_text_case(to_camel_case)
+
+    assert editor.text() == "SELECT  FROM t"
+    assert editor.isModified() is False
+    assert editor.begin_undo_calls == 0
+    assert editor.replace_selected_text_calls == 0
+
+
+def test_apply_text_case_noop_current_word_preserves_caret_and_selection(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select customer_order_id from t")
+    editor.setCursorPosition(0, 12)
+    cursor_before = editor.getCursorPosition()
+    selection_before = editor.getSelection()
+
+    editor.apply_text_case(to_lowercase)
+
+    assert editor.text() == "select customer_order_id from t"
+    assert editor.getCursorPosition() == cursor_before
+    assert editor.getSelection() == selection_before
 
 
 def test_sql_editor_ctrl_slash_toggles_comment_without_inserting_stray_slash(qtbot) -> None:
@@ -814,6 +954,6 @@ def test_sql_editor_releases_scintilla_keys_that_collide_with_app_shortcuts(qtbo
     qtbot.addWidget(editor)
 
     commands = editor.standardCommands()
-    for sequence in ("Ctrl+T", "Ctrl+/"):
+    for sequence in ("Ctrl+T", "Ctrl+/", "Ctrl+U", "Ctrl+Shift+U"):
         key = QKeySequence(sequence)[0].toCombined()
         assert commands.boundTo(key) is None, f"{sequence} is still bound in Scintilla"
