@@ -728,9 +728,11 @@ State these explicitly in the session log; do not claim them as verified:
 - **Kebab-cased text is not reachable via the current-word path**, because `-` is not a
   QScintilla word character. This is intentional (it protects `total-discount` arithmetic from
   being rewritten as an identifier) and is documented in the CHANGELOG rather than fixed.
-- **Non-ASCII input is not specified or tested.** QScintilla reports a large set of high-byte
-  Latin-1 word characters, so accented identifiers resolve as single words, but the transforms'
-  behaviour on them is whatever Python's `str.lower()`/`str.upper()` do. No test pins it.
+- **Non-ASCII range handling is tested.** The current-word path reads QScintilla's selected
+  range rather than slicing a Python string with Scintilla byte positions. Regression tests cover
+  a non-ASCII character before the word, within the word, and in the selection path. The
+  transforms' Unicode case mapping remains Python's `str.lower()`/`str.upper()` behaviour; no
+  broader Unicode behaviour table is pinned.
 - **No multi-cursor support.** The editor has a single selection only; applying a transform to
   several disjoint ranges at once is not possible and is out of scope.
 
