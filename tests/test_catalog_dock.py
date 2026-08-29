@@ -8,6 +8,7 @@ from PyQt6.QtGui import QDropEvent, QFontMetrics
 from PyQt6.QtTest import QSignalSpy, QTest
 from PyQt6.QtWidgets import QApplication, QDockWidget, QHeaderView, QMenu, QTableView
 
+import wherewolf.desktop.widgets.catalog_dock as catalog_dock_module
 from wherewolf.desktop.main_window import MainWindow
 from wherewolf.desktop.models import CatalogModel
 from wherewolf.desktop.widgets import CatalogDock, FolderColumnDelegate
@@ -39,6 +40,43 @@ def _drop_event(urls: list[Path]) -> QDropEvent:
         Qt.MouseButton.LeftButton,
         Qt.KeyboardModifier.NoModifier,
     )
+
+
+def _catalog_dock_with_datasets(
+    qtbot, paths: tuple[Path, ...]
+) -> tuple[CatalogDock, CatalogService]:
+    service = CatalogService()
+    dock = CatalogDock(service)
+    qtbot.addWidget(dock)
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("a\n1\n")
+    dock.add_paths(paths)
+    qtbot.waitUntil(lambda: dock.model.rowCount() == len(paths))
+    dock.resize(900, 400)
+    dock.show()
+    QApplication.processEvents()
+    return dock, service
+
+
+def _select_catalog_cells(dock: CatalogDock, cells: tuple[tuple[int, int], ...]) -> None:
+    selection_model = dock.view.selectionModel()
+    assert selection_model is not None
+    selection_model.clearSelection()
+    for row, column in cells:
+        selection_model.select(
+            dock.model.index(row, column), QItemSelectionModel.SelectionFlag.Select
+        )
+    row, column = cells[-1]
+    selection_model.setCurrentIndex(
+        dock.model.index(row, column), QItemSelectionModel.SelectionFlag.NoUpdate
+    )
+
+
+def _open_catalog_context_menu(dock: CatalogDock, row: int, monkeypatch) -> None:
+    monkeypatch.setattr(QMenu, "popup", lambda self, position: None)
+    point = dock.view.visualRect(dock.model.index(row, 1)).center()
+    dock._on_context_menu(point)
 
 
 def test_main_window_uses_catalog_dock_tableview(qtbot) -> None:
@@ -443,6 +481,213 @@ def test_catalog_context_menu_copy_and_remove_actions(qtbot, tmp_path: Path) -> 
 
     dock._remove_action.trigger()
     assert len(service.snapshot()) == 0
+
+
+def test_catalog_selected_rows_dedupes_cells_from_the_same_row(qtbot, tmp_path: Path) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    _select_catalog_cells(dock, ((1, 0), (1, 2), (1, 4), (3, 1)))
+
+    rows = [row for _, row in dock._selected_entries()]
+
+    assert rows == [1, 3]
+
+
+def test_catalog_remove_deletes_every_selected_dataset(qtbot, tmp_path: Path) -> None:
+    dock, service = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    aliases = tuple(entry.alias for entry in service.entries)
+    _select_catalog_cells(dock, ((0, 0), (2, 0)))
+
+    dock._remove_action.trigger()
+
+    assert tuple(entry.alias for entry in service.entries) == (aliases[1], aliases[3])
+
+
+def test_catalog_remove_persists_once_for_a_batch(qtbot, tmp_path: Path) -> None:
+    dock, service = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    notifications: list[object] = []
+    service.subscribe(lambda: notifications.append(None))
+    _select_catalog_cells(dock, ((0, 0), (1, 0), (2, 0)))
+
+    dock._remove_action.trigger()
+
+    assert len(notifications) == 1
+
+
+def test_catalog_copy_alias_joins_selected_aliases_with_newlines(qtbot, tmp_path: Path) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    aliases = tuple(dock.model.entry_at(row).alias for row in range(4))
+    _select_catalog_cells(dock, ((0, 0), (2, 0)))
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+
+    dock._copy_alias_action.trigger()
+
+    assert clipboard.text() == f"{aliases[0]}\n{aliases[2]}"
+
+
+def test_catalog_copy_path_joins_selected_paths_with_newlines(qtbot, tmp_path: Path) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    paths = tuple(dock.model.entry_at(row).path for row in range(4))
+    _select_catalog_cells(dock, ((0, 0), (2, 0)))
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+
+    dock._copy_path_action.trigger()
+
+    assert clipboard.text() == f"{paths[0]}\n{paths[2]}"
+
+
+def test_catalog_copy_uses_view_row_order_not_click_order(qtbot, tmp_path: Path) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    aliases = tuple(dock.model.entry_at(row).alias for row in range(4))
+    _select_catalog_cells(dock, ((2, 0), (0, 0)))
+    clipboard = QApplication.clipboard()
+    assert clipboard is not None
+
+    dock._copy_alias_action.trigger()
+
+    assert clipboard.text() == f"{aliases[0]}\n{aliases[2]}"
+
+
+def test_catalog_insert_alias_joins_selected_aliases_with_commas(qtbot, tmp_path: Path) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    aliases = tuple(dock.model.entry_at(row).alias for row in range(4))
+    _select_catalog_cells(dock, ((0, 0), (2, 0)))
+    spy = QSignalSpy(dock.insert_alias_requested)
+
+    dock._insert_alias_action.trigger()
+
+    assert len(spy) == 1
+    assert spy[0][0] == f"{aliases[0]}, {aliases[2]}"
+
+
+def test_catalog_refresh_schema_emits_one_binding_per_selected_dataset(
+    qtbot, tmp_path: Path
+) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    entries = tuple(dock.model.entry_at(row) for row in range(4))
+    _select_catalog_cells(dock, ((0, 0), (1, 0), (2, 0)))
+    spy = QSignalSpy(dock.refresh_schema_requested)
+
+    dock._refresh_action.trigger()
+
+    assert len(spy) == 3
+    assert [spy[index][0].entry_id for index in range(len(spy))] == [
+        entries[0].id,
+        entries[1].id,
+        entries[2].id,
+    ]
+
+
+def test_catalog_rename_is_disabled_for_a_multi_row_selection(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    _select_catalog_cells(dock, ((0, 0), (2, 0)))
+
+    _open_catalog_context_menu(dock, 0, monkeypatch)
+
+    assert dock._rename_action.isEnabled() is False
+    assert all(
+        action.isEnabled()
+        for action in (
+            dock._remove_action,
+            dock._refresh_action,
+            dock._copy_alias_action,
+            dock._copy_path_action,
+            dock._insert_alias_action,
+        )
+    )
+
+
+def test_catalog_rename_stays_enabled_for_a_single_row(qtbot, tmp_path: Path, monkeypatch) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    _select_catalog_cells(dock, ((1, 0),))
+
+    _open_catalog_context_menu(dock, 1, monkeypatch)
+
+    assert dock._rename_action.isEnabled() is True
+
+
+def test_catalog_reveal_is_enabled_for_several_files_in_one_folder(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    _select_catalog_cells(dock, ((0, 0), (2, 0)))
+
+    _open_catalog_context_menu(dock, 0, monkeypatch)
+
+    assert dock._reveal_action.isEnabled() is True
+
+
+def test_catalog_reveal_is_disabled_when_the_selection_spans_folders(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    first_folder = tmp_path / "first"
+    second_folder = tmp_path / "second"
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        (
+            first_folder / "dataset_0.csv",
+            first_folder / "dataset_1.csv",
+            second_folder / "dataset_2.csv",
+            second_folder / "dataset_3.csv",
+        ),
+    )
+    _select_catalog_cells(dock, ((0, 0), (2, 0)))
+
+    _open_catalog_context_menu(dock, 0, monkeypatch)
+
+    assert dock._reveal_action.isEnabled() is False
+
+
+def test_catalog_reveal_opens_one_target_for_several_files_in_one_folder(
+    qtbot, tmp_path: Path, monkeypatch
+) -> None:
+    dock, _ = _catalog_dock_with_datasets(
+        qtbot,
+        tuple(tmp_path / f"dataset_{index}.csv" for index in range(4)),
+    )
+    _select_catalog_cells(dock, ((0, 0), (1, 0)))
+    calls: list[list[str]] = []
+    monkeypatch.setattr(catalog_dock_module.subprocess, "Popen", calls.append)
+
+    dock._reveal_action.trigger()
+
+    assert len(calls) == 1
 
 
 def test_catalog_cell_selection_keeps_context_actions_on_the_clicked_entry(

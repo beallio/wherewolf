@@ -124,7 +124,11 @@ this mode.
 1. Choose **Add Datasets…** or drag supported local files into the Dataset Catalog. The command
    opens the operating system's native multi-file dialog where Qt supports it.
 2. Each file receives a table alias. Rename it from the catalog context menu when needed, then
-   use the alias in SQL. The Schema dock reports discovered columns and any schema error.
+   use the alias in SQL. Select several dataset cells to remove or refresh all selected datasets,
+   copy aliases or paths one per line, or insert their aliases as a comma-separated SQL list.
+   Rename is available for one dataset only, and Reveal in File Manager requires every selected
+   dataset to be in the same folder. The Schema dock reports discovered columns and any schema
+   error.
 3. Write SQL in the editor and press **Ctrl+Return** to run the selection or current statement.
    **Ctrl+Space** opens completion, and **Ctrl+Shift+F** formats SQL. On macOS, use the platform's
    equivalent shortcut conventions.

@@ -1,0 +1,69 @@
+{
+  "date": "2026-08-28",
+  "task_objective": "Make Dataset Catalog context-menu actions operate on every selected dataset while retaining SelectItems selection behaviour.",
+  "files_modified": [
+    "docs/plans/2026-08-28_dataset-multi-select-actions.md",
+    "src/wherewolf/services/catalog_service.py",
+    "tests/test_catalog_service.py",
+    "src/wherewolf/desktop/widgets/catalog_dock.py",
+    "tests/test_catalog_dock.py",
+    "CHANGELOG.md",
+    "README.md",
+    "docs/agent_conversations/2026-08-28_dataset-multi-select-actions.json"
+  ],
+  "tests_added": [
+    "tests/test_catalog_service.py: five remove_many tests for matching removal, one notification, unknown IDs, an empty iterable, and survivor order.",
+    "tests/test_catalog_dock.py: 13 tests for de-duplicated row enumeration, batch remove/refresh/copy/insert behaviour, view-row ordering, and Rename/Reveal enablement and fan-out gates. The file grew from 24 to 37 tests."
+  ],
+  "design_decisions": [
+    "CatalogService.remove_many materialises IDs once, filters and assigns the catalog once, and notifies once. Looping remove would write the full persisted catalog once per dataset.",
+    "CatalogDock enumerates sorted selectedIndexes rows. selectedRows is unusable with SelectItems because an ordinary cell selection does not select every column in its row.",
+    "Rename Alias is disabled for a multi-row selection rather than silently acting on the anchored entry. Batch rename needs an explicit future design.",
+    "Reveal in File Manager is enabled only when the selected datasets share one parent folder. It opens one folder, not one window per dataset.",
+    "SelectItems remains in place. This keeps the prior cell-selection behaviour and limits this change to batch action semantics.",
+    "Linux reveal_command now accepts a directory target directly. Without this adjustment, passing the shared folder to the existing Linux branch would open that folder's parent."
+  ],
+  "commits": [
+    "137912d docs(plan): add dataset-multi-select-actions implementation plan",
+    "c0d47a4 feat(catalog): add a batch removal that notifies once",
+    "4414d7b docs(plan): fix impossible RED expectations in dataset-multi-select-actions",
+    "b2f3980 feat(catalog): apply dataset actions to the whole selection"
+  ],
+  "verification": {
+    "red_green": [
+      "Task 3 RED: the 10 plan-listed tests failed and 27 tests passed. The failures were the missing _selected_entries helper, single-entry removal/copy/insert/refresh behaviour, and ungated Rename and cross-folder Reveal.",
+      "Task 4/5 GREEN: tests/test_catalog_dock.py passed 37 tests. The interim notification test initially selected three of four rows but asserted an empty catalog; the assertion was removed because the plan requires only one notification there and the separate removal test already verifies survivors.",
+      "The pre-existing tests for clicked-cell anchoring, vertical-header row selection, context-menu copy/remove, and blank-space action disabling passed unchanged in the final suite."
+    ],
+    "mutations": [
+      "V1: replacing remove_many with a remove loop gave 1 failed, 2 passed, 34 deselected. test_catalog_remove_persists_once_for_a_batch observed 3 notifications instead of 1, while the functional deletion test passed.",
+      "V2 selectedRows: using selectedRows returned [] under SelectItems. The full catalog-dock run gave 13 failed and 24 passed; this included the row helper and all seven core batch assertions. The five additional failures were dependent action tests whose handlers correctly became no-ops and left the shared clipboard unchanged.",
+      "V2 de-duplication: removing only the set gave 1 failed and 36 deselected. The helper returned [1, 1, 1, 3] instead of [1, 3].",
+      "V3 Rename gate: enabling Rename with has_any gave 1 failed and 36 deselected; the multi-row action was True instead of False.",
+      "V3 Reveal gate: enabling Reveal with has_any gave 1 failed and 36 deselected; the cross-folder action was True instead of False.",
+      "V3 Reveal fan-out: looping Popen over selected entries gave 1 failed and 36 deselected; the same-folder test observed 2 calls instead of 1."
+    ],
+    "quality_gates": [
+      "ruff check .: passed",
+      "ruff format --check .: 207 files already formatted",
+      "ty check src/: passed",
+      "pytest: 983 passed, 9 deselected. The prior 965-pass baseline increased by 18: five CatalogService tests plus 13 CatalogDock tests."
+    ],
+    "observed_values": [
+      "enumerated_rows: [1, 3]",
+      "copy_alias: 'dataset_0\\ndataset_2'",
+      "copy_path: '/home/beallio/.tmp/wherewolf/dataset-multi-select-actions-observed-values/same-folder/dataset_0.csv\\n/home/beallio/.tmp/wherewolf/dataset-multi-select-actions-observed-values/same-folder/dataset_2.csv'",
+      "one_row: Rename=True, Remove=True, Refresh=True, Copy Alias=True, Copy File Path=True, Insert Alias=True, Reveal=True",
+      "two_rows_one_folder: Rename=False, Remove=True, Refresh=True, Copy Alias=True, Copy File Path=True, Insert Alias=True, Reveal=True",
+      "two_rows_two_folders: Rename=False, Remove=True, Refresh=True, Copy Alias=True, Copy File Path=True, Insert Alias=True, Reveal=False",
+      "blank_space: Rename=False, Remove=False, Refresh=False, Copy Alias=False, Copy File Path=False, Insert Alias=False, Reveal=False"
+    ]
+  },
+  "deferred_or_unverified": [
+    "On-screen confirmation is deferred. Offscreen tests prove enumeration, clipboard content, signals, action states, and one Popen call, but not visual disabled styling or an actual file-manager window. In a windowed session, run ./run.sh uv run wherewolf-desktop, Ctrl-click several datasets, then check the menu and actions.",
+    "Schema refresh still starts one worker per selected dataset. This existing fan-out is unchanged and uncapped; worker limiting is a separate plan.",
+    "SelectItems remains cell-based even though actions are row-based. Change it to SelectRows only in a focused follow-up if the visual affordance proves confusing.",
+    "Batch Remove has no undo. It unregisters datasets only and does not delete files, but re-adding several datasets remains manual.",
+    "Reveal behaviour for future non-local sources is unspecified and untested."
+  ]
+}
