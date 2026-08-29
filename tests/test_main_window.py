@@ -1827,32 +1827,32 @@ def test_main_window_format_text_actions_have_the_specified_shortcuts(qtbot) -> 
 
 
 @pytest.mark.parametrize(
-    ("label", "shortcut", "key", "text", "expected"),
+    ("label", "text", "expected"),
     [
-        ("lowercase", "Ctrl+Shift+Y", Qt.Key.Key_Y, "CUSTOMER_ORDER_ID", "customer_order_id"),
-        ("UPPERCASE", "Ctrl+Shift+X", Qt.Key.Key_X, "customer_order_id", "CUSTOMER_ORDER_ID"),
-        ("Title Case", "Ctrl+Shift+C", Qt.Key.Key_C, "customer_order_id", "Customer_Order_Id"),
-        ("camelCase", "Ctrl+Shift+M", Qt.Key.Key_M, "customer_order_id", "customerOrderId"),
-        ("snake_case", "Ctrl+Shift+N", Qt.Key.Key_N, "customerOrderId", "customer_order_id"),
-        ("kebab-case", "Ctrl+Shift+K", Qt.Key.Key_K, "customer_order_id", "customer-order-id"),
+        ("lowercase", "CUSTOMER_ORDER_ID", "customer_order_id"),
+        ("UPPERCASE", "customer_order_id", "CUSTOMER_ORDER_ID"),
+        ("Title Case", "customer_order_id", "Customer_Order_Id"),
+        ("camelCase", "customer_order_id", "customerOrderId"),
+        ("snake_case", "customerOrderId", "customer_order_id"),
+        ("kebab-case", "customer_order_id", "customer-order-id"),
     ],
 )
 def test_main_window_format_text_shortcuts_fire_with_focus_in_the_editor(
-    qtbot, label: str, shortcut: str, key: Qt.Key, text: str, expected: str
+    qtbot, label: str, text: str, expected: str
 ) -> None:
     window = MainWindow()
     qtbot.addWidget(window)
     window.show()
     QTest.qWaitForWindowExposed(window)  # ty: ignore[no-matching-overload]  # QTest stubs model self.
-    assert window.format_text_actions[label].shortcut() == QKeySequence(shortcut)
     window.editor.setText(text)
     window.editor.setCursorPosition(0, len(text) // 2)
     window.editor.setFocus()
+    key_combination = window.format_text_actions[label].shortcut()[0]
 
     QTest.keyClick(  # ty: ignore[no-matching-overload]  # QTest stubs model self.
         window.editor,
-        key,
-        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier,
+        key_combination.key(),
+        key_combination.keyboardModifiers(),
     )
     QTest.keyRelease(window.editor, Qt.Key.Key_Shift)  # ty: ignore[no-matching-overload]  # QTest stubs model self.
     QTest.keyRelease(window.editor, Qt.Key.Key_Control)  # ty: ignore[no-matching-overload]  # QTest stubs model self.

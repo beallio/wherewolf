@@ -71,6 +71,21 @@ class _DiagnosticSpyEditor(SqlEditor):
         super().setFocus(reason)
 
 
+class _TextCaseNoOpSpyEditor(SqlEditor):
+    def __init__(self) -> None:
+        super().__init__()
+        self.begin_undo_calls = 0
+        self.replace_selected_text_calls = 0
+
+    def beginUndoAction(self) -> None:
+        self.begin_undo_calls += 1
+        super().beginUndoAction()
+
+    def replaceSelectedText(self, text: str) -> None:
+        self.replace_selected_text_calls += 1
+        super().replaceSelectedText(text)
+
+
 def test_sql_editor_constructs_and_round_trips_text(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)
@@ -391,16 +406,20 @@ def test_apply_text_case_is_a_single_undo(qtbot) -> None:
 
 
 def test_apply_text_case_with_the_caret_in_whitespace_changes_nothing(qtbot) -> None:
-    editor = SqlEditor()
+    editor = _TextCaseNoOpSpyEditor()
     qtbot.addWidget(editor)
     editor.setText("SELECT  FROM t")
     editor.setModified(False)
+    editor.begin_undo_calls = 0
+    editor.replace_selected_text_calls = 0
     editor.setCursorPosition(0, 7)
 
     editor.apply_text_case(to_camel_case)
 
     assert editor.text() == "SELECT  FROM t"
     assert editor.isModified() is False
+    assert editor.begin_undo_calls == 0
+    assert editor.replace_selected_text_calls == 0
 
 
 def test_sql_editor_ctrl_slash_toggles_comment_without_inserting_stray_slash(qtbot) -> None:
