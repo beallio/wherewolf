@@ -48,6 +48,12 @@ class FakeFileDialogService:
         del default_directory, parent
         return None
 
+    def choose_directory(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None:
+        del default_directory, parent
+        return None
+
 
 def test_fake_file_dialog_service_protocol_and_cancellation() -> None:
     service: FileDialogService = FakeFileDialogService(())
@@ -200,3 +206,29 @@ def test_qt_history_sql_path_cancellation_returns_none(monkeypatch: pytest.Monke
     )
 
     assert QtFileDialogService().choose_history_sql_path(None) is None
+
+
+@pytest.mark.parametrize(
+    ("chosen", "expected"),
+    [("/tmp/library", Path("/tmp/library")), ("", None)],
+)
+def test_qt_choose_directory_returns_the_selected_folder(
+    monkeypatch: pytest.MonkeyPatch, chosen: str, expected: Path | None
+) -> None:
+    monkeypatch.setattr(
+        "wherewolf.desktop.dialogs.file_dialog_service.QFileDialog.getExistingDirectory",
+        lambda *_args, **_kwargs: chosen,
+    )
+
+    assert QtFileDialogService().choose_directory(None) == expected
+
+
+def test_fake_choose_directory_returns_its_configured_folder() -> None:
+    from wherewolf.desktop.dialogs.file_dialog_service import (
+        FakeFileDialogService as PackagedFake,
+    )
+
+    service = PackagedFake((), directory=Path("/tmp/library"))
+
+    assert service.choose_directory(None) == Path("/tmp/library")
+    assert PackagedFake(()).choose_directory(Path("/tmp")) is None

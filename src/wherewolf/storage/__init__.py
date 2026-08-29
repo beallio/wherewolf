@@ -1,4 +1,4 @@
 from .history import HistoryManager
-from .saved_queries import SavedQuery, SavedQueryStore
+from .saved_queries import SavedQuery, SavedQueryDirectory
 
-__all__ = ["HistoryManager", "SavedQuery", "SavedQueryStore"]
+__all__ = ["HistoryManager", "SavedQuery", "SavedQueryDirectory"]

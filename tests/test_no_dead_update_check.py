@@ -33,7 +33,7 @@ def test_no_update_check_control_is_offered(window: MainWindow, qtbot) -> None:
     The dialog must be constructed explicitly: it is built on demand, so searching
     MainWindow's children would pass whether or not the checkbox exists.
     """
-    dialog = PreferencesDialog(window._settings_service, window)
+    dialog = PreferencesDialog(window._settings_service, window._file_dialog_service, window)
     qtbot.addWidget(dialog)
 
     boxes = [box.text() for box in dialog.findChildren(QCheckBox)]

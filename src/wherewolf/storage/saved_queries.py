@@ -1,205 +1,183 @@
-"""Persistent named-query storage independent from the Qt desktop application."""
+"""Directory-backed saved-query library independent from the Qt desktop application."""
 
 from __future__ import annotations
 
-import json
 import os
-import tempfile
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-from uuid import UUID, uuid4
+from pathlib import Path, PurePosixPath
+
+from wherewolf.services.export_destination import write_atomically
+
+SQL_SUFFIX = ".sql"
 
 
 @dataclass(frozen=True, slots=True)
 class SavedQuery:
-    """A named SQL query that can be reused independently of execution history."""
+    """One ``.sql`` file in the configured library directory."""
 
     id: str
     name: str
     description: str
     sql: str
-    created_at: str
     updated_at: str
 
 
-class SavedQueryStore:
-    """Store versioned saved-query records with atomic replacement writes."""
+def extract_description(sql: str) -> str:
+    """Return the leading comment of a query with its comment markers removed."""
+    lines = sql.splitlines()
+    index = 0
+    while index < len(lines) and not lines[index].strip():
+        index += 1
+    if index >= len(lines):
+        return ""
 
-    DEFAULT_PATH = Path.home() / ".wherewolf" / "saved_queries.json"
-    VERSION = 1
+    first = lines[index].strip()
+    if first.startswith("--"):
+        collected = []
+        while index < len(lines) and lines[index].strip().startswith("--"):
+            collected.append(lines[index].strip().removeprefix("--").strip())
+            index += 1
+        return "\n".join(collected).strip()
+    if first.startswith("/*"):
+        collected = []
+        while index < len(lines):
+            line = lines[index].strip()
+            terminated = line.endswith("*/")
+            collected.append(line.removeprefix("/*").removesuffix("*/").strip())
+            index += 1
+            if terminated:
+                break
+        return "\n".join(part for part in collected if part).strip()
+    return ""
 
-    def __init__(self, storage_path: Path | None = None) -> None:
-        self.storage_path = storage_path or self.DEFAULT_PATH
-        self._ensure_storage()
 
-    def _ensure_storage(self) -> None:
-        self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        if not self.storage_path.exists():
-            self._write_queries(())
+class SavedQueryDirectory:
+    """Expose the ``.sql`` files under one directory as named saved queries."""
 
-    def _write_queries(self, queries: tuple[SavedQuery, ...]) -> None:
-        payload = {
-            "version": self.VERSION,
-            "queries": [
-                {
-                    "id": query.id,
-                    "name": query.name,
-                    "description": query.description,
-                    "sql": query.sql,
-                    "created_at": query.created_at,
-                    "updated_at": query.updated_at,
-                }
-                for query in queries
-            ],
-        }
-        temp_fd, temp_path = tempfile.mkstemp(dir=self.storage_path.parent, text=True)
-        try:
-            with os.fdopen(temp_fd, "w", encoding="utf-8") as file:
-                json.dump(payload, file, indent=2)
-            os.replace(temp_path, self.storage_path)
-        except Exception:
-            if os.path.exists(temp_path):
-                os.remove(temp_path)
-            raise
+    def __init__(self, directory: Path) -> None:
+        self._directory = directory
 
-    def save_query(self, *, name: str, description: str, sql: str) -> SavedQuery:
-        """Persist a new named query, rejecting names that already exist."""
-        normalised_name = self._validate_name(name)
-        self._validate_sql(sql)
-        queries = self.get_all()
-        self._ensure_name_available(normalised_name, queries)
-        now = datetime.now(UTC).isoformat()
-        query = SavedQuery(
-            id=str(uuid4()),
-            name=normalised_name,
-            description=description,
-            sql=sql,
-            created_at=now,
-            updated_at=now,
-        )
-        self._write_queries((*queries, query))
-        return query
+    @property
+    def directory(self) -> Path:
+        return self._directory
 
-    def update_query(
-        self,
-        query_id: str,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-        sql: str | None = None,
-    ) -> SavedQuery | None:
-        """Update one saved query and return it, or ``None`` when it is absent."""
-        queries = self.get_all()
-        current = self.get_by_id(query_id)
-        if current is None:
-            return None
-
-        updated_name = self._validate_name(name) if name is not None else current.name
-        if name is not None:
-            self._ensure_name_available(updated_name, queries, excluding_id=query_id)
-        updated_sql = sql if sql is not None else current.sql
-        self._validate_sql(updated_sql)
-        updated = replace(
-            current,
-            name=updated_name,
-            description=description if description is not None else current.description,
-            sql=updated_sql,
-            updated_at=datetime.now(UTC).isoformat(),
-        )
-        self._write_queries(tuple(updated if query.id == query_id else query for query in queries))
-        return updated
-
-    def delete_query(self, query_id: str) -> bool:
-        """Delete the named query identified by ``query_id`` if it exists."""
-        queries = self.get_all()
-        survivors = tuple(query for query in queries if query.id != query_id)
-        if len(survivors) == len(queries):
-            return False
-        self._write_queries(survivors)
-        return True
+    def set_directory(self, directory: Path) -> None:
+        """Point the library at another directory without rebuilding consumers."""
+        self._directory = directory
 
     def get_all(self) -> tuple[SavedQuery, ...]:
-        """Load readable query records, skipping malformed siblings."""
+        """Load every readable ``*.sql`` file below the directory, sorted by name."""
+        root = self._directory
         try:
-            with self.storage_path.open(encoding="utf-8") as file:
-                payload = json.load(file)
-        except (OSError, json.JSONDecodeError):
+            candidates = sorted(
+                (path for path in root.rglob("*") if self._is_query_file(path, root)),
+                key=lambda path: str(path.relative_to(root)).casefold(),
+            )
+        except OSError:
             return ()
 
-        if isinstance(payload, dict) and payload.get("version") == self.VERSION:
-            raw_queries = payload.get("queries")
-        elif isinstance(payload, list):
-            # Legacy bare lists are the migration input for the versioned wrapper.
-            raw_queries = payload
-        else:
-            return ()
-        if not isinstance(raw_queries, list):
-            return ()
-        return tuple(
-            query for raw_query in raw_queries if (query := self._load_query(raw_query)) is not None
-        )
+        queries = []
+        for path in candidates:
+            query = self._load_query(path, root)
+            if query is not None:
+                queries.append(query)
+        return tuple(queries)
 
-    def get_by_id(self, query_id: str) -> SavedQuery | None:
-        """Return one saved query by its stable identifier."""
-        return next((query for query in self.get_all() if query.id == query_id), None)
+    def save_query(self, *, name: str, sql: str) -> SavedQuery:
+        """Write a new query file, rejecting a name that is already taken."""
+        destination = self._resolve_name(name)
+        self._ensure_available(destination)
+        self._write(destination, sql)
+        return self._require_query(destination)
+
+    def rename_query(self, query_id: str, name: str) -> SavedQuery | None:
+        """Move one query file and return it, or ``None`` when it is absent."""
+        source = Path(query_id)
+        if not source.is_file():
+            return None
+        destination = self._resolve_name(name)
+        if destination != source:
+            self._ensure_available(destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            source.rename(destination)
+        return self._require_query(destination)
+
+    def delete_query(self, query_id: str) -> bool:
+        """Delete one query file if it is still present."""
+        try:
+            Path(query_id).unlink()
+        except (FileNotFoundError, IsADirectoryError):
+            return False
+        return True
 
     @staticmethod
-    def _load_query(raw_query: object) -> SavedQuery | None:
-        if not isinstance(raw_query, dict):
-            return None
-        query_id = raw_query.get("id")
-        name = raw_query.get("name")
-        description = raw_query.get("description")
-        sql = raw_query.get("sql")
-        created_at = raw_query.get("created_at")
-        updated_at = raw_query.get("updated_at")
-        if (
-            not isinstance(query_id, str)
-            or not isinstance(name, str)
-            or not isinstance(description, str)
-            or not isinstance(sql, str)
-            or not isinstance(created_at, str)
-            or not isinstance(updated_at, str)
-        ):
-            return None
+    def _is_query_file(path: Path, root: Path) -> bool:
+        if path.suffix.casefold() != SQL_SUFFIX:
+            return False
+        if any(part.startswith(".") for part in path.relative_to(root).parts):
+            return False
+        return path.is_file()
+
+    @staticmethod
+    def _load_query(path: Path, root: Path) -> SavedQuery | None:
         try:
-            UUID(query_id)
-        except ValueError:
+            sql = path.read_text(encoding="utf-8")
+            modified_at = path.stat().st_mtime
+        except (OSError, UnicodeDecodeError):
             return None
+        relative = PurePosixPath(*path.relative_to(root).parts)
         return SavedQuery(
-            id=query_id,
-            name=name,
-            description=description,
+            id=str(path),
+            name=str(relative.with_suffix("")),
+            description=extract_description(sql),
             sql=sql,
-            created_at=created_at,
-            updated_at=updated_at,
+            updated_at=datetime.fromtimestamp(modified_at, UTC).isoformat(),
         )
 
-    @staticmethod
-    def _validate_name(name: str) -> str:
-        normalised_name = name.strip()
-        if not normalised_name:
+    def _require_query(self, path: Path) -> SavedQuery:
+        query = self._load_query(path, self._directory)
+        if query is None:
+            raise OSError(f"Could not read the saved query at {path}")
+        return query
+
+    def _resolve_name(self, name: str) -> Path:
+        """Map a relative library name onto a path inside the directory."""
+        normalised = name.strip()
+        if not normalised:
             raise ValueError("Saved query name cannot be empty")
-        return normalised_name
+        if "\\" in normalised or "\x00" in normalised:
+            raise ValueError("Saved query name cannot contain backslashes")
+        parts = normalised.split("/")
+        if any(not part or part in {".", ".."} for part in parts):
+            raise ValueError(f"{name!r} is not a usable saved query name")
+        if any(part != part.rstrip(" .") for part in parts):
+            raise ValueError("Saved query name parts cannot end with a space or a dot")
+
+        root = self._directory
+        destination = root.joinpath(*parts).with_suffix(SQL_SUFFIX)
+        if not self._is_inside(destination, root):
+            raise ValueError(f"{name!r} resolves outside the saved query folder")
+        return destination
 
     @staticmethod
-    def _validate_sql(sql: str) -> None:
-        if not sql.strip():
-            raise ValueError("Saved query SQL cannot be empty")
+    def _is_inside(destination: Path, root: Path) -> bool:
+        try:
+            return os.path.abspath(destination).startswith(f"{os.path.abspath(root)}{os.sep}")
+        except OSError:
+            return False
 
     @staticmethod
-    def _ensure_name_available(
-        name: str,
-        queries: tuple[SavedQuery, ...],
-        *,
-        excluding_id: str | None = None,
-    ) -> None:
-        if any(
-            query.id != excluding_id and query.name.casefold() == name.casefold()
-            for query in queries
-        ):
-            raise ValueError(f"A saved query named {name!r} already exists")
+    def _ensure_available(destination: Path) -> None:
+        if destination.exists():
+            raise ValueError(f"A saved query named {destination.stem!r} already exists")
+
+    @staticmethod
+    def _write(destination: Path, sql: str) -> None:
+        def write(path: Path) -> None:
+            path.write_text(sql, encoding="utf-8")
+
+        write_atomically(destination, write)
 
 
-__all__ = ["SavedQuery", "SavedQueryStore"]
+__all__ = ["SQL_SUFFIX", "SavedQuery", "SavedQueryDirectory", "extract_description"]

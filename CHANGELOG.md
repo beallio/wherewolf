@@ -12,6 +12,17 @@
   primary shortcuts match DBeaver. A hyphen is not part of a QScintilla word, so kebab-cased text
   must be selected before it can be reformatted; this protects expressions such as
   `total-discount` from being rewritten as identifiers.
+- **Saved queries are now plain `.sql` files in a folder you choose.** Set the folder in
+  **View → Preferences… → Saved query folder**; the default is `~/.wherewolf/queries`. The dock
+  scans it recursively, so `reports/weekly.sql` is listed as `reports/weekly`, matches the `.sql`
+  suffix in any case, and skips dot-prefixed folders. The leading `--` run or `/* … */` block in
+  each file is its description, shown as the tooltip and searched by the filter box. A new
+  **Refresh** command in the dock rescans the folder, so queries created or edited outside
+  Wherewolf appear without a restart.
+- **Open in New Tab now opens the saved query's own file**, so **Ctrl+S** overwrites that saved
+  query instead of prompting for a new destination. **Rename** accepts a path and can move a
+  query between subfolders, **Save Current Query…** creates subfolders on demand, and
+  **Delete** now asks for confirmation because it removes a file from disk.
 
 ### Fixed
 
@@ -34,6 +45,12 @@
   squeezing column text.
 - **Paged result rows now keep their absolute numbers.** Later pages continue numbering from the
   preceding page, so the grid agrees with the displayed page range.
+
+### Removed
+
+- **`~/.wherewolf/saved_queries.json` is no longer read.** Saved queries live in the folder set in
+  Preferences, and the old JSON file is not converted. Existing records stay on disk but are
+  ignored; recreate the queries you still want, or move the SQL into `.sql` files yourself.
 
 ## [0.11.0] - 2026-08-24 — Find SQL completions by fuzzy match, including aliases and functions
 

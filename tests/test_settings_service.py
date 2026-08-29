@@ -229,3 +229,24 @@ def test_settings_service_each_corrupt_value_falls_back_to_its_default(
     restored = getattr(service, restore_name)()
 
     assert restored == expected_default
+
+
+def test_settings_service_saved_query_directory_round_trip(tmp_path: Path) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "saved-query-directory"))
+
+    assert service.restore_saved_query_directory() == service.DEFAULT_SAVED_QUERY_DIRECTORY
+
+    chosen = tmp_path / "library"
+    service.save_saved_query_directory(chosen)
+
+    assert service.restore_saved_query_directory() == chosen
+    assert service.saved_query_directory_key.endswith("/saved_queries/directory")
+
+
+def test_settings_service_blank_saved_query_directory_falls_back_to_the_default(
+    tmp_path: Path,
+) -> None:
+    service = SettingsService(_configure_qsettings_path(tmp_path / "blank-directory"))
+    service._settings.setValue(service.saved_query_directory_key, "")
+
+    assert service.restore_saved_query_directory() == service.DEFAULT_SAVED_QUERY_DIRECTORY

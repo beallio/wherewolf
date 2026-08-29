@@ -98,6 +98,12 @@ def test_add_datasets_opens_at_last_directory_and_updates_on_success(tmp_path, q
             del default_directory, parent
             return None
 
+        def choose_directory(
+            self, default_directory: Path | None, parent: QWidget | None = None
+        ) -> Path | None:
+            del default_directory, parent
+            return None
+
     service = CatalogService()
     start_dir = tmp_path / "start"
     start_dir.mkdir()

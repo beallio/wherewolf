@@ -1,0 +1,59 @@
+{
+  "date": "2026-08-29",
+  "task_objective": "Replace the JSON-backed saved-query store with a directory of .sql files chosen in Preferences, after first assessing feasibility and cost.",
+  "user_decisions": [
+    "description is the leading comment at the top of each query file",
+    "no migration of the existing saved_queries.json",
+    "the directory scan is recursive",
+    "defaults accepted: case-insensitive .sql suffix, explicit Refresh instead of a filesystem watcher"
+  ],
+  "files_modified": [
+    "src/wherewolf/storage/saved_queries.py",
+    "src/wherewolf/storage/__init__.py",
+    "src/wherewolf/services/settings_service.py",
+    "src/wherewolf/desktop/dialogs/file_dialog_service.py",
+    "src/wherewolf/desktop/widgets/saved_queries_dock.py",
+    "src/wherewolf/desktop/main_window.py",
+    "tests/conftest.py",
+    "tests/test_saved_query_store.py",
+    "tests/test_saved_queries.py",
+    "tests/test_saved_queries_dock.py",
+    "tests/test_settings_service.py",
+    "tests/test_file_dialog_service.py",
+    "tests/test_main_window.py",
+    "tests/test_no_dead_update_check.py",
+    "README.md",
+    "CHANGELOG.md",
+    "docs/plans/2026-08-29_sql-directory-library.md"
+  ],
+  "tests_added": [
+    "test_saved_query_store.py: 12 functions covering recursive scan and sort, name derivation, case-insensitive suffix, dot-prefixed and undecodable exclusion, leading -- and /* */ description parsing, subfolder save, collision, name validation and traversal rejection, whitespace trimming, rename across subfolders, rename clobber refusal, delete, missing root, and atomic write",
+    "test_settings_service.py: saved-query directory round trip and blank-value fallback",
+    "test_file_dialog_service.py: choose_directory on the Qt service and the fake",
+    "test_saved_queries_dock.py: description filtering and tooltip, Refresh action signal, empty list for a missing directory",
+    "test_main_window.py: file-backed Open in New Tab overwritten by Save, delete confirmation honouring No then Yes, unusable-name status message, missing-folder report on Refresh, and Preferences folder change repointing the library"
+  ],
+  "design_decisions": [
+    "SavedQuery.id is the absolute file path and name is the POSIX-relative path without the suffix, so recursion needs no extra disambiguation and the dock's existing Qt.UserRole item identity keeps working unchanged.",
+    "created_at was dropped because no portable filesystem creation time exists; updated_at comes from st_mtime.",
+    "Case-insensitive name uniqueness was dropped: the filesystem now decides, and an explicit Path.exists() check reports collisions instead of silently overwriting.",
+    "Name validation rejects backslashes, NUL, absolute paths, empty, '.' and '..' components, and components ending in a space or a dot, then verifies the resolved path is inside the configured root.",
+    "SavedQueryDirectory.set_directory repoints one shared library object, so the dock needs no store-swapping API when the preference changes.",
+    "Writes go through the existing write_atomically helper rather than Path.write_text, so an interrupted save cannot truncate an existing query file.",
+    "The startup missing-folder status message was removed after it broke an unrelated close-behaviour test; the folder is reported only on Refresh, a Preferences change, or a failed save, and save_query creates the folder on demand."
+  ],
+  "verification": [
+    "Feasibility probe before planning: drove the real SavedQueriesDock against a directory-backed stand-in under offscreen Qt, proving the widget needs no source change, that a file path works as the item id, and that a 500-file refresh costs 7.1 ms including reading every file (1.1 ms for a name-only scan).",
+    "./run.sh uv run ruff check . --fix: all checks passed",
+    "./run.sh uv run ruff format .: 207 files unchanged after formatting",
+    "./run.sh uv run ty check src/: all checks passed",
+    "./run.sh uv run pytest: 1016 passed, 9 deselected",
+    "End-to-end smoke test through the real MainWindow: recursive listing with case-insensitive suffix, comment-based tooltips and filtering, a real DuckDB run binding {dataset} to a quoted alias and :region to a bound value returning the two expected rows, file-backed tab overwritten by Save, rename into a new subfolder, delete refused then confirmed, traversal name rejected with a status message, and a missing folder reported on Refresh."
+  ],
+  "results": "Complete. The Saved Queries dock now lists .sql files from a configurable folder, saved queries are editable as files, and Ctrl+S overwrites them. The old JSON store is gone with no migration, as requested.",
+  "unverified": [
+    "No Windows verification; the reserved-name and trailing-dot rules are enforced defensively rather than tested on Windows.",
+    "The Preferences folder row was exercised through the fake dialog service and offscreen Qt, not through a native directory dialog.",
+    "Sync-client conflict files, such as 'query (conflicted copy).sql', will appear as ordinary saved queries; this is untested and accepted."
+  ]
+}

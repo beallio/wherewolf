@@ -67,7 +67,7 @@ from wherewolf.services import (
     serialise_history_records_to_sql,
 )
 from wherewolf.services.text_case import TEXT_CASE_TRANSFORMS
-from wherewolf.storage import HistoryManager, SavedQueryStore
+from wherewolf.storage import HistoryManager, SavedQueryDirectory
 from wherewolf.storage.catalog import CatalogStore
 
 
@@ -256,6 +256,13 @@ def _configure_qsettings_path(tmp_path: Path) -> SettingsService:
     settings = QSettings(SettingsService.ORGANIZATION, SettingsService.APPLICATION)
     settings.clear()
     return SettingsService(settings)
+
+
+def _saved_query_names(window: MainWindow) -> list[str]:
+    query_list = window.saved_queries_dock.query_list
+    items = [query_list.item(index) for index in range(query_list.count())]
+    assert all(item is not None for item in items)
+    return [item.text() for item in items if item is not None]
 
 
 def test_main_window_restores_catalog_and_persists_catalog_changes(tmp_path: Path, qtbot) -> None:
@@ -641,8 +648,8 @@ def test_main_window_migrates_legacy_single_editor_draft_to_one_tab(tmp_path: Pa
 
 
 def test_main_window_saves_and_runs_saved_queries(tmp_path: Path, qtbot, monkeypatch) -> None:
-    store = SavedQueryStore(tmp_path / "saved_queries.json")
-    window = MainWindow(saved_query_store=store)
+    store = SavedQueryDirectory(tmp_path / "queries")
+    window = MainWindow(saved_query_library=store)
     qtbot.addWidget(window)
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(
@@ -669,13 +676,12 @@ def test_main_window_saves_and_runs_saved_queries(tmp_path: Path, qtbot, monkeyp
 def test_main_window_binds_saved_query_parameters_before_execution(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
-    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    store = SavedQueryDirectory(tmp_path / "queries")
     query = store.save_query(
         name="Find user",
-        description="",
         sql="SELECT :name, ':name', value::int",
     )
-    window = MainWindow(saved_query_store=store)
+    window = MainWindow(saved_query_library=store)
     qtbot.addWidget(window)
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(
@@ -697,10 +703,10 @@ def test_main_window_binds_saved_query_parameters_before_execution(
 def test_saved_query_history_keeps_named_parameters_and_rebinds_on_restore(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
-    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    store = SavedQueryDirectory(tmp_path / "queries")
     history = HistoryManager(tmp_path / "history.json")
-    query = store.save_query(name="Find user", description="", sql="SELECT :name AS name")
-    window = MainWindow(saved_query_store=store, history_manager=history)
+    query = store.save_query(name="Find user", sql="SELECT :name AS name")
+    window = MainWindow(saved_query_library=store, history_manager=history)
     qtbot.addWidget(window)
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(
@@ -744,13 +750,12 @@ def test_main_window_binds_saved_query_dataset_alias_as_a_quoted_identifier(
     dataset = tmp_path / "weekly.csv"
     dataset.write_text("id\n1\n", encoding="utf-8")
     catalog = CatalogService((CatalogEntry(uuid4(), "weekly export", dataset, SourceFormat.CSV),))
-    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    store = SavedQueryDirectory(tmp_path / "queries")
     query = store.save_query(
         name="Weekly rule",
-        description="",
         sql="SELECT * FROM {dataset}",
     )
-    window = MainWindow(catalog_service=catalog, saved_query_store=store)
+    window = MainWindow(catalog_service=catalog, saved_query_library=store)
     qtbot.addWidget(window)
     submitted: list[ExecutionRequest] = []
     prompted_aliases: list[tuple[str, ...]] = []
@@ -775,13 +780,12 @@ def test_main_window_binds_saved_query_dataset_alias_as_a_quoted_identifier(
 def test_saved_query_dataset_text_inside_literals_or_comments_never_prompts(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
-    store = SavedQueryStore(tmp_path / "saved_queries.json")
+    store = SavedQueryDirectory(tmp_path / "queries")
     query = store.save_query(
         name="Literal token",
-        description="",
         sql="SELECT '{dataset}', \"{dataset}\" -- {dataset}\n/* {dataset} */",
     )
-    window = MainWindow(saved_query_store=store)
+    window = MainWindow(saved_query_library=store)
     qtbot.addWidget(window)
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(
@@ -802,9 +806,9 @@ def test_saved_query_dataset_text_inside_literals_or_comments_never_prompts(
 def test_direct_saved_query_result_cannot_apply_order_to_unrelated_editor(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
-    store = SavedQueryStore(tmp_path / "saved_queries.json")
-    query = store.save_query(name="Direct", description="", sql="SELECT 1 AS direct_value")
-    window = MainWindow(saved_query_store=store)
+    store = SavedQueryDirectory(tmp_path / "queries")
+    query = store.save_query(name="Direct", sql="SELECT 1 AS direct_value")
+    window = MainWindow(saved_query_library=store)
     qtbot.addWidget(window)
     window.editor.setText("SELECT unrelated")
     submitted: list[ExecutionRequest] = []
@@ -869,9 +873,9 @@ def test_successful_result_for_a_closed_editor_still_reaches_history(
 def test_direct_saved_query_result_stays_with_launch_tab_and_cannot_be_ordered(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
-    store = SavedQueryStore(tmp_path / "saved_queries.json")
-    query = store.save_query(name="Direct", description="", sql="SELECT 1 AS direct_value")
-    window = MainWindow(saved_query_store=store)
+    store = SavedQueryDirectory(tmp_path / "queries")
+    query = store.save_query(name="Direct", sql="SELECT 1 AS direct_value")
+    window = MainWindow(saved_query_library=store)
     qtbot.addWidget(window)
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(
@@ -908,6 +912,119 @@ def test_direct_saved_query_result_stays_with_launch_tab_and_cannot_be_ordered(
     window._on_apply_query_order("direct_value", "ASC")
     assert first.text() == "SELECT first_tab_sql"
     assert "open and run" in window.status_bar.currentMessage().lower()
+
+
+def test_opening_a_saved_query_gives_a_file_backed_tab_that_save_overwrites(
+    tmp_path: Path, qtbot
+) -> None:
+    store = SavedQueryDirectory(tmp_path / "queries")
+    query = store.save_query(name="reports/weekly", sql="SELECT 1")
+    window = MainWindow(saved_query_library=store)
+    qtbot.addWidget(window)
+
+    window._open_saved_query_in_new_tab(query)
+
+    editor = window.current_editor
+    assert editor is not None
+    assert editor.text() == "SELECT 1"
+    assert window._current_sql_path == Path(query.id)
+    assert not window.isWindowModified()
+    assert window.editor_tabs.tabText(window.editor_tabs.currentIndex()) == "weekly.sql"
+
+    editor.setText("SELECT 2")
+    assert window.isWindowModified()
+
+    window.desktop_actions.save_sql.trigger()
+
+    assert (tmp_path / "queries" / "reports" / "weekly.sql").read_text(
+        encoding="utf-8"
+    ) == "SELECT 2"
+    assert not window.isWindowModified()
+
+
+def test_deleting_a_saved_query_requires_confirmation(tmp_path: Path, qtbot, monkeypatch) -> None:
+    store = SavedQueryDirectory(tmp_path / "queries")
+    query = store.save_query(name="daily", sql="SELECT 1")
+    window = MainWindow(saved_query_library=store)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "question",
+        lambda *_args: main_window.QMessageBox.StandardButton.No,
+    )
+
+    window._delete_saved_query(query)
+
+    assert (tmp_path / "queries" / "daily.sql").is_file()
+    assert window.saved_queries_dock.query_list.count() == 1
+
+    monkeypatch.setattr(
+        main_window.QMessageBox,
+        "question",
+        lambda *_args: main_window.QMessageBox.StandardButton.Yes,
+    )
+
+    window._delete_saved_query(query)
+
+    assert not (tmp_path / "queries" / "daily.sql").exists()
+    assert window.saved_queries_dock.query_list.count() == 0
+
+
+def test_saving_a_query_with_an_unusable_name_reports_a_status(
+    tmp_path: Path, qtbot, monkeypatch
+) -> None:
+    store = SavedQueryDirectory(tmp_path / "queries")
+    window = MainWindow(saved_query_library=store)
+    qtbot.addWidget(window)
+    monkeypatch.setattr(
+        main_window.QInputDialog, "getText", lambda *_args, **_kwargs: ("../escape", True)
+    )
+    editor = window.current_editor
+    assert editor is not None
+    editor.setText("SELECT 1")
+
+    window.desktop_actions.save_current_query.trigger()
+
+    assert "could not save query" in window.status_bar.currentMessage().lower()
+    assert store.get_all() == ()
+
+
+def test_refreshing_reports_a_missing_saved_query_folder(tmp_path: Path, qtbot) -> None:
+    window = MainWindow(saved_query_library=SavedQueryDirectory(tmp_path / "absent"))
+    qtbot.addWidget(window)
+
+    window.saved_queries_dock._refresh_action.trigger()
+
+    assert "does not exist" in window.status_bar.currentMessage()
+    assert window.saved_queries_dock.query_list.count() == 0
+
+
+def test_choosing_another_saved_query_folder_repoints_the_library(tmp_path: Path, qtbot) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    library = SavedQueryDirectory(first)
+    library.save_query(name="one", sql="SELECT 1")
+    SavedQueryDirectory(second).save_query(name="two", sql="SELECT 2")
+    settings = _configure_qsettings_path(tmp_path / "saved-query-prefs")
+    window = MainWindow(
+        settings_service=settings,
+        saved_query_library=library,
+        file_dialog_service=FakeFileDialogService((), directory=second),
+    )
+    qtbot.addWidget(window)
+
+    assert _saved_query_names(window) == ["one"]
+
+    window._show_preferences()
+    window.preferences_dialog.browse_saved_query_directory.click()
+
+    assert window.preferences_dialog.saved_query_directory.text() == str(second)
+
+    window.preferences_dialog.accept()
+
+    assert settings.restore_saved_query_directory() == second
+    assert window.saved_query_library.directory == second
+    assert _saved_query_names(window) == ["two"]
 
 
 def test_catalog_persistence_failure_remains_visible_until_retry_succeeds(
@@ -2161,9 +2278,9 @@ def test_main_window_withholds_navigation_for_translated_parameterized_and_multi
 def test_main_window_withholds_navigation_for_saved_spark_and_ambiguous_error_sources(
     tmp_path: Path, qtbot, monkeypatch
 ) -> None:
-    store = SavedQueryStore(tmp_path / "saved_queries.json")
-    saved_query = store.save_query(name="Direct", description="", sql="SELECT missing_column")
-    window = MainWindow(saved_query_store=store)
+    store = SavedQueryDirectory(tmp_path / "queries")
+    saved_query = store.save_query(name="Direct", sql="SELECT missing_column")
+    window = MainWindow(saved_query_library=store)
     qtbot.addWidget(window)
     submitted: list[ExecutionRequest] = []
     monkeypatch.setattr(
