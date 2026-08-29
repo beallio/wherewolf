@@ -446,22 +446,26 @@ class SqlEditor(QsciScintilla):
     def apply_text_case(self, transform: Callable[[str], str]) -> None:
         """Re-case the selection, or the word under the caret when nothing is selected."""
 
+        cursor: tuple[int, int] | None = None
         if self.hasSelectedText():
             start_line, start_col, end_line, end_col = self.getSelection()
             text = self.selectedText()
         else:
-            cursor_line, cursor_col = self.getCursorPosition()
-            position = self.positionFromLineIndex(cursor_line, cursor_col)
+            cursor = self.getCursorPosition()
+            position = self.positionFromLineIndex(*cursor)
             start = self.SendScintilla(self.SCI_WORDSTARTPOSITION, position, True)
             end = self.SendScintilla(self.SCI_WORDENDPOSITION, position, True)
             if start == end:
                 return
             start_line, start_col = self.lineIndexFromPosition(start)
             end_line, end_col = self.lineIndexFromPosition(end)
-            text = self.text()[start:end]
+            self.setSelection(start_line, start_col, end_line, end_col)
+            text = self.selectedText()
 
         replacement = transform_lines(text, transform)
         if replacement == text:
+            if cursor is not None:
+                self.setCursorPosition(*cursor)
             return
 
         self.beginUndoAction()

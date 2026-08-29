@@ -12,7 +12,7 @@ from wherewolf.services import (
     StatementSelection,
     StatementService,
 )
-from wherewolf.services.text_case import to_camel_case
+from wherewolf.services.text_case import to_camel_case, to_lowercase, to_uppercase
 
 
 class _SpyCompletionService(SqlCompletionService):
@@ -368,6 +368,39 @@ def test_apply_text_case_transforms_the_current_word_when_nothing_is_selected(qt
     assert editor.text() == "select customerOrderId from t"
 
 
+def test_apply_text_case_current_word_is_correct_after_earlier_non_ascii(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select café, customer_order_id from t")
+    editor.setCursorPosition(0, 18)
+
+    editor.apply_text_case(to_camel_case)
+
+    assert editor.text() == "select café, customerOrderId from t"
+
+
+def test_apply_text_case_handles_non_ascii_inside_the_current_word(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select café_total from t")
+    editor.setCursorPosition(0, 10)
+
+    editor.apply_text_case(to_uppercase)
+
+    assert editor.text() == "select CAFÉ_TOTAL from t"
+
+
+def test_apply_text_case_selection_path_handles_non_ascii(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select café_total from t")
+    editor.setSelection(0, 7, 0, 17)
+
+    editor.apply_text_case(to_uppercase)
+
+    assert editor.text() == "select CAFÉ_TOTAL from t"
+
+
 def test_apply_text_case_transforms_a_multiline_selection_line_by_line(qtbot) -> None:
     editor = SqlEditor()
     qtbot.addWidget(editor)
@@ -420,6 +453,21 @@ def test_apply_text_case_with_the_caret_in_whitespace_changes_nothing(qtbot) -> 
     assert editor.isModified() is False
     assert editor.begin_undo_calls == 0
     assert editor.replace_selected_text_calls == 0
+
+
+def test_apply_text_case_noop_current_word_preserves_caret_and_selection(qtbot) -> None:
+    editor = SqlEditor()
+    qtbot.addWidget(editor)
+    editor.setText("select customer_order_id from t")
+    editor.setCursorPosition(0, 12)
+    cursor_before = editor.getCursorPosition()
+    selection_before = editor.getSelection()
+
+    editor.apply_text_case(to_lowercase)
+
+    assert editor.text() == "select customer_order_id from t"
+    assert editor.getCursorPosition() == cursor_before
+    assert editor.getSelection() == selection_before
 
 
 def test_sql_editor_ctrl_slash_toggles_comment_without_inserting_stray_slash(qtbot) -> None:
