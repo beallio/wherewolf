@@ -23,6 +23,10 @@
 
 ### Changed
 
+- **Dataset Catalog actions now apply to every selected dataset.** Copy Alias and Copy File Path
+  place one unquoted value per line on the clipboard, while Insert Alias places a comma-separated
+  list in the editor. Rename Alias is unavailable for multiple datasets, and Reveal in File
+  Manager is available only when all selected datasets are in the same folder.
 - QScintilla's built-in `Ctrl+U` and `Ctrl+Shift+U` case commands now route through **Edit →
   Format Text**, so they also work on the current word and on multi-line selections.
 - **Every Dataset Catalog column can now be resized.** Folder no longer grows automatically to
