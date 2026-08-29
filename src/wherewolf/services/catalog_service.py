@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Final
@@ -121,6 +121,24 @@ class CatalogService:
         self._entries = remaining
         self._notify()
         return True
+
+    def remove_many(self, entry_ids: Iterable[UUID]) -> tuple[UUID, ...]:
+        """Remove every matching entry, notifying listeners at most once."""
+        requested_ids = set(entry_ids)
+        remaining: list[CatalogEntry] = []
+        removed: list[UUID] = []
+        for entry in self._entries:
+            if entry.id in requested_ids:
+                removed.append(entry.id)
+            else:
+                remaining.append(entry)
+
+        if not removed:
+            return ()
+
+        self._entries = tuple(remaining)
+        self._notify()
+        return tuple(removed)
 
     def update_schema(self, schema_result: SchemaResult) -> None:
         if schema_result.columns is not None:

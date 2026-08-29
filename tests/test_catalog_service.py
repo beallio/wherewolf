@@ -131,6 +131,75 @@ def test_remove_by_entry_id(tmp_path: Path) -> None:
     assert service.remove(entry_id) is False
 
 
+def test_remove_many_removes_every_matching_entry(tmp_path: Path) -> None:
+    service = CatalogService()
+    first, second, third = service.add_paths(
+        (tmp_path / "first.csv", tmp_path / "second.csv", tmp_path / "third.csv")
+    ).added
+
+    removed = service.remove_many((first.id, second.id))
+
+    assert removed == (first.id, second.id)
+    assert service.entries == (third,)
+
+
+def test_remove_many_notifies_exactly_once(tmp_path: Path) -> None:
+    service = CatalogService()
+    first, second, _ = service.add_paths(
+        (tmp_path / "first.csv", tmp_path / "second.csv", tmp_path / "third.csv")
+    ).added
+    notifications: list[object] = []
+    service.subscribe(lambda: notifications.append(None))
+
+    service.remove_many((first.id, second.id))
+
+    assert len(notifications) == 1
+
+
+def test_remove_many_ignores_unknown_ids_without_notifying(tmp_path: Path) -> None:
+    service = CatalogService()
+    entries = service.add_paths((tmp_path / "first.csv", tmp_path / "second.csv")).added
+    notifications: list[object] = []
+    service.subscribe(lambda: notifications.append(None))
+
+    removed = service.remove_many((uuid4(),))
+
+    assert removed == ()
+    assert service.entries == entries
+    assert notifications == []
+
+
+def test_remove_many_with_an_empty_iterable_does_nothing(tmp_path: Path) -> None:
+    service = CatalogService()
+    entries = service.add_paths((tmp_path / "first.csv", tmp_path / "second.csv")).added
+    notifications: list[object] = []
+    service.subscribe(lambda: notifications.append(None))
+
+    removed = service.remove_many(())
+
+    assert removed == ()
+    assert service.entries == entries
+    assert notifications == []
+
+
+def test_remove_many_preserves_the_order_of_surviving_entries(tmp_path: Path) -> None:
+    service = CatalogService()
+    entries = service.add_paths(
+        (
+            tmp_path / "first.csv",
+            tmp_path / "second.csv",
+            tmp_path / "third.csv",
+            tmp_path / "fourth.csv",
+            tmp_path / "fifth.csv",
+        )
+    ).added
+
+    removed = service.remove_many((entries[1].id, entries[3].id))
+
+    assert removed == (entries[1].id, entries[3].id)
+    assert service.entries == (entries[0], entries[2], entries[4])
+
+
 def test_update_schema_success_and_error_do_not_store_empty_tuple(tmp_path: Path) -> None:
     service = CatalogService()
     entry = service.add_paths((tmp_path / "schema.csv",)).added[0]
