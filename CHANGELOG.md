@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.11.1] - 2026-08-29 — Saved queries are .sql files you can edit, and text case has its own menu
+
 ### Added
 
 - **Edit → Format Text** can convert a selection, or the word under the caret when nothing is
