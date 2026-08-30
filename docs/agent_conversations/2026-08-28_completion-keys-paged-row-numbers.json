@@ -1,0 +1,78 @@
+{
+  "date": "2026-08-28",
+  "task_objective": "Implement docs/plans/2026-08-28_completion-keys-paged-row-numbers.md on feat/completion-keys-paged-row-numbers.",
+  "files_modified": [
+    "CHANGELOG.md",
+    "docs/agent_conversations/2026-08-28_completion-keys-paged-row-numbers.json",
+    "src/wherewolf/desktop/models/polars_table_model.py",
+    "src/wherewolf/desktop/widgets/result_table_view.py",
+    "src/wherewolf/desktop/main_window.py",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "tests/test_polars_table_model.py",
+    "tests/test_result_table_view.py",
+    "tests/test_main_window.py",
+    "tests/test_sql_editor.py"
+  ],
+  "tests_added": [
+    "QScintilla active-user-list keyboard navigation, acceptance, caret-cancellation, and printable-typing regressions in tests/test_sql_editor.py.",
+    "PolarsTableModel offset, default-numbering, and negative-offset regressions in tests/test_polars_table_model.py.",
+    "ResultTableView proxy-header offset regression in tests/test_result_table_view.py.",
+    "MainWindow next-page and tab-switch paged-row-label regressions in tests/test_main_window.py."
+  ],
+  "design_decisions": [
+    "SqlEditor checks text and text.isprintable() before cancelling the native QScintilla user list. No key allow-list, event filter, QCompleter, or custom popup was added because empty navigation-key text and non-printable acceptance/cancellation text are already excluded by that one condition.",
+    "The row offset belongs to PolarsTableModel, where vertical header labels originate. TypedSortProxyModel inherits headerData section mapping, so this keeps each absolute label associated with its record after a local sort without proxy changes.",
+    "MainWindow has one _page_row_offset helper shared by result rendering and the status range, preventing their arithmetic from drifting apart.",
+    "ResultTableView.set_frame and the existing GUI-thread test spy accept the keyword-only row_offset argument. The default remains zero for unpaged and clear-view callers.",
+    "The pre-commit hook stages formatted tracked files with git add -u. A local soft reset and temporary stash restored the required separate Task 4 and Task 5 commits without discarding work."
+  ],
+  "red_green_evidence": [
+    {
+      "task": "completion navigation",
+      "red_command": "./run.sh uv run pytest tests/test_sql_editor.py -q",
+      "red_result": "4 failed, 40 passed in 11.42s. Down, Up, and End found the list inactive; Down then Tab timed out after cancellation.",
+      "green_command": "./run.sh uv run pytest tests/test_sql_editor.py -q",
+      "green_result": "44 passed in 5.65s."
+    },
+    {
+      "task": "model and view offsets",
+      "red_command": "./run.sh uv run pytest tests/test_polars_table_model.py tests/test_result_table_view.py tests/test_main_window.py -q",
+      "red_result": "5 failed, 206 passed in 14.06s. The constructor and view rejected row_offset, and both MainWindow page-label tests saw 1 rather than 3.",
+      "green_command": "./run.sh uv run pytest tests/test_polars_table_model.py tests/test_result_table_view.py -q",
+      "green_result": "29 passed in 1.80s."
+    },
+    {
+      "task": "MainWindow page-offset plumbing",
+      "green_command": "./run.sh uv run pytest tests/test_main_window.py -q",
+      "green_result": "182 passed in 12.44s after the existing set_frame test spy was updated for the keyword-only argument."
+    }
+  ],
+  "verification": {
+    "v1_completion_gate_mutation": "Temporarily restored if e.text().isprintable(): 4 failed, 40 deselected in 7.40s. The failing tests were arrow_down_moves_the_completion_highlight_without_closing_the_list, arrow_up_keeps_the_completion_list_open, arrow_down_then_tab_inserts_the_highlighted_completion, and end_key_jumps_to_the_last_completion_entry. The first, second, and fourth reported the list inactive; the third timed out. The fixed condition was restored.",
+    "v2_model_offset_mutation": "Temporarily returned section + 1: 2 failed, 27 passed in 1.58s. test_polars_table_model_row_labels_include_the_page_row_offset and test_result_table_view_row_labels_track_the_page_offset reported 1 where 1001 was expected. The offset calculation was restored.",
+    "v2_main_window_offset_mutation": "Temporarily removed only row_offset= from _render_query_result: 2 failed, 180 deselected in 1.46s. test_main_window_next_page_row_labels_continue_from_the_previous_page and test_main_window_switching_tabs_preserves_paged_row_labels reported 1 where 3 was expected. The render argument was restored.",
+    "v3_full_negative_control": {
+      "ruff_check": "exit 0: All checks passed.",
+      "ruff_format_check": "exit 0: 205 files already formatted.",
+      "ty_check": "exit 0: All checks passed.",
+      "pytest": "exit 0: 885 passed, 9 deselected in 30.29s. The default marker deselects the Spark tier."
+    },
+    "v4_observed_row_labels": {
+      "command": "QT_QPA_PLATFORM=offscreen ./run.sh uv run /tmp/wherewolf/verify-paged-row-labels.py",
+      "values": [1001, 1002, 2000],
+      "scratch_script_deleted": true
+    }
+  },
+  "commits": [
+    "3192ed2 docs(plan): add completion-keys-paged-row-numbers implementation plan",
+    "0ee43b6 fix(editor): keep the completion list open for keyboard navigation",
+    "1342799 feat(results): carry a page row offset on the results table model",
+    "6c39cac fix(results): number paged result rows from their absolute offset"
+  ],
+  "deferred_and_unverified": [
+    "On-screen visual confirmation is deferred. Offscreen tests prove list state, highlighted index, document text, and header labels, but not popup highlighting or vertical-header rendering on a real display. A user should launch ./run.sh uv run wherewolf-desktop, navigate a partial completion with Down, Up, and Tab, then page a truncated query.",
+    "Vertical-header width was measured as self-correcting and intentionally has no test. A real-display clipping issue would be a new defect.",
+    "The Spark execution tier is not exercised. Result paging is DuckDB-only and Spark paths are unchanged.",
+    "Non-DuckDB and multi-statement previews cannot page, so their row offsets remain zero by construction. This unchanged behavior was not separately verified."
+  ]
+}

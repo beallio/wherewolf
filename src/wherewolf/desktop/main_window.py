@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import webbrowser
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from importlib.metadata import version
 from pathlib import Path
@@ -104,9 +105,10 @@ from wherewolf.services.query_parameters import (
     extract_parameters,
 )
 from wherewolf.services.result_pagination import has_top_level_order_by
+from wherewolf.services.text_case import TEXT_CASE_TRANSFORMS
 from wherewolf.storage.catalog import CatalogStore
 from wherewolf.storage.history import HistoryManager
-from wherewolf.storage.saved_queries import SavedQuery, SavedQueryStore
+from wherewolf.storage.saved_queries import SavedQuery, SavedQueryDirectory
 
 SQL_DIALECT_REFERENCE_URLS: Final = {
     "DuckDB": "https://duckdb.org/docs/stable/sql/introduction",
@@ -116,6 +118,15 @@ SQL_DIALECT_REFERENCE_URLS: Final = {
     "Microsoft T-SQL": "https://learn.microsoft.com/en-us/sql/t-sql/language-reference",
     "SQLite": "https://www.sqlite.org/lang.html",
     "Spark SQL": "https://spark.apache.org/docs/latest/sql-ref.html",
+}
+
+_FORMAT_TEXT_SHORTCUTS: dict[str, tuple[str, ...]] = {
+    "lowercase": ("Ctrl+Shift+Y", "Ctrl+U"),
+    "UPPERCASE": ("Ctrl+Shift+X", "Ctrl+Shift+U"),
+    "Title Case": ("Ctrl+Shift+C",),
+    "camelCase": ("Ctrl+Shift+M",),
+    "snake_case": ("Ctrl+Shift+N",),
+    "kebab-case": ("Ctrl+Shift+K",),
 }
 
 
@@ -240,10 +251,29 @@ class FindReplaceDialog(QDialog):
 class PreferencesDialog(QDialog):
     """Persisted desktop editor/completion preferences."""
 
-    def __init__(self, settings_service: SettingsService, parent: QWidget) -> None:
+    def __init__(
+        self,
+        settings_service: SettingsService,
+        file_dialog_service: FileDialogService,
+        parent: QWidget,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Preferences")
+        self._file_dialog_service = file_dialog_service
         layout = QFormLayout(self)
+        self.saved_query_directory = QLineEdit(self)
+        self.saved_query_directory.setObjectName("saved_query_directory")
+        self.saved_query_directory.setText(str(settings_service.restore_saved_query_directory()))
+        self.saved_query_directory.setMinimumWidth(360)
+        self.saved_query_directory.setToolTip("Folder scanned for saved .sql queries")
+        self.browse_saved_query_directory = QPushButton("Browse…", self)
+        self.browse_saved_query_directory.setObjectName("browse_saved_query_directory")
+        self.browse_saved_query_directory.clicked.connect(self._choose_saved_query_directory)
+        directory_row = QWidget(self)
+        directory_layout = QHBoxLayout(directory_row)
+        directory_layout.setContentsMargins(0, 0, 0, 0)
+        directory_layout.addWidget(self.saved_query_directory, 1)
+        directory_layout.addWidget(self.browse_saved_query_directory, 0)
         self.font_size = QSpinBox(self)
         self.font_size.setRange(6, 64)
         self.font_size.setValue(settings_service.restore_editor_font_size())
@@ -270,6 +300,7 @@ class PreferencesDialog(QDialog):
         self.program_theme_selector.setObjectName("program_theme_selector")
         self.program_theme_selector.addItems(PROGRAM_THEME_NAMES)
         self.program_theme_selector.setCurrentText(settings_service.restore_program_theme())
+        layout.addRow("Saved query folder", directory_row)
         layout.addRow("Editor font size", self.font_size)
         layout.addRow(self.completion_enabled)
         layout.addRow("Completion threshold", self.completion_threshold)
@@ -285,6 +316,14 @@ class PreferencesDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
+
+    def _choose_saved_query_directory(self) -> None:
+        current = self.saved_query_directory.text().strip()
+        chosen = self._file_dialog_service.choose_directory(
+            Path(current) if current else None, self
+        )
+        if chosen is not None:
+            self.saved_query_directory.setText(str(chosen))
 
 
 class ExportOptionsDialog(QDialog):
@@ -351,7 +390,7 @@ class MainWindow(QMainWindow):
         page_controller: _PageController | None = None,
         history_manager: HistoryManager | None = None,
         catalog_store: CatalogStore | None = None,
-        saved_query_store: SavedQueryStore | None = None,
+        saved_query_library: SavedQueryDirectory | None = None,
         spark_metadata_controller: _SparkMetadataController | None = None,
     ) -> None:
         super().__init__()
@@ -385,7 +424,9 @@ class MainWindow(QMainWindow):
         self._last_request: ExecutionRequest | None = None
         self._last_result: QueryResult | None = None
         self.history_manager = history_manager or HistoryManager()
-        self.saved_query_store = saved_query_store or SavedQueryStore()
+        self.saved_query_library = saved_query_library or SavedQueryDirectory(
+            self._settings_service.restore_saved_query_directory()
+        )
         self._editor_states: dict[SqlEditor, _EditorTabState] = {}
         self._result_origin_by_request_id: dict[object, _RequestOrigin] = {}
         self._schema_workers: list[SchemaWorker] = []
@@ -652,11 +693,12 @@ class MainWindow(QMainWindow):
         return dock
 
     def _build_saved_queries_dock(self) -> QDockWidget:
-        saved_queries_dock = SavedQueriesDock(self.saved_query_store, self)
+        saved_queries_dock = SavedQueriesDock(self.saved_query_library, self)
         saved_queries_dock.run_requested.connect(self._run_saved_query)
         saved_queries_dock.open_in_new_tab_requested.connect(self._open_saved_query_in_new_tab)
         saved_queries_dock.rename_requested.connect(self._rename_saved_query)
         saved_queries_dock.delete_requested.connect(self._delete_saved_query)
+        saved_queries_dock.refresh_requested.connect(self._refresh_saved_queries)
 
         dock = QDockWidget("Saved Queries", self)
         dock.setObjectName("saved_queries_dock")
@@ -809,15 +851,27 @@ class MainWindow(QMainWindow):
         if editor is None or not editor.text().strip():
             self._show_status("No SQL statement to save", 5000)
             return
-        name, accepted = QInputDialog.getText(self, "Save Current Query", "Name")
+        name, accepted = QInputDialog.getText(
+            self, "Save Current Query", "Name (use / for subfolders)"
+        )
         if not accepted:
             return
         try:
-            self.saved_query_store.save_query(name=name, description="", sql=editor.text())
-        except ValueError as error:
+            self.saved_query_library.save_query(name=name, sql=editor.text())
+        except (ValueError, OSError) as error:
             self._show_status(f"Could not save query: {error}", 5000)
             return
+        self._refresh_saved_queries()
+
+    def _refresh_saved_queries(self) -> None:
+        """Rescan the library directory and report a directory that is not readable."""
         self.saved_queries_dock.refresh()
+        self._report_missing_saved_query_directory()
+
+    def _report_missing_saved_query_directory(self) -> None:
+        directory = self.saved_query_library.directory
+        if not directory.is_dir():
+            self._show_status(f"Saved query folder does not exist: {directory}", 5000)
 
     def _run_saved_query(self, query: SavedQuery) -> None:
         sql = self._bind_saved_query_dataset(query.sql)
@@ -865,28 +919,52 @@ class MainWindow(QMainWindow):
         return bind_dataset_tokens(sql, quote_identifier(alias))
 
     def _open_saved_query_in_new_tab(self, query: SavedQuery) -> None:
+        """Open a saved query as a file-backed tab so Save overwrites the same file."""
         editor = self._new_editor_tab()
+        state = self._editor_states[editor]
+        state.path = Path(query.id)
+        state.last_saved_text = query.sql
         editor.setText(query.sql)
+        self._update_editor_tab_label(editor)
+        self._update_sql_dirty_state()
+        self._update_window_title()
 
     def _rename_saved_query(self, query: SavedQuery) -> None:
         name, accepted = QInputDialog.getText(
             self,
             "Rename Saved Query",
-            "Name",
+            "Name (use / for subfolders)",
             text=query.name,
         )
         if not accepted:
             return
         try:
-            self.saved_query_store.update_query(query.id, name=name)
-        except ValueError as error:
+            renamed = self.saved_query_library.rename_query(query.id, name)
+        except (ValueError, OSError) as error:
             self._show_status(f"Could not rename query: {error}", 5000)
             return
-        self.saved_queries_dock.refresh()
+        if renamed is None:
+            self._show_status(f"Saved query no longer exists: {query.name}", 5000)
+        self._refresh_saved_queries()
 
     def _delete_saved_query(self, query: SavedQuery) -> None:
-        self.saved_query_store.delete_query(query.id)
-        self.saved_queries_dock.refresh()
+        confirmed = QMessageBox.question(
+            self,
+            "Delete Saved Query",
+            f"Delete the file {query.id}? This cannot be undone.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if confirmed is not QMessageBox.StandardButton.Yes:
+            return
+        try:
+            deleted = self.saved_query_library.delete_query(query.id)
+        except OSError as error:
+            self._show_status(f"Could not delete query: {error}", 5000)
+            return
+        if not deleted:
+            self._show_status(f"Saved query no longer exists: {query.name}", 5000)
+        self._refresh_saved_queries()
 
     def _format_current_editor(self) -> None:
         editor = self.current_editor
@@ -1241,7 +1319,10 @@ class MainWindow(QMainWindow):
         self.desktop_actions.export_selection.setEnabled(can_export)
         self.export_button.setEnabled(can_export)
         if result.status is ExecutionStatus.SUCCEEDED and result.frame is not None:
-            self.result_table_view.set_frame(result.frame)
+            self.result_table_view.set_frame(
+                result.frame,
+                row_offset=self._page_row_offset(self._current_editor_state(), request),
+            )
         else:
             self.result_table_view.set_frame(None)
         is_empty_result = (
@@ -2018,6 +2099,11 @@ class MainWindow(QMainWindow):
         if editor is not None:
             getattr(editor, operation)()
 
+    def _apply_text_case(self, transform: Callable[[str], str]) -> None:
+        editor = self.current_editor
+        if editor is not None:
+            editor.apply_text_case(transform)
+
     def _build_menus(self) -> None:
         menu_bar = self.menuBar()
         assert menu_bar is not None
@@ -2087,6 +2173,19 @@ class MainWindow(QMainWindow):
         self.find_replace_action.triggered.connect(self._show_find_replace)
         edit_menu.addAction(self.select_all_action)
         edit_menu.addAction(self.find_replace_action)
+        self.format_text_menu = cast(QMenu, edit_menu.addMenu("Format Text"))
+        self.format_text_menu.setObjectName("format_text_menu")
+        self.format_text_actions: dict[str, QAction] = {}
+        assert _FORMAT_TEXT_SHORTCUTS.keys() == TEXT_CASE_TRANSFORMS.keys()
+        for label, transform in TEXT_CASE_TRANSFORMS.items():
+            action = cast(QAction, self.format_text_menu.addAction(label))
+            action.setShortcuts(
+                [QKeySequence(sequence) for sequence in _FORMAT_TEXT_SHORTCUTS[label]]
+            )
+            action.triggered.connect(
+                lambda _checked=False, transform=transform: self._apply_text_case(transform)
+            )
+            self.format_text_actions[label] = action
         edit_menu.addSeparator()
         edit_menu.addAction(self.toggle_comment_action)
         edit_menu.addSeparator()
@@ -2177,7 +2276,9 @@ class MainWindow(QMainWindow):
         editor = self.current_editor
         if editor is None:
             return
-        self.preferences_dialog = PreferencesDialog(self._settings_service, self)
+        self.preferences_dialog = PreferencesDialog(
+            self._settings_service, self._file_dialog_service, self
+        )
         original_editor_themes = {editor: editor.theme_name for editor in self._editor_states}
         original_program_theme = self._settings_service.restore_program_theme()
         self.preferences_dialog.editor_theme_selector.currentTextChanged.connect(
@@ -2197,6 +2298,7 @@ class MainWindow(QMainWindow):
 
     def _apply_preferences(self) -> None:
         dialog = self.preferences_dialog
+        self._apply_saved_query_directory(dialog.saved_query_directory.text())
         self._settings_service.save_completion_enabled(dialog.completion_enabled.isChecked())
         self._settings_service.save_completion_threshold(dialog.completion_threshold.value())
         self._settings_service.save_profile_on_load(dialog.profile_on_load.isChecked())
@@ -2212,6 +2314,16 @@ class MainWindow(QMainWindow):
         self._apply_editor_theme_to_all(dialog.editor_theme_selector.currentText())
         for editor in self._editor_states:
             editor.set_font_size(dialog.font_size.value())
+
+    def _apply_saved_query_directory(self, chosen: str) -> None:
+        """Repoint the saved-query library when the preferred folder changes."""
+        text = chosen.strip()
+        directory = Path(text) if text else self._settings_service.DEFAULT_SAVED_QUERY_DIRECTORY
+        self._settings_service.save_saved_query_directory(directory)
+        if directory == self.saved_query_library.directory:
+            return
+        self.saved_query_library.set_directory(directory)
+        self._refresh_saved_queries()
 
     def _apply_editor_theme_to_all(self, theme: str) -> None:
         for editor in self._editor_states:
@@ -2494,6 +2606,13 @@ class MainWindow(QMainWindow):
             return False
         return total is None or (state.page_index + 1) * state.last_request.preview_limit < total
 
+    @staticmethod
+    def _page_row_offset(state: _EditorTabState | None, request: ExecutionRequest) -> int:
+        """Return the absolute row index of the first row of the state's current page."""
+        if state is None:
+            return 0
+        return state.page_index * request.preview_limit
+
     def _update_page_controls(self) -> None:
         state = self._current_editor_state()
         if not self._can_page_results(state):
@@ -2512,7 +2631,7 @@ class MainWindow(QMainWindow):
         request = state.last_request
         result = state.last_result
         page_number = state.page_index + 1
-        start = state.page_index * request.preview_limit + 1
+        start = self._page_row_offset(state, request) + 1
         end = start + result.preview_row_count - 1
         range_text = f"rows {start:,}-{end:,}"
         if result.total_row_count is not None:

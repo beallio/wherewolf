@@ -19,6 +19,8 @@ class SettingsService:
     DEFAULT_FONT_SIZE: Final = 12
     DEFAULT_SPLITTER_SIZES: Final = (1, 1)
     DEFAULT_DATASET_DIRECTORY: Final = Path.home()
+    # Overridden in tests to keep the default library away from a real profile.
+    DEFAULT_SAVED_QUERY_DIRECTORY: Path = Path.home() / ".wherewolf" / "queries"
 
     DEFAULT_COMPLETION_THRESHOLD: Final = 2
     DEFAULT_COMPLETION_ENABLED: Final = True
@@ -71,6 +73,10 @@ class SettingsService:
     @staticmethod
     def _last_dataset_directory_key(schema_version: str) -> str:
         return f"{schema_version}/dataset_directory/last"
+
+    @staticmethod
+    def _saved_query_directory_key(schema_version: str) -> str:
+        return f"{schema_version}/saved_queries/directory"
 
     @staticmethod
     def _completion_threshold_key(schema_version: str) -> str:
@@ -155,6 +161,10 @@ class SettingsService:
     @property
     def last_dataset_directory_key(self) -> str:
         return self._last_dataset_directory_key(self.namespace_prefix)
+
+    @property
+    def saved_query_directory_key(self) -> str:
+        return self._saved_query_directory_key(self.namespace_prefix)
 
     @property
     def completion_threshold_key(self) -> str:
@@ -293,6 +303,17 @@ class SettingsService:
 
     def save_last_dataset_directory(self, directory: Path) -> None:
         self._settings.setValue(self.last_dataset_directory_key, str(directory))
+
+    def restore_saved_query_directory(self) -> Path:
+        value = self._settings.value(
+            self.saved_query_directory_key, str(self.DEFAULT_SAVED_QUERY_DIRECTORY)
+        )
+        if not isinstance(value, str) or not value:
+            return self.DEFAULT_SAVED_QUERY_DIRECTORY
+        return Path(value)
+
+    def save_saved_query_directory(self, directory: Path) -> None:
+        self._settings.setValue(self.saved_query_directory_key, str(directory))
 
     def restore_completion_threshold(self) -> int:
         default = self.DEFAULT_COMPLETION_THRESHOLD

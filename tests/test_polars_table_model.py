@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 
 import polars as pl
+import pytest
 from PyQt6.QtCore import Qt
 
 from wherewolf.desktop.models.polars_table_model import PolarsTableModel
@@ -26,6 +27,25 @@ def test_polars_table_model_basic():
 
     idx1 = model.index(1, 1)
     assert model.data(idx1, Qt.ItemDataRole.DisplayRole) == "y"
+
+
+def test_polars_table_model_row_labels_include_the_page_row_offset():
+    frame = pl.DataFrame({"value": [1, 2, 3]})
+    model = PolarsTableModel(frame, row_offset=1000)
+
+    assert model.headerData(0, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole) == 1001
+    assert model.headerData(2, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole) == 1003
+
+
+def test_polars_table_model_row_labels_default_to_one_based_numbering():
+    model = PolarsTableModel(pl.DataFrame({"value": [1]}))
+
+    assert model.headerData(0, Qt.Orientation.Vertical, Qt.ItemDataRole.DisplayRole) == 1
+
+
+def test_polars_table_model_rejects_a_negative_row_offset():
+    with pytest.raises(ValueError):
+        PolarsTableModel(pl.DataFrame({"value": [1]}), row_offset=-1)
 
 
 def test_polars_table_model_empty_frame():

@@ -1,0 +1,73 @@
+{
+  "date": "2026-08-28",
+  "task_objective": "Implement Edit > Format Text with six case transforms, current-word fallback, line-preserving selection handling, and desktop shortcuts.",
+  "files_modified": [
+    "docs/plans/2026-08-28_edit-format-text.md",
+    "src/wherewolf/services/text_case.py",
+    "tests/test_text_case.py",
+    "src/wherewolf/desktop/widgets/sql_editor.py",
+    "tests/test_sql_editor.py",
+    "src/wherewolf/desktop/main_window.py",
+    "tests/test_main_window.py",
+    "CHANGELOG.md",
+    "docs/agent_conversations/2026-08-28_edit-format-text.json"
+  ],
+  "tests_added": [
+    "tests/test_text_case.py: 55 parametrized and focused pure-transform checks, including all 42 behaviour-table cells.",
+    "tests/test_sql_editor.py: six selection/current-word/undo/no-op tests; the no-op test uses a spy to prove no undo or replacement call is made.",
+    "tests/test_sql_editor.py: review-round regressions cover non-ASCII text before and inside the current word, the selection path, and caret/selection preservation when a current-word transform is a no-op.",
+    "tests/test_main_window.py: submenu structure, QAction wiring, specified shortcut declarations, and six focused primary-shortcut delivery checks.",
+    "tests/test_sql_editor.py: extended existing QScintilla collision test for Ctrl+U and Ctrl+Shift+U."
+  ],
+  "design_decisions": [
+    "The pure layer supplies one ordered TEXT_CASE_TRANSFORMS registry. It is the menu-label order and transform source, so labels cannot drift between the service and desktop layers.",
+    "SqlEditor has one apply_text_case(transform) method rather than six near-identical editing methods. It applies any pure transform to the selection, or QScintilla's current word when there is no selection.",
+    "Case-only transforms preserve separators; identifier-style transforms re-segment words. Title Case handles an alphanumeric run itself instead of using str.title(), so order2id becomes Order2id rather than Order2Id.",
+    "Ctrl+Shift+X and Ctrl+Shift+Y match DBeaver uppercase and lowercase bindings. Ctrl+Shift+C, M, N, and K are free mnemonic bindings for Case, caMel, sNake, and Kebab.",
+    "Ctrl+U and Ctrl+Shift+U are reclaimed from QScintilla because its built-in selection-only case commands lack current-word fallback and line-by-line behaviour. Both now route through the same Format Text actions.",
+    "The exact Edit-menu action-list test includes Format Text between Find / Replace and Toggle Comment because a submenu contributes its menu action to the non-separator list; this is an authorised interface extension, not a weakened assertion.",
+    "The focused-shortcut test explicitly releases Ctrl and Shift after each QTest chord. Without those releases, the test driver leaks modifiers into the next test and can make a later export action inert.",
+    "Scintilla positions are UTF-8 byte offsets, so apply_text_case never slices self.text() with them. The current-word path selects the resolved range and reads selectedText(), matching the selection path; an unchanged current word restores its original caret and selection."
+  ],
+  "commits": [
+    "099edf2 docs(plan): add edit-format-text implementation plan",
+    "c8ece23 feat(services): add text case transforms",
+    "2713f47 feat(editor): re-case the selection or current word",
+    "e76c97d feat(desktop): add an Edit Format Text submenu",
+    "8e10816 test(desktop): strengthen text case regression checks",
+    "f74fa98 fix(editor): preserve UTF-8 text case ranges"
+  ],
+  "verification": {
+    "red_green": [
+      "Task 1 RED: tests/test_text_case.py failed during collection with ModuleNotFoundError for wherewolf.services.text_case. GREEN: 55 passed.",
+      "Task 3 RED: six apply_text_case tests failed with AttributeError. GREEN: 6 passed, 44 deselected.",
+      "Task 5 RED: 10 menu tests failed because Format Text and its actions did not exist. GREEN: 11 menu/shortcut/export-regression checks passed, and the QScintilla reclaim test passed.",
+      "Round 01 review RED: the two current-word non-ASCII regressions failed. An earlier café changed customer_order_id to ustomerOrderId with an extra space, and café_total became CAFÉ_TOTAL with an extra space. GREEN: 10 apply_text_case checks passed, 44 deselected."
+    ],
+    "mutations": [
+      "V1: replacing Title Case with str.title() caused exactly one failure: order2id expected Order2id but got Order2Id; 1 failed, 54 passed.",
+      "V2: naive newline splitting returned aB\\ncDEF\\ngH instead of aB\\r\\ncD\\reF\\ngH and customerId instead of indented/trailing-whitespace-preserved output; the blank-line check also failed; 3 failed, 52 passed.",
+      "V3: removing the current-word path left customer_order_id unchanged; 1 failed, 49 deselected. An empty replacement is ignored by QScintilla, so the no-op test was strengthened with a spy; the forced empty undo mutation then failed because begin_undo_calls was 1 instead of 0.",
+      "Round 01 V3 rerun: dropping the current-word branch left customer_order_id unchanged; 1 failed, 53 deselected. Removing the empty-range return and forcing the empty range into the undo action made begin_undo_calls equal 1 rather than 0; 1 failed, 53 deselected.",
+      "V4: late-bound menu callbacks converted the snake_case action to kebab-case; 1 failed, 190 deselected.",
+      "V5: changing UPPERCASE to Ctrl+Shift+L let QScintilla delete the line, producing an empty document instead of CUSTOMER_ORDER_ID; 1 failed, 5 passed. Removing Ctrl+U and Ctrl+Shift+U from the released bindings left Ctrl+U bound in QScintilla; 1 failed, 1 passed."
+    ],
+    "quality_gates": [
+      "ruff check .: passed",
+      "ruff format --check .: 207 files already formatted",
+      "ty check src/: passed",
+      "pytest: 965 passed, 9 deselected after the four review-round regression checks were added"
+    ],
+    "observed_transform_values": [
+      "customer_order_id | customer_order_id | CUSTOMER_ORDER_ID | Customer_Order_Id | customerOrderId | customer_order_id | customer-order-id",
+      "HTTPResponseCode | httpresponsecode | HTTPRESPONSECODE | Httpresponsecode | httpResponseCode | http_response_code | http-response-code",
+      "total sales 2026 | total sales 2026 | TOTAL SALES 2026 | Total Sales 2026 | totalSales2026 | total_sales_2026 | total-sales-2026"
+    ]
+  },
+  "deferred_or_unverified": [
+    "On-screen confirmation is deferred. Offscreen tests prove structure, wiring, shortcut delivery, document edits, and undo behaviour, but not submenu rendering, cascading, or shortcut-label appearance on a real display. Manually start ./run.sh uv run wherewolf-desktop and exercise all six Edit > Format Text entries.",
+    "Kebab-cased text is not reachable through the current-word path because hyphen is not a QScintilla word character. Users must select it; this protects arithmetic such as total-discount.",
+    "Non-ASCII range handling is tested for a character before the word, within the word, and in the selection path. Transform case mapping remains Python string case behaviour; no broader Unicode behaviour table is pinned.",
+    "No multi-cursor support was added; SqlEditor has one selection only."
+  ]
+}

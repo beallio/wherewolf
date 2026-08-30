@@ -8,7 +8,7 @@ import pytest
 from PyQt6.QtCore import QSettings
 
 from wherewolf.services import SettingsService
-from wherewolf.storage import HistoryManager, SavedQueryStore
+from wherewolf.storage import HistoryManager
 from wherewolf.storage.catalog import CatalogStore
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -52,9 +52,9 @@ def isolate_persistent_desktop_storage(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setattr(HistoryManager, "DEFAULT_PATH", tmp_path / "history" / "history.json")
     monkeypatch.setattr(CatalogStore, "DEFAULT_PATH", tmp_path / "catalog" / "catalog.json")
     monkeypatch.setattr(
-        SavedQueryStore,
-        "DEFAULT_PATH",
-        tmp_path / "saved-queries" / "saved_queries.json",
+        SettingsService,
+        "DEFAULT_SAVED_QUERY_DIRECTORY",
+        tmp_path / "saved-queries",
     )
 
     settings_path = tmp_path / "qsettings"

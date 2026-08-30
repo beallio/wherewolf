@@ -13,14 +13,22 @@ class PolarsTableModel(QAbstractTableModel):
 
     _INVALID_PARENT: QModelIndex = QModelIndex()
 
-    def __init__(self, frame: pl.DataFrame | None = None, parent=None) -> None:
+    def __init__(
+        self, frame: pl.DataFrame | None = None, parent=None, *, row_offset: int = 0
+    ) -> None:
         super().__init__(parent)
+        if row_offset < 0:
+            raise ValueError("Row offset cannot be negative")
         self._frame = frame if frame is not None else pl.DataFrame()
+        self._row_offset = row_offset
         self._header_badges: list[str] = []
 
-    def set_frame(self, frame: pl.DataFrame | None) -> None:
+    def set_frame(self, frame: pl.DataFrame | None, *, row_offset: int = 0) -> None:
+        if row_offset < 0:
+            raise ValueError("Row offset cannot be negative")
         self.beginResetModel()
         self._frame = frame if frame is not None else pl.DataFrame()
+        self._row_offset = row_offset
         self._header_badges = [""] * self._frame.width
         self.endResetModel()
 
@@ -86,5 +94,5 @@ class PolarsTableModel(QAbstractTableModel):
             and 0 <= section < self._frame.height
             and role == Qt.ItemDataRole.DisplayRole
         ):
-            return section + 1
+            return section + self._row_offset + 1
         return None

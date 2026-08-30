@@ -1,0 +1,24 @@
+{
+  "date": "2026-08-29",
+  "task_objective": "Cut the 0.11.1 patch release from dev.",
+  "files_modified": [
+    "CHANGELOG.md",
+    "README.md",
+    "pyproject.toml",
+    "uv.lock"
+  ],
+  "tests_added": [],
+  "design_decisions": [
+    "Version bumped as a patch on explicit request. The section contains Added entries, which matches this project's own precedent for patch releases (0.10.3, 0.10.2, and 0.7.1 all shipped Added items in a patch).",
+    "The section also contains a Removed entry: ~/.wherewolf/saved_queries.json is no longer read and is not migrated. That is behaviour removal in a patch, so it is called out first in the Removed section of the release notes rather than being left for users to discover.",
+    "Followed the documented release process in docs/RELEASING.md: the versioned heading is inserted below the permanent Unreleased heading on dev, dev merges into main, then the version bump and tag are made on main only. dev intentionally keeps its older pyproject version, matching every previous release.",
+    "README image and badge cacheBuster values were incremented from 36 to 37 so the banner, screenshot, and badges refresh for the new tag."
+  ],
+  "results": "Released v0.11.1. Release title: 'Saved queries are .sql files you can edit, and text case has its own menu'.",
+  "verification": [
+    "./run.sh uv run ruff check .: all checks passed",
+    "./run.sh uv run ty check src/: all checks passed",
+    "./run.sh uv run pytest: 1016 passed, 9 deselected",
+    "Release-tag push observed through the GitHub Actions release workflow"
+  ]
+}

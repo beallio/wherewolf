@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from wherewolf.storage.saved_queries import SavedQuery, SavedQueryStore
+from wherewolf.storage.saved_queries import SavedQuery, SavedQueryDirectory
 
 
 class SavedQueriesDock(QWidget):
@@ -24,10 +24,13 @@ class SavedQueriesDock(QWidget):
     open_in_new_tab_requested = pyqtSignal(object)
     rename_requested = pyqtSignal(object)
     delete_requested = pyqtSignal(object)
+    refresh_requested = pyqtSignal()
 
-    def __init__(self, saved_query_store: SavedQueryStore, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, saved_query_library: SavedQueryDirectory, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
-        self._saved_query_store = saved_query_store
+        self._saved_query_library = saved_query_library
         self._queries_by_id: dict[str, SavedQuery] = {}
         self.query_filter = QLineEdit(self)
         self.query_filter.setObjectName("saved_queries_filter")
@@ -44,6 +47,8 @@ class SavedQueriesDock(QWidget):
         self._open_in_new_tab_action = QAction("Open in New Tab", self)
         self._rename_action = QAction("Rename", self)
         self._delete_action = QAction("Delete", self)
+        self._refresh_action = QAction("Refresh", self)
+        self._refresh_action.triggered.connect(self.refresh_requested.emit)
         self._run_action.triggered.connect(lambda: self._emit_selected(self.run_requested))
         self._open_in_new_tab_action.triggered.connect(
             lambda: self._emit_selected(self.open_in_new_tab_requested)
@@ -59,7 +64,7 @@ class SavedQueriesDock(QWidget):
 
     def refresh(self) -> None:
         """Reload records from the store and retain stable IDs on list items."""
-        queries = self._saved_query_store.get_all()
+        queries = self._saved_query_library.get_all()
         self._queries_by_id = {query.id: query for query in queries}
         self.query_list.clear()
         for query in queries:
@@ -98,6 +103,8 @@ class SavedQueriesDock(QWidget):
         menu.addSeparator()
         menu.addAction(self._rename_action)
         menu.addAction(self._delete_action)
+        menu.addSeparator()
+        menu.addAction(self._refresh_action)
         viewport = self.query_list.viewport()
         if viewport is not None:
             menu.popup(viewport.mapToGlobal(position))

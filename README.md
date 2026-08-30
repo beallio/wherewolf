@@ -1,16 +1,16 @@
 # Wherewolf
 
-<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=36" width="100%">
+<img src="https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/wherewolf_banner.png?cacheBuster=37" width="100%">
 
-[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=36)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
-[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=36)](https://pypi.org/project/wherewolf/)
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=36)](https://www.gnu.org/licenses/gpl-3.0.html)
+[![CI](https://github.com/beallio/wherewolf/actions/workflows/ci.yml/badge.svg?cacheBuster=37)](https://github.com/beallio/wherewolf/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/wherewolf.svg?cacheBuster=37)](https://pypi.org/project/wherewolf/)
+[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL--3.0--only-blue.svg?cacheBuster=37)](https://www.gnu.org/licenses/gpl-3.0.html)
 
 Wherewolf is a local SQL workbench for CSV, Parquet, JSON, JSON Lines, and XLSX files. It opens
 a native PyQt6 desktop window and runs queries with DuckDB by default. There is no browser UI and
 no local web server.
 
-![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=36)
+![Wherewolf Screenshot](https://raw.githubusercontent.com/beallio/wherewolf/main/src/wherewolf/assets/img/screenshot.png?cacheBuster=37)
 
 ## Install
 
@@ -124,7 +124,11 @@ this mode.
 1. Choose **Add Datasets…** or drag supported local files into the Dataset Catalog. The command
    opens the operating system's native multi-file dialog where Qt supports it.
 2. Each file receives a table alias. Rename it from the catalog context menu when needed, then
-   use the alias in SQL. The Schema dock reports discovered columns and any schema error.
+   use the alias in SQL. Select several dataset cells to remove or refresh all selected datasets,
+   copy aliases or paths one per line, or insert their aliases as a comma-separated SQL list.
+   Rename is available for one dataset only, and Reveal in File Manager requires every selected
+   dataset to be in the same folder. The Schema dock reports discovered columns and any schema
+   error.
 3. Write SQL in the editor and press **Ctrl+Return** to run the selection or current statement.
    **Ctrl+Space** opens completion, and **Ctrl+Shift+F** formats SQL. On macOS, use the platform's
    equivalent shortcut conventions.
@@ -149,8 +153,34 @@ runs automatically when a dataset is added and is skipped for sources above a co
 Both settings live in **View → Preferences…**, alongside editor font size, theme, and completion.
 
 Window geometry, docks, splitter proportions, editor font size and theme, preview row count,
-recent dataset directory, profiling and completion preferences are persisted between desktop
-sessions.
+recent dataset directory, saved query folder, profiling and completion preferences are persisted
+between desktop sessions.
+
+## Saved queries
+
+The **Saved Queries** dock lists the `.sql` files in one folder, chosen in
+**View → Preferences… → Saved query folder**. The default is `~/.wherewolf/queries`. The scan is
+recursive, so a file at `reports/weekly.sql` is listed as `reports/weekly`; the `.sql` suffix
+matches whatever its case, and dot-prefixed folders such as `.git` are skipped. Because a saved
+query is an ordinary file, you can also create, edit, `grep`, sync, or version-control these
+queries outside Wherewolf, then use the dock's **Refresh** command to pick up the change.
+
+The leading comment of each file is its description: it appears as the item tooltip and is
+searched by the filter box alongside the name and the SQL. Both `--` runs and a leading
+`/* … */` block are recognised.
+
+- **File → Save Current Query…** writes the editor buffer to the folder. Type `reports/weekly` to
+  save into a subfolder, which is created on demand.
+- **Run** executes the query without touching the editor. **Open in New Tab** opens the file
+  itself, so **Ctrl+S** overwrites that saved query.
+- **Rename** accepts a path, so it can also move a query between subfolders. **Delete** removes
+  the file from disk and asks for confirmation first.
+
+A saved query may contain `{dataset}`, which prompts for a catalog alias and is substituted as a
+quoted identifier, and `:name` parameters, which prompt for values that are bound rather than
+interpolated. Parameterised queries are DuckDB-only; Spark rejects bound parameters with an
+explicit error. History records the query with its `:name` placeholders intact and never stores
+the values you enter.
 
 ## Results grid and ordering
 

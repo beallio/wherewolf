@@ -47,6 +47,10 @@ class FileDialogService(Protocol):
         self, default_directory: Path | None, parent: QWidget | None = None
     ) -> Path | None: ...
 
+    def choose_directory(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None: ...
+
 
 @dataclass(frozen=True)
 class FakeFileDialogService:
@@ -56,6 +60,7 @@ class FakeFileDialogService:
     value_counts_path: Path | None = None
     sql_open_path: Path | None = None
     sql_save_path: Path | None = None
+    directory: Path | None = None
 
     def choose_dataset_files(
         self,
@@ -100,6 +105,12 @@ class FakeFileDialogService:
     ) -> Path | None:
         del default_directory, parent
         return normalise_sql_destination(self.sql_save_path) if self.sql_save_path else None
+
+    def choose_directory(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None:
+        del default_directory, parent
+        return self.directory
 
 
 class QtFileDialogService:
@@ -193,6 +204,14 @@ class QtFileDialogService:
             parent, "Save SQL", str(default_directory or ""), "SQL files (*.sql)", "*.sql"
         )
         return normalise_sql_destination(Path(name)) if name else None
+
+    def choose_directory(
+        self, default_directory: Path | None, parent: QWidget | None = None
+    ) -> Path | None:
+        name = QFileDialog.getExistingDirectory(
+            parent, "Select folder", str(default_directory or "")
+        )
+        return Path(name) if name else None
 
     @staticmethod
     def _build_filter() -> str:

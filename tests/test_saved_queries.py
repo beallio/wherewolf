@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from wherewolf.storage.saved_queries import SavedQueryStore
+from wherewolf.services import SettingsService
 
-DEFAULT_SAVED_QUERY_PATH = SavedQueryStore.DEFAULT_PATH
+DEFAULT_SAVED_QUERY_DIRECTORY = SettingsService.DEFAULT_SAVED_QUERY_DIRECTORY
 
 
-def test_saved_query_store_uses_the_user_saved_queries_path_by_default() -> None:
-    assert DEFAULT_SAVED_QUERY_PATH == Path.home() / ".wherewolf" / "saved_queries.json"
+def test_saved_query_library_uses_the_user_queries_folder_by_default() -> None:
+    assert DEFAULT_SAVED_QUERY_DIRECTORY == Path.home() / ".wherewolf" / "queries"

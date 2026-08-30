@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+## [0.11.1] - 2026-08-29 — Saved queries are .sql files you can edit, and text case has its own menu
+
+### Added
+
+- **Edit → Format Text** can convert a selection, or the word under the caret when nothing is
+  selected. Multi-line selections are converted one line at a time and keep their indentation and
+  line endings. Shortcuts are `Ctrl+Shift+Y` / `Ctrl+U` for lowercase, `Ctrl+Shift+X` /
+  `Ctrl+Shift+U` for UPPERCASE, `Ctrl+Shift+C` for Title Case, `Ctrl+Shift+M` for camelCase,
+  `Ctrl+Shift+N` for snake_case, and `Ctrl+Shift+K` for kebab-case. The uppercase and lowercase
+  primary shortcuts match DBeaver. A hyphen is not part of a QScintilla word, so kebab-cased text
+  must be selected before it can be reformatted; this protects expressions such as
+  `total-discount` from being rewritten as identifiers.
+- **Saved queries are now plain `.sql` files in a folder you choose.** Set the folder in
+  **View → Preferences… → Saved query folder**; the default is `~/.wherewolf/queries`. The dock
+  scans it recursively, so `reports/weekly.sql` is listed as `reports/weekly`, matches the `.sql`
+  suffix in any case, and skips dot-prefixed folders. The leading `--` run or `/* … */` block in
+  each file is its description, shown as the tooltip and searched by the filter box. A new
+  **Refresh** command in the dock rescans the folder, so queries created or edited outside
+  Wherewolf appear without a restart.
+- **Open in New Tab now opens the saved query's own file**, so **Ctrl+S** overwrites that saved
+  query instead of prompting for a new destination. **Rename** accepts a path and can move a
+  query between subfolders, **Save Current Query…** creates subfolders on demand, and
+  **Delete** now asks for confirmation because it removes a file from disk.
+
+### Fixed
+
+- **SQL completion lists now support normal keyboard navigation.** Use arrow, page, Home, and
+  End keys to choose a suggestion before accepting it with Tab or Return.
+- **Dataset actions now use the row you right-click.** Rename, remove, refresh, copy, reveal,
+  and insert actions no longer operate on a previously selected dataset; right-clicking blank
+  space disables all of them.
+
+### Changed
+
+- **Dataset Catalog actions now apply to every selected dataset.** Copy Alias and Copy File Path
+  place one unquoted value per line on the clipboard, while Insert Alias places a comma-separated
+  list in the editor. Rename Alias is unavailable for multiple datasets, and Reveal in File
+  Manager is available only when all selected datasets are in the same folder.
+- QScintilla's built-in `Ctrl+U` and `Ctrl+Shift+U` case commands now route through **Edit →
+  Format Text**, so they also work on the current word and on multi-line selections.
+- **Every Dataset Catalog column can now be resized.** Folder no longer grows automatically to
+  fill unused dock space, and narrow catalog docks now show a horizontal scrollbar instead of
+  squeezing column text.
+- **Paged result rows now keep their absolute numbers.** Later pages continue numbering from the
+  preceding page, so the grid agrees with the displayed page range.
+
+### Removed
+
+- **`~/.wherewolf/saved_queries.json` is no longer read.** Saved queries live in the folder set in
+  Preferences, and the old JSON file is not converted. Existing records stay on disk but are
+  ignored; recreate the queries you still want, or move the SQL into `.sql` files yourself.
+
 ## [0.11.0] - 2026-08-24 — Find SQL completions by fuzzy match, including aliases and functions
 
 ### Added
